@@ -1,4 +1,22 @@
+# Node
 node_modules/
-.env
-generated-pdfs/*.pdf
+npm-debug.log
 npm-debug.log*
+yarn-error.log
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Build / output
+dist/
+build/
+generated-pdfs/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
