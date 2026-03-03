@@ -871,6 +871,39 @@ body {
   border-bottom: 1px dashed #c9ddee;
 }
 
+.authenticity-panel {
+  border-style: dashed;
+  border-color: #9fc3df;
+  background:
+    radial-gradient(circle at 90% 20%, rgba(27, 145, 210, 0.11), transparent 35%),
+    linear-gradient(180deg, #f7fbff, #ecf4fb);
+}
+
+.authenticity-heading {
+  margin: 0;
+  font-size: 0.84rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #1a4f79;
+}
+
+.authenticity-statement {
+  margin: 8px 0 0;
+  color: #123a5f;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.authenticity-line {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed #c0d6e8;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.82rem;
+  color: #2f4b68;
+}
+
 .grid {
   display: grid;
   gap: 12px;

@@ -15,6 +15,13 @@ function ensureDir(dirPath) {
   }
 }
 
+function ensurePageSpace(doc, requiredHeight = 80) {
+  const usableBottom = doc.page.height - doc.page.margins.bottom;
+  if (doc.y + requiredHeight > usableBottom) {
+    doc.addPage();
+  }
+}
+
 function sectionTitle(doc, text) {
   doc.moveDown(0.6);
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f172a').text(text, { underline: false });
@@ -127,7 +134,36 @@ function generateFileName() {
   return `MOM-${stamp}.pdf`;
 }
 
-async function generateMomPdf(mom, outputDir) {
+function drawDigitalDeclarationBlock(doc, mom, authenticity = {}) {
+  ensurePageSpace(doc, 150);
+
+  sectionTitle(doc, '4. ORGANIZATION & AUTHENTICITY');
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text('Organization Address:', {
+    width: 180
+  });
+  doc.moveDown(0.2);
+  doc.font('Helvetica').fontSize(10).fillColor('#0f172a').text(safeText(mom.organizationAddress), {
+    width: 500
+  });
+  doc.moveDown(0.6);
+
+  const statement =
+    String(authenticity.statement || '').trim() ||
+    'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
+  doc.font('Helvetica').fontSize(9.8).fillColor('#1e293b').text(statement, {
+    width: 500
+  });
+  doc.moveDown(0.4);
+
+  const line = String(authenticity.line || '').trim();
+  if (line) {
+    doc.font('Courier').fontSize(8.8).fillColor('#334155').text(line, {
+      width: 500
+    });
+  }
+}
+
+async function generateMomPdf(mom, outputDir, authenticity = {}) {
   ensureDir(outputDir);
 
   const fileName = generateFileName();
@@ -189,6 +225,8 @@ async function generateMomPdf(mom, outputDir) {
 
     sectionTitle(doc, 'Attendees');
     drawAttendeeTable(doc, mom.attendeeRows);
+
+    drawDigitalDeclarationBlock(doc, mom, authenticity);
 
     doc.end();
 

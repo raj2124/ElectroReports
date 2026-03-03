@@ -21,7 +21,8 @@ const config = {
     port: appPort,
     rootDir,
     generatedDir,
-    baseUrl: process.env.APP_BASE_URL || `http://${appHost}:${appPort}`
+    baseUrl: process.env.APP_BASE_URL || `http://${appHost}:${appPort}`,
+    generatedBy: process.env.MOM_GENERATED_BY || 'M.O.M System'
   },
   zoho: {
     useMock: toBool(process.env.ZOHO_USE_MOCK, true),
