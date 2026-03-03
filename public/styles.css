@@ -1281,7 +1281,8 @@ th {
 }
 
 td input,
-td textarea {
+td textarea,
+td select {
   margin: 0;
   padding: 7px;
 }

@@ -26,8 +26,10 @@ const kpiEmailMode = document.getElementById('kpiEmailMode');
 
 const momForm = document.getElementById('momForm');
 const addAgendaRowBtn = document.getElementById('addAgendaRowBtn');
+const addTaskRowBtn = document.getElementById('addTaskRowBtn');
 const addAttendeeRowBtn = document.getElementById('addAttendeeRowBtn');
 const agendaTableBody = document.querySelector('#agendaTable tbody');
+const taskTableBody = document.querySelector('#taskTable tbody');
 const attendeeTableBody = document.querySelector('#attendeeTable tbody');
 const toast = document.getElementById('toast');
 const authenticityLinePreview = document.getElementById('authenticityLinePreview');
@@ -71,6 +73,10 @@ let currentProjectUsers = [];
 let isProjectUsersLoading = false;
 let projectUsersRequestSeq = 0;
 const projectUsersCache = new Map();
+let currentProjectTasks = [];
+let isProjectTasksLoading = false;
+let projectTasksRequestSeq = 0;
+const projectTasksCache = new Map();
 let momGeneratedBy = 'M.O.M System';
 
 function showToast(message, type = 'success') {
@@ -361,6 +367,11 @@ function setProjectSource(mode) {
     projectUsersRequestSeq += 1;
     projectUsersCache.clear();
     refreshAttendeeUserDropdowns();
+    currentProjectTasks = [];
+    isProjectTasksLoading = false;
+    projectTasksRequestSeq += 1;
+    projectTasksCache.clear();
+    refreshTaskDropdowns();
     zohoProjectSelect.value = '';
     renderZohoProjectMeta(null);
   } else {
@@ -372,6 +383,7 @@ function setProjectSource(mode) {
     } else {
       renderZohoProjectMeta(null);
     }
+    refreshTaskDropdowns();
   }
 }
 
@@ -454,6 +466,76 @@ function refreshAttendeeUserDropdowns() {
   });
 }
 
+function buildTaskOptionLabel(task) {
+  const name = String(task?.name || '').trim() || 'Unnamed Task';
+  const status = String(task?.status || '').trim();
+  const list = String(task?.taskListName || '').trim();
+  const parts = [];
+  if (status) {
+    parts.push(`Status: ${status}`);
+  }
+  if (list) {
+    parts.push(`List: ${list}`);
+  }
+  return parts.length ? `${name} (${parts.join(' | ')})` : name;
+}
+
+function populateTaskSelect(selectEl, selectedTaskId = '', selectedTaskName = '') {
+  if (!selectEl) {
+    return;
+  }
+
+  const existingTaskId = selectedTaskId || selectEl.value || '';
+  const existingTaskName = selectedTaskName || '';
+  selectEl.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.setAttribute('data-task-name', '');
+  if (isProjectTasksLoading) {
+    placeholder.textContent = 'Loading project tasks from Zoho...';
+  } else if (currentProjectTasks.length) {
+    placeholder.textContent = 'Select project task';
+  } else if (activeProjectSource === 'manual') {
+    placeholder.textContent = 'Switch to Zoho project to load tasks';
+  } else {
+    placeholder.textContent = 'No tasks found for selected project';
+  }
+  selectEl.appendChild(placeholder);
+
+  for (const task of currentProjectTasks) {
+    const option = document.createElement('option');
+    option.value = String(task.id || task.name || '').trim();
+    option.textContent = buildTaskOptionLabel(task);
+    option.setAttribute('data-task-name', String(task.name || '').trim());
+    selectEl.appendChild(option);
+  }
+
+  if (existingTaskId) {
+    const hasValue = [...selectEl.options].some((option) => option.value === existingTaskId);
+    if (!hasValue) {
+      const custom = document.createElement('option');
+      custom.value = existingTaskId;
+      custom.setAttribute('data-task-name', existingTaskName || existingTaskId);
+      custom.textContent = `${existingTaskName || existingTaskId} (Not in synced project tasks)`;
+      selectEl.appendChild(custom);
+    }
+    selectEl.value = existingTaskId;
+  }
+
+  selectEl.disabled = isProjectTasksLoading || currentProjectTasks.length === 0;
+}
+
+function refreshTaskDropdowns() {
+  const selects = taskTableBody.querySelectorAll('.task-name-select');
+  selects.forEach((selectEl) => {
+    const currentValue = selectEl.value || '';
+    const selectedOption = selectEl.selectedOptions?.[0] || null;
+    const currentName = selectedOption?.getAttribute('data-task-name') || '';
+    populateTaskSelect(selectEl, currentValue, currentName);
+  });
+}
+
 function nextIndexFromTable(tbodySelector) {
   const tbody = document.querySelector(tbodySelector);
   return tbody.children.length + 1;
@@ -477,6 +559,37 @@ function addAgendaRow(row = {}) {
   });
 
   agendaTableBody.appendChild(tr);
+}
+
+function addTaskRow(row = {}) {
+  const tr = document.createElement('tr');
+  const index = nextIndexFromTable('#taskTable tbody');
+
+  tr.innerHTML = `
+    <td><input type="text" value="${row.srNo || index}" class="task-sr" /></td>
+    <td><select class="task-name-select"></select></td>
+    <td><input type="text" value="${row.quantityDescription || ''}" class="task-quantity-description" /></td>
+    <td>
+      <select class="task-mom-status">
+        <option value="">Select</option>
+        <option value="Completed">Completed</option>
+        <option value="Not Completed">Not Completed</option>
+        <option value="Partially Completed">Partially Completed</option>
+      </select>
+    </td>
+    <td><button type="button" class="btn btn-light remove-row">Remove</button></td>
+  `;
+
+  tr.querySelector('.remove-row').addEventListener('click', () => {
+    tr.remove();
+    reindexRows();
+  });
+
+  taskTableBody.appendChild(tr);
+  const taskSelect = tr.querySelector('.task-name-select');
+  populateTaskSelect(taskSelect, row.taskId || '', row.taskName || '');
+  const taskStatus = tr.querySelector('.task-mom-status');
+  taskStatus.value = row.status || '';
 }
 
 function addAttendeeRow(row = {}) {
@@ -513,12 +626,21 @@ function reindexRows() {
       sr.value = String(i + 1);
     }
   });
+
+  [...taskTableBody.querySelectorAll('tr')].forEach((row, i) => {
+    const sr = row.querySelector('.task-sr');
+    if (sr && !sr.value.trim()) {
+      sr.value = String(i + 1);
+    }
+  });
 }
 
 function resetRows() {
   agendaTableBody.innerHTML = '';
+  taskTableBody.innerHTML = '';
   attendeeTableBody.innerHTML = '';
   addAgendaRow();
+  addTaskRow();
   addAttendeeRow();
 }
 
@@ -535,6 +657,10 @@ function resetFormForNewSheet() {
   isProjectUsersLoading = false;
   projectUsersRequestSeq += 1;
   refreshAttendeeUserDropdowns();
+  currentProjectTasks = [];
+  isProjectTasksLoading = false;
+  projectTasksRequestSeq += 1;
+  refreshTaskDropdowns();
   renderZohoProjectMeta(null);
   resetRows();
   document.getElementById('organizationAddress').value =
@@ -587,12 +713,19 @@ function applyZohoProjectByKey(projectKey) {
     isProjectUsersLoading = false;
     projectUsersRequestSeq += 1;
     refreshAttendeeUserDropdowns();
+    currentProjectTasks = [];
+    isProjectTasksLoading = false;
+    projectTasksRequestSeq += 1;
+    refreshTaskDropdowns();
     renderZohoProjectMeta(null);
     return;
   }
   fillProjectFields(project);
   syncProjectUsersForProject(project).catch((error) => {
     showToast(error.message || 'Failed to sync project users.', 'error');
+  });
+  syncProjectTasksForProject(project).catch((error) => {
+    showToast(error.message || 'Failed to sync project tasks.', 'error');
   });
 }
 
@@ -616,6 +749,17 @@ async function fetchProjectUsers(projectId) {
   }
 
   return Array.isArray(data.users) ? data.users : [];
+}
+
+async function fetchProjectTasks(projectId) {
+  const response = await fetch(`/api/zoho/projects/${encodeURIComponent(projectId)}/tasks`);
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || 'Unable to fetch Zoho project tasks.');
+  }
+
+  return Array.isArray(data.tasks) ? data.tasks : [];
 }
 
 async function syncProjectUsersForProject(project) {
@@ -692,6 +836,90 @@ async function syncProjectUsersForProject(project) {
   }
 }
 
+async function syncProjectTasksForProject(project) {
+  const requestSeq = ++projectTasksRequestSeq;
+  const candidateRefs = [
+    project?._userRef,
+    project?.id,
+    project?.projectNumber,
+    project?.name
+  ]
+    .map((value) => normalizeRefValue(value))
+    .filter(Boolean);
+  const uniqueRefs = [...new Set(candidateRefs)];
+  const projectRef = uniqueRefs[0] || '';
+  if (!projectRef || projectRef === '[object Object]') {
+    currentProjectTasks = [];
+    isProjectTasksLoading = false;
+    refreshTaskDropdowns();
+    return;
+  }
+
+  if (projectTasksCache.has(projectRef)) {
+    if (requestSeq !== projectTasksRequestSeq) {
+      return;
+    }
+    currentProjectTasks = projectTasksCache.get(projectRef);
+    isProjectTasksLoading = false;
+    refreshTaskDropdowns();
+    return;
+  }
+
+  isProjectTasksLoading = true;
+  currentProjectTasks = [];
+  refreshTaskDropdowns();
+
+  try {
+    let tasks = [];
+    let lastError = null;
+
+    for (const ref of uniqueRefs) {
+      try {
+        tasks = await fetchProjectTasks(ref);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    if (requestSeq !== projectTasksRequestSeq) {
+      return;
+    }
+
+    const cleanedTasks = tasks
+      .map((task) => ({
+        id: String(task.id || '').trim(),
+        name: String(task.name || '').trim(),
+        status: String(task.status || '').trim(),
+        taskListName: String(task.taskListName || '').trim()
+      }))
+      .filter((task) => task.id || task.name);
+
+    projectTasksCache.set(projectRef, cleanedTasks);
+    currentProjectTasks = cleanedTasks;
+    isProjectTasksLoading = false;
+    refreshTaskDropdowns();
+  } catch (error) {
+    if (requestSeq !== projectTasksRequestSeq) {
+      return;
+    }
+    currentProjectTasks = [];
+    isProjectTasksLoading = false;
+    refreshTaskDropdowns();
+    const message = String(error?.message || '').toLowerCase();
+    if (message.includes('expected pattern') || message.includes('given url is wrong')) {
+      showToast('Project loaded, but Zoho task list could not be resolved for this project.', 'error');
+      return;
+    }
+    throw error;
+  }
+}
+
 function renderProjectResults(projects) {
   projectResults.innerHTML = '';
 
@@ -737,6 +965,9 @@ function renderProjectResults(projects) {
       fillProjectFields(selectedProject);
       syncProjectUsersForProject(selectedProject).catch((error) => {
         showToast(error.message || 'Failed to sync project users.', 'error');
+      });
+      syncProjectTasksForProject(selectedProject).catch((error) => {
+        showToast(error.message || 'Failed to sync project tasks.', 'error');
       });
       projectModal.close();
       showToast('Project details loaded from Zoho.');
@@ -804,6 +1035,9 @@ function renderDashboardProjects(projects, query = '') {
       syncProjectUsersForProject(selectedProject).catch((error) => {
         showToast(error.message || 'Failed to sync project users.', 'error');
       });
+      syncProjectTasksForProject(selectedProject).catch((error) => {
+        showToast(error.message || 'Failed to sync project tasks.', 'error');
+      });
       setView('editor');
       showToast('Recent Zoho project selected for new M.O.M.');
     });
@@ -856,6 +1090,26 @@ function collectAgendaRows() {
   });
 }
 
+function collectTaskRows() {
+  return [...taskTableBody.querySelectorAll('tr')].map((row, index) => {
+    const taskSelect = row.querySelector('.task-name-select');
+    const selectedOption = taskSelect?.selectedOptions?.[0] || null;
+    const taskId = taskSelect?.value || '';
+    const taskName =
+      selectedOption?.getAttribute('data-task-name') ||
+      selectedOption?.textContent ||
+      '';
+
+    return {
+      srNo: row.querySelector('.task-sr')?.value || String(index + 1),
+      taskId,
+      taskName,
+      quantityDescription: row.querySelector('.task-quantity-description')?.value || '',
+      status: row.querySelector('.task-mom-status')?.value || ''
+    };
+  });
+}
+
 function collectAttendeeRows() {
   return [...attendeeTableBody.querySelectorAll('tr')].map((row, index) => {
     return {
@@ -884,6 +1138,7 @@ function collectMomPayload() {
     elegrowRepresentative: document.getElementById('elegrowRepresentative').value,
     clientRepresentative: document.getElementById('clientRepresentative').value,
     agendaRows: collectAgendaRows(),
+    taskRows: collectTaskRows(),
     attendeeRows: collectAttendeeRows(),
     organizationAddress: document.getElementById('organizationAddress').value
   };
@@ -1020,6 +1275,7 @@ closeProjectModal.addEventListener('click', () => {
 });
 
 addAgendaRowBtn.addEventListener('click', () => addAgendaRow());
+addTaskRowBtn.addEventListener('click', () => addTaskRow());
 addAttendeeRowBtn.addEventListener('click', () => addAttendeeRow());
 
 momForm.addEventListener('submit', (event) => {

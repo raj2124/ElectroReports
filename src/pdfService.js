@@ -86,6 +86,55 @@ function drawAgendaTable(doc, rows) {
   doc.y = y + 6;
 }
 
+function drawTaskTable(doc, rows) {
+  const tableX = 40;
+  let y = doc.y;
+  const rowHeight = 28;
+  const widths = [45, 180, 170, 120];
+  const headers = ['Sr. No', 'Tasks', 'Quantity/Description', 'Status'];
+
+  function drawHeaderOrRow(values, isHeader = false) {
+    let x = tableX;
+    for (let i = 0; i < widths.length; i += 1) {
+      doc
+        .rect(x, y, widths[i], rowHeight)
+        .lineWidth(0.8)
+        .strokeColor('#475569')
+        .stroke();
+      doc
+        .font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(9)
+        .fillColor('#0f172a')
+        .text(safeText(values[i]), x + 4, y + 8, {
+          width: widths[i] - 8,
+          height: rowHeight - 6,
+          ellipsis: true
+        });
+      x += widths[i];
+    }
+    y += rowHeight;
+  }
+
+  drawHeaderOrRow(headers, true);
+  const effectiveRows = rows && rows.length
+    ? rows
+    : [{ srNo: '1', taskName: '', quantityDescription: '', status: '' }];
+
+  for (const row of effectiveRows) {
+    if (y > 740) {
+      doc.addPage();
+      y = 60;
+      drawHeaderOrRow(headers, true);
+    }
+    drawHeaderOrRow(
+      [row.srNo, row.taskName || row.taskId || '', row.quantityDescription, row.status],
+      false
+    );
+  }
+
+  doc.y = y + 6;
+}
+
 function drawAttendeeTable(doc, rows) {
   const tableX = 40;
   let y = doc.y;
@@ -137,7 +186,7 @@ function generateFileName() {
 function drawDigitalDeclarationBlock(doc, mom, authenticity = {}) {
   ensurePageSpace(doc, 150);
 
-  sectionTitle(doc, '4. ORGANIZATION & AUTHENTICITY');
+  sectionTitle(doc, 'Organization & Authenticity');
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text('Organization Address:', {
     width: 180
   });
@@ -222,6 +271,9 @@ async function generateMomPdf(mom, outputDir, authenticity = {}) {
 
     sectionTitle(doc, '3. AGENDA');
     drawAgendaTable(doc, mom.agendaRows);
+
+    sectionTitle(doc, '4. TASKS');
+    drawTaskTable(doc, mom.taskRows);
 
     sectionTitle(doc, 'Attendees');
     drawAttendeeTable(doc, mom.attendeeRows);
