@@ -1162,18 +1162,20 @@ function toggleEmailFields() {
   emailFields.classList.toggle('hidden', !optSendEmail.checked);
 }
 
-function printPdfFromUrl(url) {
+function printPdfFromUrl(url, existingWindow = null) {
   const fullUrl = new URL(url, window.location.origin).toString();
-  const printWindow = window.open(fullUrl, '_blank');
+  const printWindow = existingWindow || window.open('about:blank', '_blank');
   if (!printWindow) {
     showToast('Popup blocked. Please allow popups to print.', 'error');
-    return;
+    return false;
   }
 
+  printWindow.location.href = fullUrl;
   printWindow.addEventListener('load', () => {
     printWindow.focus();
     printWindow.print();
   });
+  return true;
 }
 
 function closeAllDialogs() {
@@ -1321,6 +1323,10 @@ confirmSubmitBtn.addEventListener('click', async () => {
   confirmSubmitBtn.disabled = true;
   confirmSubmitBtn.textContent = 'Submitting...';
 
+  const needsPdfWindow = Boolean(options.generatePdf || options.printPdf || options.sendEmail);
+  const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
+  const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
+
   try {
     const response = await fetch('/api/mom/submit', {
       method: 'POST',
@@ -1347,34 +1353,47 @@ confirmSubmitBtn.addEventListener('click', async () => {
     showToast('M.O.M submitted successfully.');
     incrementSubmittedCount();
 
+    const pdfAbsoluteUrl = String(result.pdfAbsoluteUrl || '').trim() || (pdfUrl ? new URL(pdfUrl, window.location.origin).toString() : '');
     let pdfOpened = false;
 
-    if (pdfUrl && (options.generatePdf || options.sendEmail)) {
-      window.open(pdfUrl, '_blank');
+    if (pdfAbsoluteUrl && (options.generatePdf || options.sendEmail) && preopenedPdfWindow) {
+      preopenedPdfWindow.location.href = pdfAbsoluteUrl;
+      pdfOpened = true;
+    } else if (pdfAbsoluteUrl && options.generatePdf) {
+      window.location.href = pdfAbsoluteUrl;
       pdfOpened = true;
     }
 
-    if (pdfUrl && options.printPdf) {
-      printPdfFromUrl(pdfUrl);
+    if (pdfAbsoluteUrl && options.printPdf) {
+      const printed = printPdfFromUrl(pdfAbsoluteUrl, preopenedPdfWindow && !pdfOpened ? preopenedPdfWindow : null);
+      pdfOpened = pdfOpened || printed;
     }
 
     if (options.sendEmail) {
       const emailDraft = result.emailDraft || {};
       const outlookUrl = String(emailDraft.outlookComposeUrl || '').trim();
-      const fallbackMailto = String(emailDraft.mailtoUrl || '').trim();
-      const draftWindow = outlookUrl ? window.open(outlookUrl, '_blank') : null;
-
-      if (!draftWindow && fallbackMailto) {
-        window.location.href = fallbackMailto;
+      if (!outlookUrl) {
+        showToast('Outlook draft URL unavailable from server.', 'error');
+      } else if (preopenedOutlookWindow) {
+        preopenedOutlookWindow.location.href = outlookUrl;
+      } else {
+        // Force Outlook compose in same tab instead of falling back to default mail apps.
+        window.location.href = outlookUrl;
       }
 
       if (pdfOpened) {
-        showToast('Outlook draft opened. Attach the opened PDF and send when ready.');
+        showToast('Outlook draft opened. Attach the generated PDF and send.');
       } else {
-        showToast('Outlook draft opened. Please generate/download PDF and attach before sending.');
+        showToast('Outlook draft opened. Generate/download PDF and attach before sending.');
       }
     }
   } catch (error) {
+    if (preopenedPdfWindow) {
+      preopenedPdfWindow.close();
+    }
+    if (preopenedOutlookWindow) {
+      preopenedOutlookWindow.close();
+    }
     showToast(error.message, 'error');
   } finally {
     confirmSubmitBtn.disabled = false;

@@ -76,17 +76,10 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
   const defaultBodyLines = [
     'Dear Team,',
     '',
-    `Please find the Minutes of Meeting details for "${mom.projectName}" below:`,
-    `- Meeting Title: ${mom.meetingTitle || '-'}`,
-    `- Project: ${mom.projectName || '-'}`,
-    `- Date: ${mom.meetingDate || '-'}`,
-    `- Time: ${mom.meetingTime || '-'}`,
-    `- Location: ${mom.meetingLocation || '-'}`,
-    '',
+    `Please find the Minutes of Meeting for "${mom.projectName}" below.`,
     `PDF Link: ${pdfAbsoluteUrl}`,
     '',
-    'Note: Due to browser and Outlook security limits, the PDF cannot be auto-attached by web link.',
-    'Please attach the downloaded PDF manually before sending.',
+    'Please attach the generated PDF manually before sending.',
     '',
     'Regards,',
     'M.O.M App'
@@ -97,22 +90,16 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     ? `${customBody}\n\nPDF Link: ${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.`
     : defaultBodyLines.join('\n');
 
-  const outlookParams = new URLSearchParams();
+  const outlookQueryParts = [];
   if (to) {
-    outlookParams.set('to', to);
+    outlookQueryParts.push(`to=${encodeURIComponent(to)}`);
   }
   if (cc) {
-    outlookParams.set('cc', cc);
+    outlookQueryParts.push(`cc=${encodeURIComponent(cc)}`);
   }
-  outlookParams.set('subject', subject);
-  outlookParams.set('body', body);
-
-  const mailtoParams = new URLSearchParams();
-  if (cc) {
-    mailtoParams.set('cc', cc);
-  }
-  mailtoParams.set('subject', subject);
-  mailtoParams.set('body', body);
+  outlookQueryParts.push(`subject=${encodeURIComponent(subject)}`);
+  outlookQueryParts.push(`body=${encodeURIComponent(body)}`);
+  const outlookQuery = outlookQueryParts.join('&');
 
   return {
     mode: 'outlook-draft',
@@ -121,8 +108,7 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     subject,
     body,
     pdfAbsoluteUrl,
-    outlookComposeUrl: `https://outlook.office.com/mail/deeplink/compose?${outlookParams.toString()}`,
-    mailtoUrl: `mailto:${encodeURIComponent(to)}?${mailtoParams.toString()}`,
+    outlookComposeUrl: `https://outlook.office.com/mail/deeplink/compose?${outlookQuery}`,
     attachmentAutoSupported: false,
     attachmentNote:
       'Attachment cannot be auto-added by browser deeplink. The generated PDF is opened for manual attachment.'
