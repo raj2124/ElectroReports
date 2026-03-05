@@ -12,7 +12,6 @@ const COLORS = {
   brandBlueDark: '#0b2f62',
   brandBlueSoft: '#eaf3ff',
   brandLine: '#8db5db',
-  brandPurple: '#5f2a8a',
   text: '#10243f',
   textMuted: '#4f6780',
   white: '#ffffff',
@@ -113,18 +112,6 @@ function drawTopHeader(doc, mom, authenticity = {}) {
     .lineWidth(2.6)
     .strokeColor(COLORS.brandBlue)
     .stroke();
-  doc
-    .moveTo(x + 12, lineY - 7)
-    .lineTo(x + 175, lineY - 7)
-    .lineWidth(1.8)
-    .strokeColor(COLORS.brandPurple)
-    .stroke();
-  doc
-    .moveTo(x + PAGE.contentWidth - 175, lineY - 7)
-    .lineTo(x + PAGE.contentWidth - 12, lineY - 7)
-    .lineWidth(1.8)
-    .strokeColor(COLORS.brandPurple)
-    .stroke();
 
   doc
     .font('Helvetica-Bold')
@@ -135,27 +122,18 @@ function drawTopHeader(doc, mom, authenticity = {}) {
       align: 'center'
     });
 
-  doc
-    .font('Helvetica')
-    .fontSize(10.5)
-    .fillColor(COLORS.textMuted)
-    .text(safeText(mom.projectName), x, lineY + 40, {
-      width: PAGE.contentWidth,
-      align: 'center'
-    });
-
-  const cardY = lineY + 66;
-  const gap = 8;
-  const cardW = (PAGE.contentWidth - gap * 2) / 3;
+  const cardY = lineY + 58;
+  const gap = 10;
+  const cardW = (PAGE.contentWidth - gap) / 2;
   const cardH = 42;
   const cards = [
     { label: 'Zoho Project Number', value: normalizeProjectNumber(mom.projectNoWorkOrderNo) },
-    { label: 'Owner', value: mom.projectOwner || mom.elegrowRepresentative || '-' },
-    { label: 'Status', value: mom.projectStatus || '-' }
+    { label: 'Owner', value: mom.projectOwner || mom.elegrowRepresentative || '-' }
   ];
+  const cardsStartX = x + (PAGE.contentWidth - (cards.length * cardW + (cards.length - 1) * gap)) / 2;
 
   cards.forEach((card, index) => {
-    const cx = x + index * (cardW + gap);
+    const cx = cardsStartX + index * (cardW + gap);
     doc
       .roundedRect(cx, cardY, cardW, cardH, 6)
       .lineWidth(1)
