@@ -115,6 +115,8 @@ function createRecordsStore(config) {
       projectNoWorkOrderNo: String(input.projectNoWorkOrderNo || '').trim(),
       clientName: String(input.clientName || '').trim(),
       meetingDate: String(input.meetingDate || '').trim(),
+      meetingTime: String(input.meetingTime || '').trim(),
+      meetingLocation: String(input.meetingLocation || '').trim(),
       output: {
         generatePdf: Boolean(input.output?.generatePdf),
         printPdf: Boolean(input.output?.printPdf),

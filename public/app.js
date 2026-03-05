@@ -1141,44 +1141,30 @@ function getRecordDaysLeft(record) {
 function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
+  const projectRef = getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName);
   const subject =
     String(options.emailSubject || '').trim() ||
-    `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
-  const customBody = String(options.emailBody || '').trim();
+    `M.O.M-${projectRef}-${formatMeetingDateForSubject(record.meetingDate)}`;
+  const body = buildProfessionalBody({
+    projectRef,
+    meetingTitle: record.meetingTitle,
+    meetingDate: formatMeetingDateForBody(record.meetingDate),
+    meetingTime: record.meetingTime || '-',
+    meetingLocation: record.meetingLocation || '-',
+    pdfUrl: pdfAbsoluteUrl
+  });
 
-  const defaultBody = [
-    'Dear Sir / Madam,',
-    '',
-    `Please find below the Minutes of Meeting for project ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}.`,
-    '',
-    `Project: ${record.projectName || '-'}`,
-    `Meeting Title: ${record.meetingTitle || '-'}`,
-    `Meeting Date: ${record.meetingDate || '-'}`,
-    '',
-    'PDF Link:',
-    pdfAbsoluteUrl,
-    '',
-    'Please attach the generated PDF manually before sending.',
-    '',
-    'Best regards,',
-    'ETPL AI_M.O.M System'
-  ].join('\n');
-
-  const body = customBody
-    ? `${customBody}\n\nPDF Link:\n${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.\n\nBest regards,\nETPL AI_M.O.M System`
-    : defaultBody;
-
-  const params = new URLSearchParams();
+  const queryParts = [];
   if (to) {
-    params.set('to', to);
+    queryParts.push(`to=${encodeURIComponent(to)}`);
   }
   if (cc) {
-    params.set('cc', cc);
+    queryParts.push(`cc=${encodeURIComponent(cc)}`);
   }
-  params.set('subject', subject);
-  params.set('body', body);
+  queryParts.push(`subject=${encodeURIComponent(subject)}`);
+  queryParts.push(`body=${encodeURIComponent(body)}`);
 
-  return `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`;
+  return `https://outlook.office.com/mail/deeplink/compose?${queryParts.join('&')}`;
 }
 
 function getRecordOutputBadges(record) {
@@ -1363,28 +1349,72 @@ function getProjectRefForSubject(projectNoWorkOrderNo, projectName = '') {
   return fallback || 'Project';
 }
 
-function buildDeliveryBodyDraft(mom) {
-  const projectRef = getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName);
+function formatMeetingDateForSubject(rawDate) {
+  const value = String(rawDate || '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match) {
+    return `${match[1]}/${match[2]}/${match[3]}`;
+  }
+  return value || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+}
+
+function formatMeetingDateForBody(rawDate) {
+  const value = String(rawDate || '').trim();
+  const parsed = new Date(value);
+  if (!value || Number.isNaN(parsed.getTime())) {
+    return value || '-';
+  }
+  return parsed.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+function buildProfessionalBody({
+  projectRef,
+  meetingTitle,
+  meetingDate,
+  meetingTime,
+  meetingLocation,
+  pdfUrl
+}) {
   return [
     'Dear Sir / Madam,',
     '',
-    `Please find below the Minutes of Meeting for project ${projectRef}.`,
+    `Please find the Minutes of Meeting (MoM) for the project ${projectRef}, held as per the details below.`,
     '',
-    `Project: ${mom.projectName || '-'}`,
-    `Meeting Title: ${mom.meetingTitle || '-'}`,
-    `Meeting Date: ${mom.meetingDate || '-'}`,
-    `Meeting Time: ${mom.meetingTime || '-'}`,
-    `Meeting Location: ${mom.meetingLocation || '-'}`,
+    `Project: ${projectRef}`,
+    `Meeting Title: ${meetingTitle || '-'}`,
+    `Meeting Date: ${meetingDate || '-'}`,
+    `Meeting Time: ${meetingTime || '-'}`,
+    `Meeting Location: ${meetingLocation || '-'}`,
     '',
-    'PDF Link will be auto-added by the system in the draft.',
+    'The detailed Minutes of Meeting are attached in the PDF for your reference.',
+    'For convenience, you may also access the document using the link below:',
+    pdfUrl,
     '',
+    'Please review the document and feel free to let us know if any clarifications or additions are required.',
     'Best regards,',
-    'ETPL AI_M.O.M System'
+    'ETPL_AI MoM System'
   ].join('\n');
 }
 
+function buildDeliveryBodyDraft(mom) {
+  const projectRef = getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName);
+  return buildProfessionalBody({
+    projectRef,
+    meetingTitle: mom.meetingTitle,
+    meetingDate: formatMeetingDateForBody(mom.meetingDate),
+    meetingTime: mom.meetingTime,
+    meetingLocation: mom.meetingLocation,
+    pdfUrl: `${window.location.origin}/generated-pdfs/MOM-<auto-generated>.pdf`
+  });
+}
+
 function prefillDeliveryEmailFields(mom) {
-  const subject = `Minutes of Meeting - ${getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName)}`;
+  const projectRef = getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName);
+  const subject = `M.O.M-${projectRef}-${formatMeetingDateForSubject(mom.meetingDate)}`;
   document.getElementById('emailSubject').value = subject;
   document.getElementById('emailBody').value = buildDeliveryBodyDraft(mom);
 }
@@ -1417,21 +1447,16 @@ function openRecordExportModal(record) {
   recordOptSendEmail.checked = false;
   recordEmailTo.value = '';
   recordEmailCc.value = '';
-  recordEmailSubject.value = `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
-  recordEmailBody.value = [
-    'Dear Sir / Madam,',
-    '',
-    `Please find below the Minutes of Meeting for project ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}.`,
-    '',
-    `Project: ${record.projectName || '-'}`,
-    `Meeting Title: ${record.meetingTitle || '-'}`,
-    `Meeting Date: ${record.meetingDate || '-'}`,
-    '',
-    'PDF Link will be auto-added by the system in the draft.',
-    '',
-    'Best regards,',
-    'ETPL AI_M.O.M System'
-  ].join('\n');
+  const projectRef = getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName);
+  recordEmailSubject.value = `M.O.M-${projectRef}-${formatMeetingDateForSubject(record.meetingDate)}`;
+  recordEmailBody.value = buildProfessionalBody({
+    projectRef,
+    meetingTitle: record.meetingTitle,
+    meetingDate: formatMeetingDateForBody(record.meetingDate),
+    meetingTime: record.meetingTime || '-',
+    meetingLocation: record.meetingLocation || '-',
+    pdfUrl: String(record.pdfAbsoluteUrl || '').trim() || `${window.location.origin}${record.pdfUrl || '/generated-pdfs/MOM-<auto-generated>.pdf'}`
+  });
   recordExportMeta.textContent = `Document ID: ${record.documentId || '-'} | Project: ${record.projectName || '-'}`;
   toggleRecordEmailFields();
 

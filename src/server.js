@@ -100,53 +100,72 @@ function getProjectRefForEmailSubject(mom) {
   return projectName || 'Project';
 }
 
+function formatMeetingDateForSubject(rawDate) {
+  const value = String(rawDate || '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match) {
+    return `${match[1]}/${match[2]}/${match[3]}`;
+  }
+  return value || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+}
+
+function formatMeetingDateForBody(rawDate) {
+  const value = String(rawDate || '').trim();
+  const parsed = new Date(value);
+  if (!value || Number.isNaN(parsed.getTime())) {
+    return value || '-';
+  }
+  return parsed.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
 function buildOutlookDraft({ mom, options, pdfUrl }) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
+  const projectRef = getProjectRefForEmailSubject(mom);
   const subject =
-    String(options.emailSubject || '').trim() || `Minutes of Meeting - ${getProjectRefForEmailSubject(mom)}`;
+    String(options.emailSubject || '').trim() ||
+    `M.O.M-${projectRef}-${formatMeetingDateForSubject(mom.meetingDate)}`;
   const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
 
-  const projectRef = getProjectRefForEmailSubject(mom);
   const meetingTitle = String(mom.meetingTitle || '-').trim() || '-';
-  const meetingDate = String(mom.meetingDate || '-').trim() || '-';
+  const meetingDate = formatMeetingDateForBody(mom.meetingDate);
   const meetingTime = String(mom.meetingTime || '-').trim() || '-';
   const meetingLocation = String(mom.meetingLocation || '-').trim() || '-';
 
-  const defaultBodyLines = [
+  const body = [
     'Dear Sir / Madam,',
     '',
-    `Please find below the Minutes of Meeting for project ${projectRef}.`,
+    `Please find the Minutes of Meeting (MoM) for the project ${projectRef}, held as per the details below.`,
     '',
-    `Project: ${String(mom.projectName || '-').trim() || '-'}`,
+    `Project: ${projectRef}`,
     `Meeting Title: ${meetingTitle}`,
     `Meeting Date: ${meetingDate}`,
     `Meeting Time: ${meetingTime}`,
     `Meeting Location: ${meetingLocation}`,
     '',
-    'PDF Link:',
+    'The detailed Minutes of Meeting are attached in the PDF for your reference.',
+    'For convenience, you may also access the document using the link below:',
     pdfAbsoluteUrl,
     '',
-    'Please attach the generated PDF manually before sending.',
-    '',
+    'Please review the document and feel free to let us know if any clarifications or additions are required.',
     'Best regards,',
-    'ETPL AI_M.O.M System'
-  ];
+    'ETPL_AI MoM System'
+  ].join('\n');
 
-  const customBody = String(options.emailBody || '').trim();
-  const body = customBody
-    ? `${customBody}\n\nPDF Link:\n${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.\n\nBest regards,\nETPL AI_M.O.M System`
-    : defaultBodyLines.join('\n');
-  const params = new URLSearchParams();
+  const queryParts = [];
   if (to) {
-    params.set('to', to);
+    queryParts.push(`to=${encodeURIComponent(to)}`);
   }
   if (cc) {
-    params.set('cc', cc);
+    queryParts.push(`cc=${encodeURIComponent(cc)}`);
   }
-  params.set('subject', subject);
-  params.set('body', body);
-  const outlookQuery = params.toString();
+  queryParts.push(`subject=${encodeURIComponent(subject)}`);
+  queryParts.push(`body=${encodeURIComponent(body)}`);
+  const outlookQuery = queryParts.join('&');
 
   return {
     mode: 'outlook-draft',
@@ -350,6 +369,8 @@ app.post('/api/mom/submit', async (req, res) => {
       projectNoWorkOrderNo: mom.projectNoWorkOrderNo,
       clientName: mom.clientName,
       meetingDate: mom.meetingDate,
+      meetingTime: mom.meetingTime,
+      meetingLocation: mom.meetingLocation,
       output: {
         generatePdf: Boolean(options.generatePdf),
         printPdf: Boolean(options.printPdf),
