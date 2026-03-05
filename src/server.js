@@ -107,13 +107,21 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     String(options.emailSubject || '').trim() || `Minutes of Meeting - ${getProjectRefForEmailSubject(mom)}`;
   const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
 
+  const pdfLinkLines = [
+    'Open PDF:',
+    pdfAbsoluteUrl,
+    '',
+    '(If draft view does not auto-link, copy this URL and paste in browser.)'
+  ];
+
   const defaultBodyLines = [
     'Dear Team,',
     '',
     `Please find the Minutes of Meeting for "${mom.projectName}" below.`,
-    `PDF Link: ${pdfAbsoluteUrl}`,
     '',
-    'Please attach the generated PDF manually before sending.',
+    ...pdfLinkLines,
+    '',
+    'Please attach the generated PDF manually before sending (browser security limit).',
     '',
     'Regards,',
     'M.O.M App'
@@ -121,19 +129,18 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
 
   const customBody = String(options.emailBody || '').trim();
   const body = customBody
-    ? `${customBody}\n\nPDF Link: ${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.`
+    ? `${customBody}\n\n${pdfLinkLines.join('\n')}\n\nPlease attach the generated PDF manually before sending (browser security limit).`
     : defaultBodyLines.join('\n');
-
-  const outlookQueryParts = [];
+  const params = new URLSearchParams();
   if (to) {
-    outlookQueryParts.push(`to=${encodeURIComponent(to)}`);
+    params.set('to', to);
   }
   if (cc) {
-    outlookQueryParts.push(`cc=${encodeURIComponent(cc)}`);
+    params.set('cc', cc);
   }
-  outlookQueryParts.push(`subject=${encodeURIComponent(subject)}`);
-  outlookQueryParts.push(`body=${encodeURIComponent(body)}`);
-  const outlookQuery = outlookQueryParts.join('&');
+  params.set('subject', subject);
+  params.set('body', body);
+  const outlookQuery = params.toString();
 
   return {
     mode: 'outlook-draft',

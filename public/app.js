@@ -1146,20 +1146,28 @@ function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
     `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
   const customBody = String(options.emailBody || '').trim();
 
+  const pdfLinkLines = [
+    'Open PDF:',
+    pdfAbsoluteUrl,
+    '',
+    '(If draft view does not auto-link, copy this URL and paste in browser.)'
+  ];
+
   const defaultBody = [
     'Dear Team,',
     '',
     `Please find the Minutes of Meeting for "${record.projectName || '-'}" below.`,
-    `PDF Link: ${pdfAbsoluteUrl}`,
     '',
-    'Please attach the generated PDF manually before sending.',
+    ...pdfLinkLines,
+    '',
+    'Please attach the generated PDF manually before sending (browser security limit).',
     '',
     'Regards,',
     'M.O.M App'
   ].join('\n');
 
   const body = customBody
-    ? `${customBody}\n\nPDF Link: ${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.`
+    ? `${customBody}\n\n${pdfLinkLines.join('\n')}\n\nPlease attach the generated PDF manually before sending (browser security limit).`
     : defaultBody;
 
   const params = new URLSearchParams();
@@ -1358,6 +1366,7 @@ function getProjectRefForSubject(projectNoWorkOrderNo, projectName = '') {
 }
 
 function buildDeliveryBodyDraft(mom) {
+  const pdfHint = '(PDF link will be auto-added by the system in the draft.)';
   return [
     'Dear Team,',
     '',
@@ -1366,7 +1375,7 @@ function buildDeliveryBodyDraft(mom) {
     `Meeting Date: ${mom.meetingDate || '-'}`,
     `Meeting Time: ${mom.meetingTime || '-'}`,
     '',
-    'PDF Link will be included automatically.',
+    pdfHint,
     '',
     'Regards,',
     'ETPL AI_M.O.M System'
