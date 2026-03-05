@@ -2,6 +2,33 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 
+const PAGE = {
+  margin: 40,
+  contentWidth: 515
+};
+
+const COLORS = {
+  brandBlue: '#0f4f98',
+  brandBlueDark: '#0b2f62',
+  brandBlueSoft: '#eaf3ff',
+  brandLine: '#8db5db',
+  brandPurple: '#5f2a8a',
+  text: '#10243f',
+  textMuted: '#4f6780',
+  white: '#ffffff',
+  tableHeaderText: '#ffffff',
+  rowAlt: '#f6faff',
+  blockBg: '#f1f7ff'
+};
+
+const DEFAULT_ORG_ADDRESS =
+  '302, Sangini Aspire, Beside Sanskruti Township Near Pal RTO, Pal-Hajira Road, Pal Gam, Surat, Gujarat - 395009';
+
+const DIGITAL_DECLARATION_DEFAULT =
+  'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
+
+const LOGO_PATH = path.join(__dirname, '..', 'public', 'assets', 'elegrow-logo-full.png');
+
 function safeText(value) {
   if (value === undefined || value === null || value === '') {
     return '-';
@@ -15,201 +42,380 @@ function ensureDir(dirPath) {
   }
 }
 
-function ensurePageSpace(doc, requiredHeight = 80) {
-  const usableBottom = doc.page.height - doc.page.margins.bottom;
-  if (doc.y + requiredHeight > usableBottom) {
-    doc.addPage();
-  }
-}
-
-function sectionTitle(doc, text) {
-  doc.moveDown(0.6);
-  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f172a').text(text, { underline: false });
-  doc.moveDown(0.2);
-  doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#94a3b8').lineWidth(0.8).stroke();
-  doc.moveDown(0.5);
-}
-
-function drawFieldRow(doc, leftLabel, leftValue, rightLabel, rightValue) {
-  const y = doc.y;
-  doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(`${leftLabel}:`, 40, y, {
-    width: 120
-  });
-  doc.font('Helvetica').text(safeText(leftValue), 165, y, { width: 155 });
-
-  doc.font('Helvetica-Bold').text(`${rightLabel}:`, 320, y, { width: 120 });
-  doc.font('Helvetica').text(safeText(rightValue), 445, y, { width: 110 });
-
-  doc.moveDown(1);
-}
-
-function drawAgendaTable(doc, rows) {
-  const tableX = 40;
-  let y = doc.y;
-  const rowHeight = 28;
-  const widths = [45, 185, 165, 120];
-  const headers = ['Sr. No', 'Agenda', 'Action Plan', 'Responsibility'];
-
-  function drawHeaderOrRow(values, isHeader = false) {
-    let x = tableX;
-    for (let i = 0; i < widths.length; i += 1) {
-      doc
-        .rect(x, y, widths[i], rowHeight)
-        .lineWidth(0.8)
-        .strokeColor('#475569')
-        .stroke();
-      doc
-        .font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(9)
-        .fillColor('#0f172a')
-        .text(safeText(values[i]), x + 4, y + 8, {
-          width: widths[i] - 8,
-          height: rowHeight - 6,
-          ellipsis: true
-        });
-      x += widths[i];
-    }
-    y += rowHeight;
-  }
-
-  drawHeaderOrRow(headers, true);
-  const effectiveRows = rows && rows.length ? rows : [{ srNo: '1', agenda: '', actionPlan: '', responsibility: '' }];
-  for (const row of effectiveRows) {
-    if (y > 740) {
-      doc.addPage();
-      y = 60;
-      drawHeaderOrRow(headers, true);
-    }
-    drawHeaderOrRow([row.srNo, row.agenda, row.actionPlan, row.responsibility], false);
-  }
-
-  doc.y = y + 6;
-}
-
-function drawTaskTable(doc, rows) {
-  const tableX = 40;
-  let y = doc.y;
-  const rowHeight = 28;
-  const widths = [45, 150, 130, 110, 80];
-  const headers = ['Sr. No', 'Tasks', 'Quantity/Description', 'Remarks', 'Status'];
-
-  function drawHeaderOrRow(values, isHeader = false) {
-    let x = tableX;
-    for (let i = 0; i < widths.length; i += 1) {
-      doc
-        .rect(x, y, widths[i], rowHeight)
-        .lineWidth(0.8)
-        .strokeColor('#475569')
-        .stroke();
-      doc
-        .font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(9)
-        .fillColor('#0f172a')
-        .text(safeText(values[i]), x + 4, y + 8, {
-          width: widths[i] - 8,
-          height: rowHeight - 6,
-          ellipsis: true
-        });
-      x += widths[i];
-    }
-    y += rowHeight;
-  }
-
-  drawHeaderOrRow(headers, true);
-  const effectiveRows = rows && rows.length
-    ? rows
-    : [{ srNo: '1', taskName: '', quantityDescription: '', remarks: '', status: '' }];
-
-  for (const row of effectiveRows) {
-    if (y > 740) {
-      doc.addPage();
-      y = 60;
-      drawHeaderOrRow(headers, true);
-    }
-    drawHeaderOrRow(
-      [row.srNo, row.taskName || row.taskId || '', row.quantityDescription, row.remarks, row.status],
-      false
-    );
-  }
-
-  doc.y = y + 6;
-}
-
-function drawAttendeeTable(doc, rows) {
-  const tableX = 40;
-  let y = doc.y;
-  const rowHeight = 28;
-  const widths = [55, 230, 230];
-  const headers = ['Sr.', 'Elegrow Technology (Name)', 'Client (Name)'];
-
-  function draw(values, isHeader = false) {
-    let x = tableX;
-    for (let i = 0; i < widths.length; i += 1) {
-      doc
-        .rect(x, y, widths[i], rowHeight)
-        .lineWidth(0.8)
-        .strokeColor('#475569')
-        .stroke();
-      doc
-        .font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(9)
-        .fillColor('#0f172a')
-        .text(safeText(values[i]), x + 4, y + 7, {
-          width: widths[i] - 8,
-          height: rowHeight - 6,
-          ellipsis: true
-        });
-      x += widths[i];
-    }
-    y += rowHeight;
-  }
-
-  draw(headers, true);
-  const effectiveRows = rows && rows.length ? rows : [{ srNo: '1', elegrowName: '', clientName: '' }];
-  for (const row of effectiveRows) {
-    if (y > 740) {
-      doc.addPage();
-      y = 60;
-      draw(headers, true);
-    }
-    draw([row.srNo, row.elegrowName, row.clientName], false);
-  }
-
-  doc.y = y;
-}
-
 function generateFileName() {
   const stamp = new Date().toISOString().replace(/[.:]/g, '-');
   return `MOM-${stamp}.pdf`;
 }
 
-function drawDigitalDeclarationBlock(doc, mom, authenticity = {}) {
-  ensurePageSpace(doc, 150);
+function normalizeProjectNumber(value) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '-';
+  }
+  return text.split('/')[0].trim() || text;
+}
 
-  sectionTitle(doc, 'Organization & Authenticity');
-  doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text('Organization Address:', {
-    width: 180
-  });
-  doc.moveDown(0.2);
-  doc.font('Helvetica').fontSize(10).fillColor('#0f172a').text(safeText(mom.organizationAddress), {
-    width: 500
-  });
-  doc.moveDown(0.6);
+function ensurePageSpace(doc, requiredHeight = 80) {
+  const usableBottom = doc.page.height - doc.page.margins.bottom;
+  if (doc.y + requiredHeight > usableBottom) {
+    doc.addPage();
+    drawHeaderBarOnly(doc);
+  }
+}
 
-  const statement =
-    String(authenticity.statement || '').trim() ||
-    'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
-  doc.font('Helvetica').fontSize(9.8).fillColor('#1e293b').text(statement, {
-    width: 500
-  });
-  doc.moveDown(0.4);
+function drawHeaderBarOnly(doc) {
+  const x = PAGE.margin;
+  const y = PAGE.margin - 2;
+  doc
+    .moveTo(x, y)
+    .lineTo(x + PAGE.contentWidth, y)
+    .lineWidth(2.2)
+    .strokeColor(COLORS.brandBlue)
+    .stroke();
+}
 
-  const line = String(authenticity.line || '').trim();
-  if (line) {
-    doc.font('Courier').fontSize(8.8).fillColor('#334155').text(line, {
-      width: 500
+function drawTopHeader(doc, mom, authenticity = {}) {
+  const x = PAGE.margin;
+  const y = 24;
+  const rightWidth = 250;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, x, y, { fit: [230, 58], align: 'left', valign: 'top' });
+  } else {
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(18)
+      .fillColor(COLORS.brandBlueDark)
+      .text('ELEGROW TECHNOLOGY', x, y + 10, { width: 230 });
+  }
+
+  doc
+    .font('Helvetica')
+    .fontSize(8.8)
+    .fillColor(COLORS.textMuted)
+    .text(`Document ID: ${safeText(authenticity.documentId)}`, x + PAGE.contentWidth - rightWidth, y + 4, {
+      width: rightWidth,
+      align: 'right'
+    })
+    .text(`Generated: ${safeText(authenticity.generatedAt)}`, x + PAGE.contentWidth - rightWidth, y + 18, {
+      width: rightWidth,
+      align: 'right'
+    })
+    .text(`Generated by: ${safeText(authenticity.generatedBy)}`, x + PAGE.contentWidth - rightWidth, y + 32, {
+      width: rightWidth,
+      align: 'right'
+    });
+
+  const lineY = y + 66;
+  doc
+    .moveTo(x, lineY)
+    .lineTo(x + PAGE.contentWidth, lineY)
+    .lineWidth(2.6)
+    .strokeColor(COLORS.brandBlue)
+    .stroke();
+  doc
+    .moveTo(x + 12, lineY - 7)
+    .lineTo(x + 175, lineY - 7)
+    .lineWidth(1.8)
+    .strokeColor(COLORS.brandPurple)
+    .stroke();
+  doc
+    .moveTo(x + PAGE.contentWidth - 175, lineY - 7)
+    .lineTo(x + PAGE.contentWidth - 12, lineY - 7)
+    .lineWidth(1.8)
+    .strokeColor(COLORS.brandPurple)
+    .stroke();
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(22)
+    .fillColor(COLORS.brandBlueDark)
+    .text('Minutes of Meeting (M.O.M)', x, lineY + 12, {
+      width: PAGE.contentWidth,
+      align: 'center'
+    });
+
+  doc
+    .font('Helvetica')
+    .fontSize(10.5)
+    .fillColor(COLORS.textMuted)
+    .text(safeText(mom.projectName), x, lineY + 40, {
+      width: PAGE.contentWidth,
+      align: 'center'
+    });
+
+  const cardY = lineY + 66;
+  const gap = 8;
+  const cardW = (PAGE.contentWidth - gap * 2) / 3;
+  const cardH = 42;
+  const cards = [
+    { label: 'Zoho Project Number', value: normalizeProjectNumber(mom.projectNoWorkOrderNo) },
+    { label: 'Owner', value: mom.projectOwner || mom.elegrowRepresentative || '-' },
+    { label: 'Status', value: mom.projectStatus || '-' }
+  ];
+
+  cards.forEach((card, index) => {
+    const cx = x + index * (cardW + gap);
+    doc
+      .roundedRect(cx, cardY, cardW, cardH, 6)
+      .lineWidth(1)
+      .fillAndStroke(COLORS.brandBlueSoft, COLORS.brandLine);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(7.9)
+      .fillColor(COLORS.textMuted)
+      .text(card.label.toUpperCase(), cx + 8, cardY + 6, {
+        width: cardW - 16
+      });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10.8)
+      .fillColor(COLORS.brandBlueDark)
+      .text(safeText(card.value), cx + 8, cardY + 19, {
+        width: cardW - 16,
+        ellipsis: true
+      });
+  });
+
+  doc.y = cardY + cardH + 10;
+}
+
+function drawSectionTitle(doc, title) {
+  ensurePageSpace(doc, 34);
+  const x = PAGE.margin;
+  const y = doc.y;
+  doc
+    .roundedRect(x, y, PAGE.contentWidth, 24, 6)
+    .lineWidth(1)
+    .fillAndStroke(COLORS.brandBlueSoft, COLORS.brandLine);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(11.5)
+    .fillColor(COLORS.brandBlueDark)
+    .text(title, x + 10, y + 6, {
+      width: PAGE.contentWidth - 20
+    });
+  doc.y = y + 30;
+}
+
+function drawTwoColumnRows(doc, rows) {
+  const x = PAGE.margin;
+  const width = PAGE.contentWidth;
+  const halfWidth = width / 2;
+  const labelWidth = 122;
+  const pad = 8;
+
+  rows.forEach((row) => {
+    const leftValue = safeText(row.leftValue);
+    const rightValue = safeText(row.rightValue);
+
+    doc.font('Helvetica').fontSize(10);
+    const leftValueHeight = doc.heightOfString(leftValue, {
+      width: halfWidth - labelWidth - pad * 2
+    });
+    const rightValueHeight = doc.heightOfString(rightValue, {
+      width: halfWidth - labelWidth - pad * 2
+    });
+    const rowHeight = Math.max(30, Math.max(leftValueHeight, rightValueHeight) + 14);
+
+    ensurePageSpace(doc, rowHeight + 4);
+
+    const y = doc.y;
+    doc
+      .rect(x, y, width, rowHeight)
+      .lineWidth(1)
+      .fillAndStroke(COLORS.white, COLORS.brandLine);
+    doc
+      .moveTo(x + halfWidth, y)
+      .lineTo(x + halfWidth, y + rowHeight)
+      .lineWidth(1)
+      .strokeColor(COLORS.brandLine)
+      .stroke();
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9.5)
+      .fillColor(COLORS.brandBlueDark)
+      .text(`${row.leftLabel}:`, x + pad, y + 8, {
+        width: labelWidth - pad
+      });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(COLORS.text)
+      .text(leftValue, x + labelWidth, y + 8, {
+        width: halfWidth - labelWidth - pad * 2
+      });
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9.5)
+      .fillColor(COLORS.brandBlueDark)
+      .text(`${row.rightLabel}:`, x + halfWidth + pad, y + 8, {
+        width: labelWidth - pad
+      });
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(COLORS.text)
+      .text(rightValue, x + halfWidth + labelWidth, y + 8, {
+        width: halfWidth - labelWidth - pad * 2
+      });
+
+    doc.y = y + rowHeight;
+  });
+
+  doc.moveDown(0.35);
+}
+
+function drawStyledTable(doc, title, headers, widths, rows) {
+  drawSectionTitle(doc, title);
+
+  const x = PAGE.margin;
+  const headerHeight = 24;
+  let y = doc.y;
+
+  const normalizedRows = rows && rows.length ? rows : [headers.map(() => '')];
+
+  function drawHeaderRow(startY) {
+    let cx = x;
+    headers.forEach((header, index) => {
+      const cw = widths[index];
+      doc
+        .rect(cx, startY, cw, headerHeight)
+        .lineWidth(1)
+        .fillAndStroke(COLORS.brandBlue, COLORS.brandBlueDark);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(9)
+        .fillColor(COLORS.tableHeaderText)
+        .text(header, cx + 6, startY + 7, {
+          width: cw - 12,
+          align: 'left',
+          ellipsis: true
+        });
+      cx += cw;
     });
   }
+
+  ensurePageSpace(doc, headerHeight + 26);
+  drawHeaderRow(y);
+  y += headerHeight;
+
+  normalizedRows.forEach((rowValues, rowIndex) => {
+    const values = rowValues.map((value) => safeText(value));
+    doc.font('Helvetica').fontSize(9.2);
+    const heights = values.map((value, index) =>
+      doc.heightOfString(value, {
+        width: widths[index] - 10
+      })
+    );
+    const rowHeight = Math.max(24, Math.max(...heights) + 10);
+
+    if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage();
+      drawHeaderBarOnly(doc);
+      y = PAGE.margin + 12;
+      drawHeaderRow(y);
+      y += headerHeight;
+    }
+
+    const rowFill = rowIndex % 2 ? COLORS.rowAlt : COLORS.white;
+    let cx = x;
+    values.forEach((value, index) => {
+      const cw = widths[index];
+      doc
+        .rect(cx, y, cw, rowHeight)
+        .lineWidth(1)
+        .fillAndStroke(rowFill, COLORS.brandLine);
+      doc
+        .font('Helvetica')
+        .fontSize(9.2)
+        .fillColor(COLORS.text)
+        .text(value, cx + 5, y + 6, {
+          width: cw - 10
+        });
+      cx += cw;
+    });
+
+    y += rowHeight;
+  });
+
+  doc.y = y + 8;
+}
+
+function drawDigitalDeclaration(doc, authenticity = {}) {
+  const statement = String(authenticity.statement || '').trim() || DIGITAL_DECLARATION_DEFAULT;
+  const line = String(authenticity.line || '').trim();
+
+  doc.font('Helvetica').fontSize(10);
+  const statementHeight = doc.heightOfString(statement, {
+    width: PAGE.contentWidth - 24
+  });
+  const lineHeight = line
+    ? doc.heightOfString(line, {
+        width: PAGE.contentWidth - 24
+      })
+    : 0;
+  const blockHeight = statementHeight + lineHeight + 40;
+
+  drawSectionTitle(doc, '6. DIGITAL RECORD DECLARATION');
+  ensurePageSpace(doc, blockHeight + 12);
+
+  const x = PAGE.margin;
+  const y = doc.y;
+  doc
+    .roundedRect(x, y, PAGE.contentWidth, blockHeight, 8)
+    .lineWidth(1)
+    .fillAndStroke(COLORS.blockBg, COLORS.brandLine);
+
+  doc
+    .font('Helvetica')
+    .fontSize(10)
+    .fillColor(COLORS.text)
+    .text(statement, x + 12, y + 10, {
+      width: PAGE.contentWidth - 24
+    });
+
+  if (line) {
+    doc
+      .font('Courier')
+      .fontSize(8.6)
+      .fillColor(COLORS.textMuted)
+      .text(line, x + 12, y + 16 + statementHeight, {
+        width: PAGE.contentWidth - 24
+      });
+  }
+
+  doc.y = y + blockHeight + 10;
+}
+
+function drawBottomAddress(doc, mom) {
+  const footerReserve = 62;
+  const footerStartY = doc.page.height - doc.page.margins.bottom - footerReserve;
+
+  if (doc.y > footerStartY - 10) {
+    doc.addPage();
+    drawHeaderBarOnly(doc);
+  }
+
+  const x = PAGE.margin;
+  const y = doc.page.height - doc.page.margins.bottom - 36;
+  doc
+    .moveTo(x, y - 12)
+    .lineTo(x + PAGE.contentWidth, y - 12)
+    .lineWidth(1.8)
+    .strokeColor(COLORS.brandBlue)
+    .stroke();
+
+  doc
+    .font('Helvetica')
+    .fontSize(9.2)
+    .fillColor(COLORS.textMuted)
+    .text(safeText(mom.organizationAddress || DEFAULT_ORG_ADDRESS), x, y, {
+      width: PAGE.contentWidth,
+      align: 'center'
+    });
 }
 
 async function generateMomPdf(mom, outputDir, authenticity = {}) {
@@ -221,67 +427,98 @@ async function generateMomPdf(mom, outputDir, authenticity = {}) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
-      margin: 40
+      margin: PAGE.margin
     });
 
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
 
-    doc.font('Helvetica-Bold').fontSize(18).fillColor('#0f172a').text('Minutes of Meeting', {
-      align: 'center'
-    });
+    drawTopHeader(doc, mom, authenticity);
 
-    doc.moveDown(0.3);
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor('#334155')
-      .text(mom.organizationAddress, {
-        align: 'center'
-      });
+    drawSectionTitle(doc, '1. GENERAL INFORMATION');
+    drawTwoColumnRows(doc, [
+      { leftLabel: 'Meeting Title', leftValue: mom.meetingTitle, rightLabel: 'Project Name', rightValue: mom.projectName },
+      {
+        leftLabel: 'Zoho Project Number',
+        leftValue: normalizeProjectNumber(mom.projectNoWorkOrderNo),
+        rightLabel: 'Owner',
+        rightValue: mom.projectOwner || mom.elegrowRepresentative
+      },
+      {
+        leftLabel: 'Project No / Work Order No',
+        leftValue: mom.projectNoWorkOrderNo,
+        rightLabel: 'Client Name',
+        rightValue: mom.clientName
+      },
+      { leftLabel: 'Meeting Date', leftValue: mom.meetingDate, rightLabel: 'Meeting Time', rightValue: mom.meetingTime },
+      { leftLabel: 'Entry Time', leftValue: mom.entryTime, rightLabel: 'Exit Time', rightValue: mom.exitTime }
+    ]);
 
-    sectionTitle(doc, '1. GENERAL INFORMATION');
-    drawFieldRow(doc, 'Meeting Title', mom.meetingTitle, 'Project Name', mom.projectName);
-    drawFieldRow(
+    drawSectionTitle(doc, '2. DETAILS OF MEETING');
+    drawTwoColumnRows(doc, [
+      {
+        leftLabel: 'Meeting Location',
+        leftValue: mom.meetingLocation,
+        rightLabel: 'Meeting Called by',
+        rightValue: mom.meetingCalledBy
+      },
+      {
+        leftLabel: 'Type of Meeting',
+        leftValue: [...(mom.meetingType || []), mom.meetingTypeOther].filter(Boolean).join(', '),
+        rightLabel: 'Project Stage',
+        rightValue: mom.projectStatus || '-'
+      },
+      {
+        leftLabel: 'Facilitator Representative',
+        leftValue: mom.facilitatorRepresentative,
+        rightLabel: 'Elegrow Representative',
+        rightValue: mom.elegrowRepresentative
+      },
+      {
+        leftLabel: 'Client Representative',
+        leftValue: mom.clientRepresentative,
+        rightLabel: 'Zoho Synced On',
+        rightValue: mom.projectUpdated || '-'
+      }
+    ]);
+
+    drawStyledTable(
       doc,
-      'Project No / Work Order No',
-      mom.projectNoWorkOrderNo,
-      'Client Name',
-      mom.clientName
+      '3. AGENDA',
+      ['Sr. No', 'Agenda', 'Action Plan', 'Responsibility'],
+      [45, 180, 165, 125],
+      (mom.agendaRows && mom.agendaRows.length
+        ? mom.agendaRows
+        : [{ srNo: '1', agenda: '', actionPlan: '', responsibility: '' }]
+      ).map((row) => [row.srNo, row.agenda, row.actionPlan, row.responsibility])
     );
-    drawFieldRow(doc, 'Meeting Date', mom.meetingDate, 'Meeting Time', mom.meetingTime);
-    drawFieldRow(doc, 'Entry Time', mom.entryTime, 'Exit Time', mom.exitTime);
 
-    sectionTitle(doc, '2. DETAILS OF MEETING');
-    drawFieldRow(doc, 'Meeting Location', mom.meetingLocation, 'Meeting Called by', mom.meetingCalledBy);
-    drawFieldRow(
+    drawStyledTable(
       doc,
-      'Type of Meeting',
-      [...mom.meetingType, mom.meetingTypeOther].filter(Boolean).join(', '),
-      'Facilitator Representative',
-      mom.facilitatorRepresentative
+      '4. TASKS',
+      ['Sr. No', 'Tasks', 'Quantity / Description', 'Remarks', 'Status'],
+      [45, 150, 130, 110, 80],
+      (mom.taskRows && mom.taskRows.length
+        ? mom.taskRows
+        : [{ srNo: '1', taskName: '', quantityDescription: '', remarks: '', status: '' }]
+      ).map((row) => [row.srNo, row.taskName || row.taskId || '', row.quantityDescription, row.remarks, row.status])
     );
-    drawFieldRow(
+
+    drawStyledTable(
       doc,
-      'Elegrow Representative',
-      mom.elegrowRepresentative,
-      'Client Representative',
-      mom.clientRepresentative
+      '5. ATTENDEES',
+      ['Sr. No', 'Elegrow Technology (Name)', 'Client (Name)'],
+      [55, 230, 230],
+      (mom.attendeeRows && mom.attendeeRows.length
+        ? mom.attendeeRows
+        : [{ srNo: '1', elegrowName: '', clientName: '' }]
+      ).map((row) => [row.srNo, row.elegrowName, row.clientName])
     );
 
-    sectionTitle(doc, '3. AGENDA');
-    drawAgendaTable(doc, mom.agendaRows);
-
-    sectionTitle(doc, '4. TASKS');
-    drawTaskTable(doc, mom.taskRows);
-
-    sectionTitle(doc, 'Attendees');
-    drawAttendeeTable(doc, mom.attendeeRows);
-
-    drawDigitalDeclarationBlock(doc, mom, authenticity);
+    drawDigitalDeclaration(doc, authenticity);
+    drawBottomAddress(doc, mom);
 
     doc.end();
-
     stream.on('finish', resolve);
     stream.on('error', reject);
   });

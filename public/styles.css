@@ -911,10 +911,12 @@ body {
 
 .grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
 }
 
 label {
@@ -981,6 +983,16 @@ textarea {
 #editorView input[readonly] {
   background: linear-gradient(180deg, #f4f8fc, #ebf2f9);
   color: #35506a;
+}
+
+/* Keep side-by-side form controls visually aligned in all sections */
+#editorView .grid-2 > label > input:not([type='checkbox']):not([type='radio']),
+#editorView .grid-2 > label > select,
+#editorView .grid-3 > label > input:not([type='checkbox']):not([type='radio']),
+#editorView .grid-3 > label > select {
+  min-height: 44px;
+  height: 44px;
+  line-height: 1.25;
 }
 
 .meeting-type-block {
