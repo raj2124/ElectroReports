@@ -422,13 +422,23 @@ function drawPageFooter(doc, mom, authenticity = {}) {
     .fontSize(8.4)
     .fillColor(COLORS.textMuted);
   const addressHeight = doc.heightOfString(address, { width: PAGE.contentWidth - 16, align: 'center' });
-  let addressY = dividerY + 3;
-  const maxAddressY = boxBottom - addressHeight - 4;
+  const minAddressGapFromDivider = 7;
+  const minAddressBottomPadding = 4;
+  const maxDividerY = boxBottom - addressHeight - minAddressBottomPadding - minAddressGapFromDivider;
+  if (dividerY > maxDividerY) {
+    dividerY = maxDividerY;
+  }
+
+  const addressBandTop = dividerY;
+  const addressBandHeight = Math.max(0, boxBottom - addressBandTop);
+  let addressY = addressBandTop + (addressBandHeight - addressHeight) / 2;
+  const minAddressY = dividerY + minAddressGapFromDivider;
+  const maxAddressY = boxBottom - addressHeight - minAddressBottomPadding;
+  if (addressY < minAddressY) {
+    addressY = minAddressY;
+  }
   if (addressY > maxAddressY) {
     addressY = maxAddressY;
-  }
-  if (dividerY > addressY - 2) {
-    dividerY = addressY - 2;
   }
 
   doc
