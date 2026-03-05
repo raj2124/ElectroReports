@@ -1146,28 +1146,26 @@ function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
     `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
   const customBody = String(options.emailBody || '').trim();
 
-  const pdfLinkLines = [
-    'Open PDF:',
+  const defaultBody = [
+    'Dear Sir / Madam,',
+    '',
+    `Please find below the Minutes of Meeting for project ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}.`,
+    '',
+    `Project: ${record.projectName || '-'}`,
+    `Meeting Title: ${record.meetingTitle || '-'}`,
+    `Meeting Date: ${record.meetingDate || '-'}`,
+    '',
+    'PDF Link:',
     pdfAbsoluteUrl,
     '',
-    '(If draft view does not auto-link, copy this URL and paste in browser.)'
-  ];
-
-  const defaultBody = [
-    'Dear Team,',
+    'Please attach the generated PDF manually before sending.',
     '',
-    `Please find the Minutes of Meeting for "${record.projectName || '-'}" below.`,
-    '',
-    ...pdfLinkLines,
-    '',
-    'Please attach the generated PDF manually before sending (browser security limit).',
-    '',
-    'Regards,',
-    'M.O.M App'
+    'Best regards,',
+    'ETPL AI_M.O.M System'
   ].join('\n');
 
   const body = customBody
-    ? `${customBody}\n\n${pdfLinkLines.join('\n')}\n\nPlease attach the generated PDF manually before sending (browser security limit).`
+    ? `${customBody}\n\nPDF Link:\n${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.\n\nBest regards,\nETPL AI_M.O.M System`
     : defaultBody;
 
   const params = new URLSearchParams();
@@ -1366,18 +1364,21 @@ function getProjectRefForSubject(projectNoWorkOrderNo, projectName = '') {
 }
 
 function buildDeliveryBodyDraft(mom) {
-  const pdfHint = '(PDF link will be auto-added by the system in the draft.)';
+  const projectRef = getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName);
   return [
-    'Dear Team,',
+    'Dear Sir / Madam,',
     '',
-    `Please find the Minutes of Meeting details for "${getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName)}".`,
+    `Please find below the Minutes of Meeting for project ${projectRef}.`,
+    '',
+    `Project: ${mom.projectName || '-'}`,
     `Meeting Title: ${mom.meetingTitle || '-'}`,
     `Meeting Date: ${mom.meetingDate || '-'}`,
     `Meeting Time: ${mom.meetingTime || '-'}`,
+    `Meeting Location: ${mom.meetingLocation || '-'}`,
     '',
-    pdfHint,
+    'PDF Link will be auto-added by the system in the draft.',
     '',
-    'Regards,',
+    'Best regards,',
     'ETPL AI_M.O.M System'
   ].join('\n');
 }
@@ -1418,13 +1419,17 @@ function openRecordExportModal(record) {
   recordEmailCc.value = '';
   recordEmailSubject.value = `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
   recordEmailBody.value = [
-    'Dear Team,',
+    'Dear Sir / Madam,',
     '',
-    `Please find the Minutes of Meeting for "${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}".`,
+    `Please find below the Minutes of Meeting for project ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}.`,
     '',
-    'PDF Link will be included automatically.',
+    `Project: ${record.projectName || '-'}`,
+    `Meeting Title: ${record.meetingTitle || '-'}`,
+    `Meeting Date: ${record.meetingDate || '-'}`,
     '',
-    'Regards,',
+    'PDF Link will be auto-added by the system in the draft.',
+    '',
+    'Best regards,',
     'ETPL AI_M.O.M System'
   ].join('\n');
   recordExportMeta.textContent = `Document ID: ${record.documentId || '-'} | Project: ${record.projectName || '-'}`;

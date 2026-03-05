@@ -107,29 +107,35 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     String(options.emailSubject || '').trim() || `Minutes of Meeting - ${getProjectRefForEmailSubject(mom)}`;
   const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
 
-  const pdfLinkLines = [
-    'Open PDF:',
-    pdfAbsoluteUrl,
-    '',
-    '(If draft view does not auto-link, copy this URL and paste in browser.)'
-  ];
+  const projectRef = getProjectRefForEmailSubject(mom);
+  const meetingTitle = String(mom.meetingTitle || '-').trim() || '-';
+  const meetingDate = String(mom.meetingDate || '-').trim() || '-';
+  const meetingTime = String(mom.meetingTime || '-').trim() || '-';
+  const meetingLocation = String(mom.meetingLocation || '-').trim() || '-';
 
   const defaultBodyLines = [
-    'Dear Team,',
+    'Dear Sir / Madam,',
     '',
-    `Please find the Minutes of Meeting for "${mom.projectName}" below.`,
+    `Please find below the Minutes of Meeting for project ${projectRef}.`,
     '',
-    ...pdfLinkLines,
+    `Project: ${String(mom.projectName || '-').trim() || '-'}`,
+    `Meeting Title: ${meetingTitle}`,
+    `Meeting Date: ${meetingDate}`,
+    `Meeting Time: ${meetingTime}`,
+    `Meeting Location: ${meetingLocation}`,
     '',
-    'Please attach the generated PDF manually before sending (browser security limit).',
+    'PDF Link:',
+    pdfAbsoluteUrl,
     '',
-    'Regards,',
-    'M.O.M App'
+    'Please attach the generated PDF manually before sending.',
+    '',
+    'Best regards,',
+    'ETPL AI_M.O.M System'
   ];
 
   const customBody = String(options.emailBody || '').trim();
   const body = customBody
-    ? `${customBody}\n\n${pdfLinkLines.join('\n')}\n\nPlease attach the generated PDF manually before sending (browser security limit).`
+    ? `${customBody}\n\nPDF Link:\n${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.\n\nBest regards,\nETPL AI_M.O.M System`
     : defaultBodyLines.join('\n');
   const params = new URLSearchParams();
   if (to) {

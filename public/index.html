@@ -454,7 +454,7 @@
     </dialog>
 
     <dialog id="deliveryModal">
-      <form method="dialog" class="modal-body" id="deliveryForm">
+      <form method="dialog" class="modal-body" id="deliveryForm" autocomplete="off">
         <h3>Submit Options</h3>
 
         <div class="option-list">
@@ -466,19 +466,45 @@
         <div id="emailFields" class="email-fields hidden">
           <label>
             To (Optional)
-            <input id="emailTo" type="text" placeholder="client@example.com (or leave blank)" />
+            <input
+              id="emailTo"
+              name="email_to"
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="client@example.com (or leave blank)"
+            />
           </label>
           <label>
             Cc (Optional)
-            <input id="emailCc" type="text" placeholder="team@example.com (optional)" />
+            <input
+              id="emailCc"
+              name="email_cc"
+              type="email"
+              inputmode="email"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="team@example.com (optional)"
+            />
           </label>
           <label>
             Subject
-            <input id="emailSubject" type="text" placeholder="Minutes of Meeting" />
+            <input
+              id="emailSubject"
+              name="email_subject"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="Minutes of Meeting"
+            />
           </label>
           <label>
             Body
-            <textarea id="emailBody" rows="4" placeholder="Email message..."></textarea>
+            <textarea id="emailBody" name="email_body" rows="6" autocomplete="off" placeholder="Email message..."></textarea>
           </label>
           <p class="zoho-sync-note">
             Outlook draft opens with prefilled details and PDF link. For security reasons, attachment is added
@@ -494,7 +520,7 @@
     </dialog>
 
     <dialog id="recordExportModal">
-      <form method="dialog" class="modal-body" id="recordExportForm">
+      <form method="dialog" class="modal-body" id="recordExportForm" autocomplete="off">
         <h3>Re-export M.O.M Record</h3>
         <p id="recordExportMeta" class="zoho-sync-note">Select output options for this existing M.O.M record.</p>
 
@@ -507,19 +533,51 @@
         <div id="recordEmailFields" class="email-fields hidden">
           <label>
             To (Optional)
-            <input id="recordEmailTo" type="text" placeholder="client@example.com (or leave blank)" />
+            <input
+              id="recordEmailTo"
+              name="record_email_to"
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="client@example.com (or leave blank)"
+            />
           </label>
           <label>
             Cc (Optional)
-            <input id="recordEmailCc" type="text" placeholder="team@example.com (optional)" />
+            <input
+              id="recordEmailCc"
+              name="record_email_cc"
+              type="email"
+              inputmode="email"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="team@example.com (optional)"
+            />
           </label>
           <label>
             Subject
-            <input id="recordEmailSubject" type="text" placeholder="Minutes of Meeting" />
+            <input
+              id="recordEmailSubject"
+              name="record_email_subject"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="Minutes of Meeting"
+            />
           </label>
           <label>
             Body
-            <textarea id="recordEmailBody" rows="4" placeholder="Email message..."></textarea>
+            <textarea
+              id="recordEmailBody"
+              name="record_email_body"
+              rows="6"
+              autocomplete="off"
+              placeholder="Email message..."
+            ></textarea>
           </label>
         </div>
 
