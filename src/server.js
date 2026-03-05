@@ -91,10 +91,20 @@ function buildAbsolutePdfUrl(pdfUrl) {
   }
 }
 
+function getProjectRefForEmailSubject(mom) {
+  const projectNo = String(mom.projectNoWorkOrderNo || '').trim();
+  if (projectNo) {
+    return projectNo.split('/')[0].trim() || projectNo;
+  }
+  const projectName = String(mom.projectName || '').trim();
+  return projectName || 'Project';
+}
+
 function buildOutlookDraft({ mom, options, pdfUrl }) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
-  const subject = String(options.emailSubject || '').trim() || `Minutes of Meeting - ${mom.projectName}`;
+  const subject =
+    String(options.emailSubject || '').trim() || `Minutes of Meeting - ${getProjectRefForEmailSubject(mom)}`;
   const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
 
   const defaultBodyLines = [

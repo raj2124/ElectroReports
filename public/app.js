@@ -1142,7 +1142,8 @@ function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
   const subject =
-    String(options.emailSubject || '').trim() || `Minutes of Meeting - ${record.projectName || 'Project'}`;
+    String(options.emailSubject || '').trim() ||
+    `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
   const customBody = String(options.emailBody || '').trim();
 
   const defaultBody = [
@@ -1346,6 +1347,38 @@ function collectSubmitOptions() {
   };
 }
 
+function getProjectRefForSubject(projectNoWorkOrderNo, projectName = '') {
+  const ref = String(projectNoWorkOrderNo || '').trim();
+  if (ref) {
+    const primary = ref.split('/')[0].trim();
+    return primary || ref;
+  }
+  const fallback = String(projectName || '').trim();
+  return fallback || 'Project';
+}
+
+function buildDeliveryBodyDraft(mom) {
+  return [
+    'Dear Team,',
+    '',
+    `Please find the Minutes of Meeting details for "${getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName)}".`,
+    `Meeting Title: ${mom.meetingTitle || '-'}`,
+    `Meeting Date: ${mom.meetingDate || '-'}`,
+    `Meeting Time: ${mom.meetingTime || '-'}`,
+    '',
+    'PDF Link will be included automatically.',
+    '',
+    'Regards,',
+    'ETPL AI_M.O.M System'
+  ].join('\n');
+}
+
+function prefillDeliveryEmailFields(mom) {
+  const subject = `Minutes of Meeting - ${getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName)}`;
+  document.getElementById('emailSubject').value = subject;
+  document.getElementById('emailBody').value = buildDeliveryBodyDraft(mom);
+}
+
 function toggleEmailFields() {
   emailFields.classList.toggle('hidden', !optSendEmail.checked);
 }
@@ -1374,8 +1407,17 @@ function openRecordExportModal(record) {
   recordOptSendEmail.checked = false;
   recordEmailTo.value = '';
   recordEmailCc.value = '';
-  recordEmailSubject.value = `Minutes of Meeting - ${record.projectName || 'Project'}`;
-  recordEmailBody.value = '';
+  recordEmailSubject.value = `Minutes of Meeting - ${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}`;
+  recordEmailBody.value = [
+    'Dear Team,',
+    '',
+    `Please find the Minutes of Meeting for "${getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName)}".`,
+    '',
+    'PDF Link will be included automatically.',
+    '',
+    'Regards,',
+    'ETPL AI_M.O.M System'
+  ].join('\n');
   recordExportMeta.textContent = `Document ID: ${record.documentId || '-'} | Project: ${record.projectName || '-'}`;
   toggleRecordEmailFields();
 
@@ -1588,6 +1630,7 @@ momForm.addEventListener('submit', (event) => {
     return;
   }
 
+  prefillDeliveryEmailFields(collectMomPayload());
   if (typeof deliveryModal.showModal === 'function') {
     deliveryModal.showModal();
   }
@@ -1629,26 +1672,11 @@ confirmRecordExportBtn.addEventListener('click', () => {
     return;
   }
 
-  const needsPdfWindow = Boolean(options.generatePdf || options.printPdf || options.sendEmail);
+  const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
 
   try {
-    let pdfOpened = false;
-
-    if ((options.generatePdf || options.sendEmail) && preopenedPdfWindow) {
-      preopenedPdfWindow.location.href = pdfAbsoluteUrl;
-      pdfOpened = true;
-    } else if (options.generatePdf) {
-      window.open(pdfAbsoluteUrl, '_blank', 'noopener');
-      pdfOpened = true;
-    }
-
-    if (options.printPdf) {
-      const printed = printPdfFromUrl(pdfAbsoluteUrl, preopenedPdfWindow && !pdfOpened ? preopenedPdfWindow : null);
-      pdfOpened = pdfOpened || printed;
-    }
-
     if (options.sendEmail) {
       const outlookUrl = buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl);
       if (preopenedOutlookWindow) {
@@ -1659,13 +1687,26 @@ confirmRecordExportBtn.addEventListener('click', () => {
           showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
         }
       }
-      if (pdfOpened) {
-        showToast('Record re-exported. Outlook draft opened with same PDF link.');
+      showToast('Outlook draft opened with PDF link in email body.');
+    }
+
+    let pdfOpened = false;
+    if (options.generatePdf && !options.sendEmail) {
+      if (preopenedPdfWindow) {
+        preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
-        showToast('Outlook draft opened. Please attach PDF before sending.');
+        window.open(pdfAbsoluteUrl, '_blank', 'noopener');
       }
+      pdfOpened = true;
+    }
+
+    if (options.printPdf) {
+      const printed = printPdfFromUrl(pdfAbsoluteUrl, preopenedPdfWindow && !pdfOpened ? preopenedPdfWindow : null);
+      pdfOpened = pdfOpened || printed;
     } else {
-      showToast('Record export completed.');
+      if (!options.sendEmail) {
+        showToast('Record export completed.');
+      }
     }
 
     if (recordExportModal.open) {
@@ -1694,7 +1735,7 @@ confirmSubmitBtn.addEventListener('click', async () => {
   confirmSubmitBtn.disabled = true;
   confirmSubmitBtn.textContent = 'Submitting...';
 
-  const needsPdfWindow = Boolean(options.generatePdf || options.printPdf || options.sendEmail);
+  const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
 
@@ -1725,20 +1766,6 @@ confirmSubmitBtn.addEventListener('click', async () => {
     incrementSubmittedCount();
 
     const pdfAbsoluteUrl = String(result.pdfAbsoluteUrl || '').trim() || (pdfUrl ? new URL(pdfUrl, window.location.origin).toString() : '');
-    let pdfOpened = false;
-
-    if (pdfAbsoluteUrl && (options.generatePdf || options.sendEmail) && preopenedPdfWindow) {
-      preopenedPdfWindow.location.href = pdfAbsoluteUrl;
-      pdfOpened = true;
-    } else if (pdfAbsoluteUrl && options.generatePdf) {
-      window.location.href = pdfAbsoluteUrl;
-      pdfOpened = true;
-    }
-
-    if (pdfAbsoluteUrl && options.printPdf) {
-      const printed = printPdfFromUrl(pdfAbsoluteUrl, preopenedPdfWindow && !pdfOpened ? preopenedPdfWindow : null);
-      pdfOpened = pdfOpened || printed;
-    }
 
     if (options.sendEmail) {
       const emailDraft = result.emailDraft || {};
@@ -1753,12 +1780,22 @@ confirmSubmitBtn.addEventListener('click', async () => {
           showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
         }
       }
+      showToast('Outlook draft opened with generated PDF link in email body.');
+    }
 
-      if (pdfOpened) {
-        showToast('Outlook draft opened. Attach the generated PDF and send.');
+    let pdfOpened = false;
+    if (pdfAbsoluteUrl && options.generatePdf && !options.sendEmail) {
+      if (preopenedPdfWindow) {
+        preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
-        showToast('Outlook draft opened. Generate/download PDF and attach before sending.');
+        window.open(pdfAbsoluteUrl, '_blank', 'noopener');
       }
+      pdfOpened = true;
+    }
+
+    if (pdfAbsoluteUrl && options.printPdf) {
+      const printed = printPdfFromUrl(pdfAbsoluteUrl, preopenedPdfWindow && !pdfOpened ? preopenedPdfWindow : null);
+      pdfOpened = pdfOpened || printed;
     }
 
     await loadRecords('', { silent: true });
