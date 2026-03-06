@@ -179,14 +179,13 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     '',
     'The detailed Minutes of Meeting are attached in the PDF for your reference.',
     'For convenience, you may also access the document using the link below:',
+    'PDF Link:',
     `${pdfAbsoluteUrl}`,
-    '',
-    `Open PDF: <${pdfAbsoluteUrl}>`,
     '',
     'Please review the document and feel free to let us know if any clarifications or additions are required.',
     'Best regards,',
     'ETPL_AI MoM System'
-  ].join('\n');
+  ].join('\r\n');
   const customBodyRaw = String(options.emailBody || '').trim();
   const customBody = customBodyRaw
     .replace(

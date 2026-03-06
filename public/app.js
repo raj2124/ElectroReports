@@ -1616,14 +1616,13 @@ function buildProfessionalBody({
     '',
     'The detailed Minutes of Meeting are attached in the PDF for your reference.',
     'For convenience, you may also access the document using the link below:',
+    'PDF Link:',
     `${pdfUrl}`,
-    '',
-    `Open PDF: <${pdfUrl}>`,
     '',
     'Please review the document and feel free to let us know if any clarifications or additions are required.',
     'Best regards,',
     'ETPL_AI MoM System'
-  ].join('\n');
+  ].join('\r\n');
 }
 
 function buildDeliveryBodyDraft(mom) {
@@ -1950,12 +1949,13 @@ confirmRecordExportBtn.addEventListener('click', () => {
   try {
     if (options.sendEmail) {
       const outlookUrl = buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl);
-      if (preopenedOutlookWindow) {
+      if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
         const win = window.open(outlookUrl, '_blank', 'noopener');
         if (!win) {
-          showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
+          window.location.href = outlookUrl;
+          showToast('Opening Outlook in current tab (popup was blocked).');
         }
       }
       showToast('Outlook draft opened with PDF link in email body.');
@@ -2049,12 +2049,13 @@ confirmSubmitBtn.addEventListener('click', async () => {
       const outlookUrl = String(emailDraft.outlookComposeUrl || '').trim();
       if (!outlookUrl) {
         showToast('Outlook draft URL unavailable from server.', 'error');
-      } else if (preopenedOutlookWindow) {
+      } else if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
         const outlookWindow = window.open(outlookUrl, '_blank', 'noopener');
         if (!outlookWindow) {
-          showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
+          window.location.href = outlookUrl;
+          showToast('Opening Outlook in current tab (popup was blocked).');
         }
       }
       showToast('Outlook draft opened with generated PDF link in email body.');
