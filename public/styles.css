@@ -1881,6 +1881,16 @@ menu {
     margin-left: auto;
   }
 
+  .recent-meta-pill,
+  .recent-use-btn {
+    width: 100%;
+  }
+
+  .recent-use-btn {
+    justify-self: stretch;
+    text-align: center;
+  }
+
   table {
     min-width: 640px;
   }

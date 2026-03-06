@@ -1400,9 +1400,7 @@ function isMobileDevice() {
 function getOutlookComposeUrlCandidates(draft = {}) {
   const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
   const desktopUrl = String(draft.outlookComposeUrl || '').trim();
-  const ordered = isMobileDevice()
-    ? [mobileUrl, desktopUrl]
-    : [desktopUrl, mobileUrl];
+  const ordered = isMobileDevice() ? [desktopUrl, mobileUrl] : [desktopUrl];
   return ordered.filter((url, index, array) => Boolean(url) && array.indexOf(url) === index);
 }
 
