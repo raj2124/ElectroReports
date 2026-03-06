@@ -497,6 +497,8 @@ body {
   font-size: 1.12rem;
   color: #0f3558;
   line-height: 1.2;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .recent-date {
@@ -507,6 +509,7 @@ body {
   border-radius: 999px;
   padding: 4px 8px;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .recent-meta-grid {
@@ -1861,6 +1864,19 @@ menu {
     grid-template-columns: 1fr;
   }
 
+  .recent-project-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .recent-project-head h3 {
+    width: 100%;
+  }
+
+  .recent-date {
+    margin-left: auto;
+  }
+
   table {
     min-width: 640px;
   }
@@ -1956,6 +1972,16 @@ menu {
 
   .recent-project-head h3 {
     font-size: 1rem;
+  }
+
+  .recent-meta-pill {
+    padding: 7px 8px;
+  }
+
+  .recent-use-btn {
+    width: 100%;
+    justify-self: stretch;
+    text-align: center;
   }
 
   .recent-meta-pill strong {

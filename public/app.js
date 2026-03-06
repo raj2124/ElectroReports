@@ -1377,7 +1377,7 @@ function buildOutlookComposeUrlDesktop({ to = '', cc = '', subject = '', body = 
 }
 
 function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '' }) {
-  const queryParts = ['path=%2Fmail%2Faction%2Fcompose', 'rru=compose'];
+  const queryParts = ['path=/mail/action/compose'];
   const trimmedTo = String(to || '').trim();
   const trimmedCc = String(cc || '').trim();
   if (trimmedTo) {
@@ -1388,7 +1388,7 @@ function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '
   }
   queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
   queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
-  return `https://outlook.office.com/mail/?${queryParts.join('&')}`;
+  return `https://outlook.office.com/owa/?${queryParts.join('&')}`;
 }
 
 function isMobileDevice() {
@@ -1979,8 +1979,7 @@ confirmRecordExportBtn.addEventListener('click', () => {
   const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
   const mobileDevice = isMobileDevice();
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
-  const preopenedOutlookWindow =
-    options.sendEmail && !mobileDevice ? window.open('about:blank', '_blank') : null;
+  const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
 
   try {
     if (options.sendEmail) {
@@ -1989,7 +1988,7 @@ confirmRecordExportBtn.addEventListener('click', () => {
       if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
-        const win = !mobileDevice ? window.open(outlookUrl, '_blank', 'noopener') : null;
+        const win = window.open(outlookUrl, '_blank', 'noopener');
         if (win) {
           // no-op
         } else {
@@ -2054,8 +2053,7 @@ confirmSubmitBtn.addEventListener('click', async () => {
   const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
   const mobileDevice = isMobileDevice();
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
-  const preopenedOutlookWindow =
-    options.sendEmail && !mobileDevice ? window.open('about:blank', '_blank') : null;
+  const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
 
   try {
     const response = await fetch('/api/mom/submit', {
@@ -2093,7 +2091,7 @@ confirmSubmitBtn.addEventListener('click', async () => {
       } else if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
-        const outlookWindow = !mobileDevice ? window.open(outlookUrl, '_blank', 'noopener') : null;
+        const outlookWindow = window.open(outlookUrl, '_blank', 'noopener');
         if (!outlookWindow) {
           window.location.href = outlookUrl;
           showToast('Opening Outlook in current tab (popup was blocked).');
