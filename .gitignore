@@ -13,6 +13,7 @@ yarn-error.log
 dist/
 build/
 generated-pdfs/
+data/
 
 # OS
 .DS_Store

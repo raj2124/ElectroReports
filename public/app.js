@@ -1377,18 +1377,8 @@ function buildOutlookComposeUrlDesktop({ to = '', cc = '', subject = '', body = 
 }
 
 function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '' }) {
-  const queryParts = ['rru=compose'];
-  const trimmedTo = String(to || '').trim();
-  const trimmedCc = String(cc || '').trim();
-  if (trimmedTo) {
-    queryParts.push(`to=${encodeOutlookQueryComponent(trimmedTo)}`);
-  }
-  if (trimmedCc) {
-    queryParts.push(`cc=${encodeOutlookQueryComponent(trimmedCc)}`);
-  }
-  queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
-  queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
-  return `https://outlook.office.com/mail/?${queryParts.join('&')}`;
+  // Use the deep-link compose endpoint on mobile too; /mail/?rru=compose is unreliable on iOS.
+  return buildOutlookComposeUrlDesktop({ to, cc, subject, body });
 }
 
 function isMobileDevice() {
@@ -1400,7 +1390,7 @@ function isMobileDevice() {
 function getOutlookComposeUrlCandidates(draft = {}) {
   const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
   const desktopUrl = String(draft.outlookComposeUrl || '').trim();
-  const ordered = isMobileDevice() ? [desktopUrl, mobileUrl] : [desktopUrl];
+  const ordered = isMobileDevice() ? [desktopUrl, mobileUrl] : [desktopUrl, mobileUrl];
   return ordered.filter((url, index, array) => Boolean(url) && array.indexOf(url) === index);
 }
 
@@ -1411,28 +1401,17 @@ function openOutlookDraftWithFallbackUrls(candidates, preopenedWindow = null) {
   }
 
   const primaryUrl = urls[0];
-  const secondaryUrl = urls[1] || '';
   const targetWindow = preopenedWindow && !preopenedWindow.closed
     ? preopenedWindow
-    : window.open(primaryUrl, '_blank', 'noopener');
+    : window.open(primaryUrl, '_blank', 'noopener,noreferrer');
 
   if (!targetWindow) {
-    return false;
+    // Last-resort fallback for strict mobile popup policies.
+    window.location.href = primaryUrl;
+    return true;
   }
 
-  if (targetWindow !== preopenedWindow) {
-    targetWindow.location.href = primaryUrl;
-  } else {
-    targetWindow.location.href = primaryUrl;
-  }
-
-  if (secondaryUrl && secondaryUrl !== primaryUrl) {
-    window.setTimeout(() => {
-      if (targetWindow && !targetWindow.closed) {
-        targetWindow.location.href = secondaryUrl;
-      }
-    }, 900);
-  }
+  targetWindow.location.href = primaryUrl;
 
   return true;
 }
@@ -1452,7 +1431,7 @@ function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
     meetingLocation: record.meetingLocation || '-',
     pdfUrl: pdfAbsoluteUrl
   });
-  const body = String(options.emailBody || '').trim() || defaultBody;
+  const body = defaultBody;
 
   return {
     outlookComposeUrl: buildOutlookComposeUrlDesktop({ to, cc, subject, body }),
@@ -1622,6 +1601,7 @@ function collectMomPayload() {
 }
 
 function collectSubmitOptions() {
+  const emailBodyInput = document.getElementById('emailBody');
   return {
     generatePdf: optGeneratePdf.checked,
     printPdf: optPrintPdf.checked,
@@ -1629,7 +1609,7 @@ function collectSubmitOptions() {
     emailTo: document.getElementById('emailTo').value,
     emailCc: document.getElementById('emailCc').value,
     emailSubject: document.getElementById('emailSubject').value,
-    emailBody: document.getElementById('emailBody').value
+    emailBody: emailBodyInput ? emailBodyInput.value : ''
   };
 }
 
@@ -1681,8 +1661,7 @@ function buildProfessionalBody({
     '',
     'The detailed Minutes of Meeting are attached in the PDF for your reference.',
     'For convenience, you may also access the document using the link below:',
-    'PDF Link:',
-    `${pdfUrl}`,
+    `${pdfUrl || '-'}`,
     '',
     'Please review the document and feel free to let us know if any clarifications or additions are required.',
     'Best regards,',
@@ -1705,8 +1684,11 @@ function buildDeliveryBodyDraft(mom) {
 function prefillDeliveryEmailFields(mom) {
   const projectRef = getProjectRefForSubject(mom.projectNoWorkOrderNo, mom.projectName);
   const subject = buildMomEmailSubject(projectRef, mom.meetingDate);
+  const emailBodyInput = document.getElementById('emailBody');
   document.getElementById('emailSubject').value = subject;
-  document.getElementById('emailBody').value = buildDeliveryBodyDraft(mom);
+  if (emailBodyInput) {
+    emailBodyInput.value = buildDeliveryBodyDraft(mom);
+  }
 }
 
 function toggleEmailFields() {
@@ -1739,14 +1721,16 @@ function openRecordExportModal(record) {
   recordEmailCc.value = '';
   const projectRef = getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName);
   recordEmailSubject.value = buildMomEmailSubject(projectRef, record.meetingDate);
-  recordEmailBody.value = buildProfessionalBody({
-    projectRef,
-    meetingTitle: record.meetingTitle,
-    meetingDate: formatMeetingDateForBody(record.meetingDate),
-    meetingTime: record.meetingTime || '-',
-    meetingLocation: record.meetingLocation || '-',
-    pdfUrl: String(record.pdfAbsoluteUrl || '').trim() || `${window.location.origin}${record.pdfUrl || '/generated-pdfs/MOM-<auto-generated>.pdf'}`
-  });
+  if (recordEmailBody) {
+    recordEmailBody.value = buildProfessionalBody({
+      projectRef,
+      meetingTitle: record.meetingTitle,
+      meetingDate: formatMeetingDateForBody(record.meetingDate),
+      meetingTime: record.meetingTime || '-',
+      meetingLocation: record.meetingLocation || '-',
+      pdfUrl: String(record.pdfAbsoluteUrl || '').trim() || `${window.location.origin}${record.pdfUrl || '/generated-pdfs/MOM-<auto-generated>.pdf'}`
+    });
+  }
   recordExportMeta.textContent = `Document ID: ${record.documentId || '-'} | Project: ${record.projectName || '-'}`;
   toggleRecordEmailFields();
 
@@ -1790,7 +1774,7 @@ function collectRecordExportOptions() {
     emailTo: recordEmailTo.value,
     emailCc: recordEmailCc.value,
     emailSubject: recordEmailSubject.value,
-    emailBody: recordEmailBody.value
+    emailBody: recordEmailBody ? recordEmailBody.value : ''
   };
 }
 
