@@ -104,8 +104,16 @@ async function main() {
   assert(result.pdfUrl, 'pdfUrl missing in submit result.');
   assert(result.printRequested === true, 'printRequested expected true.');
   assert(result.emailSent === false, 'emailSent expected false in Outlook draft mode.');
-  assert(result.emailDraft?.mode === 'outlook-draft', 'emailDraft.mode expected outlook-draft.');
-  assert(result.emailDraft?.outlookComposeUrl, 'Outlook compose URL missing.');
+  const draftMode = String(result.emailDraft?.mode || '');
+  assert(
+    draftMode === 'outlook-draft' || draftMode === 'graph-draft',
+    'emailDraft.mode expected outlook-draft or graph-draft.'
+  );
+  if (draftMode === 'graph-draft') {
+    assert(result.emailDraft?.outlookDraftWebUrl || result.emailDraft?.outlookComposeUrl, 'Graph draft URL missing.');
+  } else {
+    assert(result.emailDraft?.outlookComposeUrl, 'Outlook compose URL missing.');
+  }
 
   const pdfAbsoluteUrl = new URL(result.pdfUrl, BASE_URL).toString();
   const pdfResp = await get(pdfAbsoluteUrl);

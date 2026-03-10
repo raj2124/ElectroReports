@@ -386,7 +386,9 @@ async function refreshHealthStatus() {
     momGeneratedBy =
       String(data.generatedBy || 'ETPL_AI M.O.M System').trim() || 'ETPL_AI M.O.M System';
     renderAuthenticityLine();
-    if (data.emailMode === 'outlook-draft') {
+    if (data.emailMode === 'graph-draft') {
+      kpiEmailMode.textContent = 'Graph Draft';
+    } else if (data.emailMode === 'outlook-draft') {
       kpiEmailMode.textContent = 'Outlook Draft';
     } else {
       kpiEmailMode.textContent = data.emailEnabled ? 'Enabled' : 'Disabled';
@@ -1416,27 +1418,24 @@ function openOutlookDraftWithFallbackUrls(candidates, preopenedWindow = null) {
   return true;
 }
 
-function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
-  const to = String(options.emailTo || '').trim();
-  const cc = String(options.emailCc || '').trim();
-  const projectRef = getProjectRefForSubject(record.projectNoWorkOrderNo, record.projectName);
-  const subject =
-    String(options.emailSubject || '').trim() ||
-    buildMomEmailSubject(projectRef, record.meetingDate);
-  const defaultBody = buildProfessionalBody({
-    projectRef,
-    meetingTitle: record.meetingTitle,
-    meetingDate: formatMeetingDateForBody(record.meetingDate),
-    meetingTime: record.meetingTime || '-',
-    meetingLocation: record.meetingLocation || '-',
-    pdfUrl: pdfAbsoluteUrl
-  });
-  const body = defaultBody;
+function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
+  const mode = String(emailDraft.mode || '').trim().toLowerCase();
+  const graphUrl = String(emailDraft.outlookDraftWebUrl || '').trim();
+  if (mode === 'graph-draft' && graphUrl) {
+    const targetWindow = preopenedWindow && !preopenedWindow.closed
+      ? preopenedWindow
+      : window.open(graphUrl, '_blank', 'noopener,noreferrer');
 
-  return {
-    outlookComposeUrl: buildOutlookComposeUrlDesktop({ to, cc, subject, body }),
-    outlookComposeMobileUrl: buildOutlookComposeUrlMobile({ to, cc, subject, body })
-  };
+    if (!targetWindow) {
+      window.location.href = graphUrl;
+      return true;
+    }
+    targetWindow.location.href = graphUrl;
+    return true;
+  }
+
+  const candidates = getOutlookComposeUrlCandidates(emailDraft);
+  return openOutlookDraftWithFallbackUrls(candidates, preopenedWindow);
 }
 
 function getRecordOutputBadges(record) {
@@ -1969,7 +1968,7 @@ cancelRecordExportBtn.addEventListener('click', () => {
   }
 });
 
-confirmRecordExportBtn.addEventListener('click', () => {
+confirmRecordExportBtn.addEventListener('click', async () => {
   if (!activeRecordExport) {
     showToast('Please select a record first.', 'error');
     return;
@@ -1997,13 +1996,35 @@ confirmRecordExportBtn.addEventListener('click', () => {
 
   try {
     if (options.sendEmail) {
-      const draftTargets = buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl);
-      const candidates = getOutlookComposeUrlCandidates(draftTargets);
-      const opened = openOutlookDraftWithFallbackUrls(candidates, preopenedOutlookWindow);
+      const draftResponse = await fetch(
+        `/api/mom/records/${encodeURIComponent(String(record.id || ''))}/email-draft`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ options })
+        }
+      );
+      const draftData = await draftResponse.json();
+      if (!draftResponse.ok || !draftData.success) {
+        throw new Error(draftData.message || 'Failed to create record email draft.');
+      }
+
+      const emailDraft = draftData.emailDraft || {};
+      const opened = openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
       if (!opened) {
         showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
       }
-      showToast('Outlook draft opened with PDF link in email body.');
+      const draftMode = String(emailDraft.mode || '').trim();
+      if (draftMode === 'graph-draft') {
+        showToast('Microsoft Outlook draft created and opened.');
+      } else {
+        showToast('Outlook draft opened with PDF link in email body.');
+      }
+      if (emailDraft.attachmentNote) {
+        showToast(emailDraft.attachmentNote, 'error');
+      }
     }
 
     let pdfOpened = false;
@@ -2091,16 +2112,22 @@ confirmSubmitBtn.addEventListener('click', async () => {
 
     if (options.sendEmail) {
       const emailDraft = result.emailDraft || {};
-      const candidates = getOutlookComposeUrlCandidates(emailDraft);
-      if (!candidates.length) {
+      if (!String(emailDraft.mode || '').trim()) {
         showToast('Outlook draft URL unavailable from server.', 'error');
       } else {
-        const opened = openOutlookDraftWithFallbackUrls(candidates, preopenedOutlookWindow);
+        const opened = openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
         if (!opened) {
           showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
         }
       }
-      showToast('Outlook draft opened with generated PDF link in email body.');
+      if (String(emailDraft.mode || '').trim().toLowerCase() === 'graph-draft') {
+        showToast('Microsoft Outlook draft created and opened.');
+      } else {
+        showToast('Outlook draft opened with generated PDF link in email body.');
+      }
+      if (emailDraft.attachmentNote) {
+        showToast(emailDraft.attachmentNote, 'error');
+      }
     }
 
     let pdfOpened = false;

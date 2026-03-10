@@ -7,6 +7,11 @@ const { getProjects, getProjectUsers, getProjectClientUsers, getProjectTasks } =
 const { sanitizeMomPayload, validateMomPayload } = require('./momTemplate');
 const { generateMomPdf } = require('./pdfService');
 const { createRecordsStore } = require('./recordsStore');
+const {
+  isGraphDraftConfigured,
+  buildGraphBodyHtml,
+  createGraphDraft
+} = require('./graphMailService');
 
 const app = express();
 const recordsStore = createRecordsStore(config);
@@ -157,7 +162,7 @@ function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '
   return buildOutlookComposeUrlDesktop({ to, cc, subject, body });
 }
 
-function buildOutlookDraft({ mom, options, pdfUrl }) {
+function buildEmailDraftPayload({ mom, options, pdfUrl, pdfFileName = '' }) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
   const projectRef = getProjectRefForEmailSubject(mom);
@@ -165,13 +170,14 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     String(options.emailSubject || '').trim() ||
     `MOM - Project ${projectRef} - ${formatMeetingDateForSubject(mom.meetingDate)}`;
   const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
+  const pdfFilePath = pdfFileName ? path.join(config.app.generatedDir, pdfFileName) : '';
 
   const meetingTitle = String(mom.meetingTitle || '-').trim() || '-';
   const meetingDate = formatMeetingDateForBody(mom.meetingDate);
   const meetingTime = String(mom.meetingTime || '-').trim() || '-';
   const meetingLocation = String(mom.meetingLocation || '-').trim() || '-';
 
-  const defaultBody = [
+  const bodyText = [
     'Dear Sir / Madam,',
     '',
     `Please find the Minutes of Meeting (MoM) for the project ${projectRef}, held as per the details below.`,
@@ -190,36 +196,132 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     'Best regards,',
     'ETPL_AI MoM System'
   ].join('\r\n');
-  const body = defaultBody;
+  const bodyHtml = buildGraphBodyHtml({
+    bodyText,
+    pdfUrl: pdfAbsoluteUrl
+  });
 
+  return {
+    to,
+    cc,
+    subject,
+    bodyText,
+    bodyHtml,
+    pdfAbsoluteUrl,
+    pdfFileName: String(pdfFileName || '').trim(),
+    pdfFilePath,
+    projectRef
+  };
+}
+
+function buildOutlookDraftFromPayload(payload, warning = '') {
+  const to = String(payload.to || '').trim();
+  const cc = String(payload.cc || '').trim();
+  const subject = String(payload.subject || '').trim();
+  const body = String(payload.bodyText || '').trim();
   return {
     mode: 'outlook-draft',
     to,
     cc,
     subject,
     body,
-    pdfAbsoluteUrl,
+    projectRef: payload.projectRef,
+    pdfAbsoluteUrl: payload.pdfAbsoluteUrl,
     outlookComposeUrl: buildOutlookComposeUrlDesktop({ to, cc, subject, body }),
     outlookComposeMobileUrl: buildOutlookComposeUrlMobile({ to, cc, subject, body }),
     attachmentAutoSupported: false,
     attachmentNote:
+      warning ||
       'Attachment cannot be auto-added by browser deeplink. The generated PDF is opened for manual attachment.'
   };
+}
+
+async function buildEmailDraft({ mom, options, pdfUrl, pdfFileName = '' }) {
+  const payload = buildEmailDraftPayload({
+    mom,
+    options,
+    pdfUrl,
+    pdfFileName
+  });
+
+  if (!isGraphDraftConfigured(config)) {
+    return buildOutlookDraftFromPayload(payload);
+  }
+
+  try {
+    const graphDraft = await createGraphDraft(config, {
+      to: payload.to,
+      cc: payload.cc,
+      subject: payload.subject,
+      bodyText: payload.bodyText,
+      bodyHtml: payload.bodyHtml,
+      pdfFileName: payload.pdfFileName,
+      pdfFilePath: payload.pdfFilePath
+    });
+
+    return {
+      ...graphDraft,
+      to: payload.to,
+      cc: payload.cc,
+      subject: payload.subject,
+      body: payload.bodyText,
+      projectRef: payload.projectRef,
+      pdfAbsoluteUrl: payload.pdfAbsoluteUrl,
+      // Keep deeplink URLs as hard fallback.
+      outlookComposeUrl: buildOutlookComposeUrlDesktop({
+        to: payload.to,
+        cc: payload.cc,
+        subject: payload.subject,
+        body: payload.bodyText
+      }),
+      outlookComposeMobileUrl: buildOutlookComposeUrlMobile({
+        to: payload.to,
+        cc: payload.cc,
+        subject: payload.subject,
+        body: payload.bodyText
+      })
+    };
+  } catch (error) {
+    return buildOutlookDraftFromPayload(
+      payload,
+      `${error.message || 'Graph draft creation failed.'} Switched to Outlook deeplink fallback.`
+    );
+  }
+}
+
+function buildRecordMomShape(record) {
+  return {
+    meetingTitle: String(record?.meetingTitle || '').trim(),
+    projectName: String(record?.projectName || '').trim(),
+    projectNoWorkOrderNo: String(record?.projectNoWorkOrderNo || '').trim(),
+    meetingDate: String(record?.meetingDate || '').trim(),
+    meetingTime: String(record?.meetingTime || '').trim(),
+    meetingLocation: String(record?.meetingLocation || '').trim()
+  };
+}
+
+function getRecordById(recordId) {
+  const { records, removed } = recordsStore.listRecords('');
+  purgeRemovedRecordPdfs(removed);
+  const targetId = String(recordId || '').trim();
+  return (Array.isArray(records) ? records.find((item) => String(item.id || '') === targetId) : null) || null;
 }
 
 app.get('/api/health', (_req, res) => {
   const zohoAutoRefreshConfigured = Boolean(
     config.zoho.refreshToken && config.zoho.clientId && config.zoho.clientSecret
   );
+  const graphDraftConfigured = isGraphDraftConfigured(config);
 
   res.json({
     success: true,
     timestamp: new Date().toISOString(),
     zohoMode: config.zoho.useMock ? 'mock' : 'live',
     zohoAutoRefreshConfigured,
+    graphDraftConfigured,
     generatedBy: String(config.app.generatedBy || 'ETPL_AI M.O.M System'),
     emailEnabled: true,
-    emailMode: 'outlook-draft',
+    emailMode: graphDraftConfigured ? 'graph-draft' : 'outlook-draft',
     recordsRetentionDays: recordsStore.settings.retentionDays,
     recordsMaxCount: recordsStore.settings.maxCount
   });
@@ -352,6 +454,52 @@ app.delete('/api/mom/records/:recordId', (req, res) => {
   }
 });
 
+app.post('/api/mom/records/:recordId/email-draft', async (req, res) => {
+  try {
+    const recordId = String(req.params.recordId || '').trim();
+    const record = getRecordById(recordId);
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: 'Record not found.'
+      });
+    }
+
+    const options = req.body.options || {};
+    if (!options.sendEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email export option is required.'
+      });
+    }
+
+    const pdfUrl = String(record.pdfUrl || '').trim();
+    if (!pdfUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'PDF URL is unavailable for this record.'
+      });
+    }
+
+    const emailDraft = await buildEmailDraft({
+      mom: buildRecordMomShape(record),
+      options,
+      pdfUrl,
+      pdfFileName: String(record.pdfFileName || '').trim()
+    });
+
+    return res.json({
+      success: true,
+      emailDraft
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to build email draft for record.'
+    });
+  }
+});
+
 app.post('/api/mom/submit', async (req, res) => {
   try {
     const mom = sanitizeMomPayload(req.body.mom || {});
@@ -381,10 +529,11 @@ app.post('/api/mom/submit', async (req, res) => {
 
     let emailDraft = null;
     if (options.sendEmail) {
-      emailDraft = buildOutlookDraft({
+      emailDraft = await buildEmailDraft({
         mom,
         options,
-        pdfUrl
+        pdfUrl,
+        pdfFileName: fileName
       });
     }
 

@@ -24,7 +24,7 @@ const config = {
     rootDir,
     generatedDir,
     baseUrl: process.env.APP_BASE_URL || `http://${appHost}:${appPort}`,
-    generatedBy: DEFAULT_GENERATED_BY
+    generatedBy: process.env.MOM_GENERATED_BY || DEFAULT_GENERATED_BY
   },
   records: {
     dataDir,
@@ -53,6 +53,16 @@ const config = {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || 'mom-app@example.com'
+  },
+  graph: {
+    enabled: toBool(process.env.MS_GRAPH_ENABLED, false),
+    authorityHost: process.env.MS_GRAPH_AUTHORITY_HOST || 'https://login.microsoftonline.com',
+    tenantId: process.env.MS_GRAPH_TENANT_ID || '',
+    clientId: process.env.MS_GRAPH_CLIENT_ID || '',
+    clientSecret: process.env.MS_GRAPH_CLIENT_SECRET || '',
+    mailboxUser: process.env.MS_GRAPH_MAILBOX_USER || '',
+    baseUrl: process.env.MS_GRAPH_BASE_URL || 'https://graph.microsoft.com/v1.0',
+    scope: process.env.MS_GRAPH_SCOPE || 'https://graph.microsoft.com/.default'
   }
 };
 

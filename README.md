@@ -10,7 +10,8 @@ Minutes of Meeting web app with Zoho Projects integration, PDF export, print sup
 - Auto-fill of project fields from Zoho (project name/number and team users where available)
 - Agenda and attendees row management
 - PDF generation and browser print flow
-- Outlook compose link with prefilled M.O.M details (user sends manually)
+- Microsoft Graph server-side draft creation (with PDF attachment) when configured
+- Outlook compose deeplink fallback when Graph is not configured
 
 ## Stack
 
@@ -52,19 +53,30 @@ cp .env.example .env
 - Set `ZOHO_BASE_URL` and `ZOHO_ACCOUNTS_BASE_URL` for your Zoho data center (`.com` or `.in`)
 - Optional: set `ZOHO_PROJECTS_ENDPOINT` if your org uses a custom endpoint
 
-4. Run app
+4. Configure Microsoft Graph draft mode (recommended)
+
+- Set `MS_GRAPH_ENABLED=true`
+- Set `MS_GRAPH_TENANT_ID`
+- Set `MS_GRAPH_CLIENT_ID`
+- Set `MS_GRAPH_CLIENT_SECRET`
+- Set `MS_GRAPH_MAILBOX_USER` (mailbox where drafts should be created)
+- In Azure App Registration, add **Application** permission `Mail.ReadWrite` and grant admin consent.
+- Keep `APP_BASE_URL` set to your deployed public URL so PDF links are valid externally.
+
+5. Run app
 
 ```bash
 npm run dev
 ```
 
-5. Open `http://localhost:3000`
+6. Open `http://localhost:3000`
 
 ## Deployment Notes
 
 - Keep all secrets in host environment variables (Render/GitHub/other host), never in Git.
 - Generated PDFs are written to `generated-pdfs/`.
-- Browser security does not allow automatic file attachment to Outlook compose; users attach generated PDF manually.
+- In Graph mode, server creates real Outlook drafts and attaches generated PDF automatically.
+- In fallback deeplink mode, browser security does not allow automatic file attachment; users attach PDF manually.
 - For GoDaddy VPS auto-deploy with GitHub Actions, see:
   - `docs/DEPLOY_GODADDY_VPS.md`
   - `.github/workflows/deploy-vps.yml`
