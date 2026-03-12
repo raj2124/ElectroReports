@@ -1418,9 +1418,49 @@ function openOutlookDraftWithFallbackUrls(candidates, preopenedWindow = null) {
   return true;
 }
 
+function buildMailtoFallbackUrl(emailDraft = {}) {
+  const to = String(emailDraft.to || '').trim();
+  const cc = String(emailDraft.cc || '').trim();
+  const subject = String(emailDraft.subject || '').trim();
+  const body = String(emailDraft.body || '').trim();
+  const queryParts = [];
+  if (cc) {
+    queryParts.push(`cc=${encodeURIComponent(cc)}`);
+  }
+  if (subject) {
+    queryParts.push(`subject=${encodeURIComponent(subject)}`);
+  }
+  if (body) {
+    queryParts.push(`body=${encodeURIComponent(body)}`);
+  }
+  const query = queryParts.length ? `?${queryParts.join('&')}` : '';
+  return `mailto:${encodeURIComponent(to)}${query}`;
+}
+
 function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
   const mode = String(emailDraft.mode || '').trim().toLowerCase();
   const graphUrl = String(emailDraft.outlookDraftWebUrl || '').trim();
+  const candidates = getOutlookComposeUrlCandidates(emailDraft);
+  const composeUrl = String(candidates[0] || '').trim();
+  const isMobile = isMobileDevice();
+
+  // On mobile browsers, same-tab navigation is more reliable than popup windows.
+  // Also prefer compose deeplink over graph webLink to avoid landing in inbox view.
+  if (isMobile) {
+    const mobileTarget = composeUrl || graphUrl || '';
+    if (mobileTarget) {
+      window.location.href = mobileTarget;
+      return true;
+    }
+
+    const mailtoUrl = buildMailtoFallbackUrl(emailDraft);
+    if (mailtoUrl) {
+      window.location.href = mailtoUrl;
+      return true;
+    }
+    return false;
+  }
+
   if (mode === 'graph-draft' && graphUrl) {
     const targetWindow = preopenedWindow && !preopenedWindow.closed
       ? preopenedWindow
@@ -1434,7 +1474,6 @@ function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
     return true;
   }
 
-  const candidates = getOutlookComposeUrlCandidates(emailDraft);
   return openOutlookDraftWithFallbackUrls(candidates, preopenedWindow);
 }
 
