@@ -1444,6 +1444,71 @@ function openOutlookDraftWithFallbackUrls(candidates, preopenedWindow = null) {
   return true;
 }
 
+function openMobileBrowserComposeTarget(targetUrl = '') {
+  const url = String(targetUrl || '').trim();
+  if (!url) {
+    return false;
+  }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    window.location.href = url;
+  }
+  return true;
+}
+
+function launchMobileAppComposeWithFallback({ appUrl = '', browserUrl = '' } = {}) {
+  const appTarget = String(appUrl || '').trim();
+  const browserTarget = String(browserUrl || '').trim();
+
+  if (!appTarget) {
+    return openMobileBrowserComposeTarget(browserTarget);
+  }
+
+  let becameHidden = false;
+  let fallbackTimer = null;
+
+  const cleanup = () => {
+    if (fallbackTimer) {
+      window.clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+    window.removeEventListener('blur', handleVisibilitySignal);
+    window.removeEventListener('pagehide', handleVisibilitySignal);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+
+  const handleVisibilitySignal = () => {
+    becameHidden = true;
+    cleanup();
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      handleVisibilitySignal();
+    }
+  };
+
+  window.addEventListener('blur', handleVisibilitySignal, { once: true });
+  window.addEventListener('pagehide', handleVisibilitySignal, { once: true });
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  fallbackTimer = window.setTimeout(() => {
+    cleanup();
+    if (becameHidden) {
+      return;
+    }
+    if (browserTarget) {
+      openMobileBrowserComposeTarget(browserTarget);
+      showToast('Outlook app did not open. Switched to browser compose.');
+    } else {
+      showToast('Outlook app did not open. Please open mail app manually.', 'error');
+    }
+  }, 1200);
+
+  window.location.href = appTarget;
+  return true;
+}
+
 function buildMailtoFallbackUrl(emailDraft = {}) {
   const to = String(emailDraft.to || '').trim();
   const cc = String(emailDraft.cc || '').trim();
@@ -1576,24 +1641,10 @@ function openMobileMailAssist(emailDraft = {}) {
     return true;
   }
 
-  const appTarget = String(pendingMobileAppComposeUrl || '').trim();
-  if (appTarget) {
-    const opened = window.open(appTarget, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.href = appTarget;
-    }
-    return true;
-  }
-
-  const browserTarget = String(pendingMobileComposeUrl || pendingMobileMailtoUrl || '').trim();
-  if (browserTarget) {
-    const opened = window.open(browserTarget, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.href = browserTarget;
-    }
-    return true;
-  }
-  return false;
+  return launchMobileAppComposeWithFallback({
+    appUrl: pendingMobileAppComposeUrl,
+    browserUrl: pendingMobileComposeUrl || pendingMobileMailtoUrl
+  });
 }
 
 function handleEmailDraftNote(note = '') {
@@ -2217,18 +2268,16 @@ if (mobileMailAssistCopyBtn) {
 
 if (mobileMailAssistOpenBtn) {
   mobileMailAssistOpenBtn.addEventListener('click', () => {
-    const targetUrl = String(pendingMobileAppComposeUrl || pendingMobileComposeUrl || pendingMobileMailtoUrl || '').trim();
-    if (!targetUrl) {
+    const appUrl = String(pendingMobileAppComposeUrl || '').trim();
+    const browserUrl = String(pendingMobileComposeUrl || pendingMobileMailtoUrl || '').trim();
+    if (!appUrl && !browserUrl) {
       showToast('Unable to open Outlook app. Please copy body and use browser compose.', 'error');
       return;
     }
     if (mobileMailAssistModal?.open) {
       mobileMailAssistModal.close();
     }
-    const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.href = targetUrl;
-    }
+    launchMobileAppComposeWithFallback({ appUrl, browserUrl });
   });
 }
 
@@ -2242,10 +2291,7 @@ if (mobileMailAssistBrowserBtn) {
     if (mobileMailAssistModal?.open) {
       mobileMailAssistModal.close();
     }
-    const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.href = targetUrl;
-    }
+    openMobileBrowserComposeTarget(targetUrl);
   });
 }
 
@@ -2311,13 +2357,13 @@ confirmRecordExportBtn.addEventListener('click', async () => {
       const draftMode = String(emailDraft.mode || '').trim();
       if (draftMode === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created. Tap Open Compose in Mobile Mail Assist.');
+          showToast('Server draft created. Tap Open Outlook App in Mobile Mail Assist.');
         } else {
           showToast('Microsoft Outlook draft created and opened.');
         }
       } else {
         if (isMobileDevice()) {
-          showToast('Tap Open Compose in Mobile Mail Assist.');
+          showToast('Tap Open Outlook App in Mobile Mail Assist.');
         } else {
           showToast('Outlook draft opened with PDF link in email body.');
         }
@@ -2423,13 +2469,13 @@ confirmSubmitBtn.addEventListener('click', async () => {
       }
       if (String(emailDraft.mode || '').trim().toLowerCase() === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created. Tap Open Compose in Mobile Mail Assist.');
+          showToast('Server draft created. Tap Open Outlook App in Mobile Mail Assist.');
         } else {
           showToast('Microsoft Outlook draft created and opened.');
         }
       } else {
         if (isMobileDevice()) {
-          showToast('Tap Open Compose in Mobile Mail Assist.');
+          showToast('Tap Open Outlook App in Mobile Mail Assist.');
         } else {
           showToast('Outlook draft opened with generated PDF link in email body.');
         }
