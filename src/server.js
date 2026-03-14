@@ -212,17 +212,8 @@ function buildEmailDraftPayload({ mom, options, pdfUrl, pdfFileName = '' }) {
     'Best regards,',
     'ETPL_AI MoM System'
   ].join('\r\n');
-  // Keep deeplink body concise to improve mobile browser reliability.
-  const composeBodyText = [
-    'Dear Sir / Madam,',
-    `Please find the Minutes of Meeting (MoM) for project ${projectRef}.`,
-    `Meeting Date: ${meetingDate}`,
-    `Meeting Time: ${meetingTime}`,
-    `Meeting Location: ${meetingLocation}`,
-    `PDF Link: ${pdfAbsoluteUrl}`,
-    'Best regards,',
-    'ETPL_AI MoM System'
-  ].join('\r\n');
+  // Keep compose body aligned with the official professional format requested by user.
+  const composeBodyText = bodyText;
   const bodyHtml = buildGraphBodyHtml({
     bodyText,
     pdfUrl: pdfAbsoluteUrl
