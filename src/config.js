@@ -62,7 +62,8 @@ const config = {
     clientSecret: process.env.MS_GRAPH_CLIENT_SECRET || '',
     mailboxUser: process.env.MS_GRAPH_MAILBOX_USER || '',
     baseUrl: process.env.MS_GRAPH_BASE_URL || 'https://graph.microsoft.com/v1.0',
-    scope: process.env.MS_GRAPH_SCOPE || 'https://graph.microsoft.com/.default'
+    scope: process.env.MS_GRAPH_SCOPE || 'https://graph.microsoft.com/.default',
+    openGraphWebLink: toBool(process.env.MS_GRAPH_OPEN_WEBLINK, false)
   }
 };
 

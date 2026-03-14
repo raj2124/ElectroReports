@@ -296,6 +296,8 @@ async function buildEmailDraft({ mom, options, pdfUrl, pdfFileName = '' }) {
       body: payload.bodyText,
       projectRef: payload.projectRef,
       pdfAbsoluteUrl: payload.pdfAbsoluteUrl,
+      graphMailboxUser: String(config.graph.mailboxUser || '').trim(),
+      openGraphWebLink: Boolean(config.graph.openGraphWebLink),
       // Keep deeplink URLs as hard fallback.
       outlookComposeUrl: buildOutlookComposeUrlDesktop({
         to: payload.to,

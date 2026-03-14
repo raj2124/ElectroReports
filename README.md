@@ -60,6 +60,7 @@ cp .env.example .env
 - Set `MS_GRAPH_CLIENT_ID`
 - Set `MS_GRAPH_CLIENT_SECRET`
 - Set `MS_GRAPH_MAILBOX_USER` (mailbox where drafts should be created)
+- Optional: set `MS_GRAPH_OPEN_WEBLINK=true` only if the signed-in Outlook user has access to the same mailbox and you want to open the exact Graph draft link directly.
 - In Azure App Registration, add **Application** permission `Mail.ReadWrite` and grant admin consent.
 - Keep `APP_BASE_URL` set to your deployed public URL so PDF links are valid externally.
 

@@ -1690,14 +1690,17 @@ function handleEmailDraftNote(note = '') {
 function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
   const mode = String(emailDraft.mode || '').trim().toLowerCase();
   const graphUrl = String(emailDraft.outlookDraftWebUrl || '').trim();
+  const openGraphWebLink = Boolean(emailDraft.openGraphWebLink);
   const candidates = getOutlookComposeUrlCandidates(emailDraft);
   const composeUrl = String(candidates[0] || '').trim();
   const isMobile = isMobileDevice();
 
-  // For graph-draft on mobile, open the actual created draft URL first.
-  // This avoids fragile compose URI behavior when server-side draft is healthy.
+  // Graph web links can fail if draft mailbox differs from the currently signed-in user.
+  // Default behavior: open compose deeplink unless explicit opt-in is enabled server-side.
+  const useGraphWebLink = mode === 'graph-draft' && graphUrl && openGraphWebLink;
+
   if (isMobile) {
-    if (mode === 'graph-draft' && graphUrl) {
+    if (useGraphWebLink) {
       const mobileWindow = window.open(graphUrl, '_blank', 'noopener,noreferrer');
       if (!mobileWindow) {
         window.location.href = graphUrl;
@@ -1725,7 +1728,7 @@ function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
     return false;
   }
 
-  if (mode === 'graph-draft' && graphUrl) {
+  if (useGraphWebLink) {
     const targetWindow = preopenedWindow && !preopenedWindow.closed
       ? preopenedWindow
       : window.open(graphUrl, '_blank', 'noopener,noreferrer');
@@ -2402,9 +2405,9 @@ confirmRecordExportBtn.addEventListener('click', async () => {
       const draftMode = String(emailDraft.mode || '').trim();
       if (draftMode === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created and opened in Outlook web.');
+          showToast('Server draft created. Opened compose for current mailbox.');
         } else {
-          showToast('Microsoft Outlook draft created and opened.');
+          showToast('Server draft created. Opened compose for current mailbox.');
         }
       } else {
         if (isMobileDevice()) {
@@ -2512,9 +2515,9 @@ confirmSubmitBtn.addEventListener('click', async () => {
       }
       if (String(emailDraft.mode || '').trim().toLowerCase() === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created and opened in Outlook web.');
+          showToast('Server draft created. Opened compose for current mailbox.');
         } else {
-          showToast('Microsoft Outlook draft created and opened.');
+          showToast('Server draft created. Opened compose for current mailbox.');
         }
       } else {
         if (isMobileDevice()) {
