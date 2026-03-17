@@ -21,9 +21,17 @@ if (!fs.existsSync(generatedDir)) {
   fs.mkdirSync(generatedDir, { recursive: true });
 }
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '25mb' }));
 app.use('/generated-pdfs', express.static(generatedDir));
-app.use(express.static(publicDir));
+app.use(
+  express.static(publicDir, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html') || filePath.endsWith('app.js') || filePath.endsWith('styles.css')) {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+    }
+  })
+);
 
 app.get('/api/health', (_req, res) => {
   res.json({

@@ -5,13 +5,17 @@ const PDFDocument = require('pdfkit');
 const {
   TEST_LIBRARY,
   calculateSoilSummary,
-  getElectrodeStatus,
-  getContinuityStatus,
-  getLoopImpedanceStatus,
-  getRiserStatus,
-  getEarthContinuityStatus,
+  getElectrodeMeasuredValue,
+  deriveElectrodeAssessment,
+  deriveContinuityAssessment,
+  deriveLoopImpedanceAssessment,
+  deriveFaultCurrentAssessment,
+  deriveRiserAssessment,
+  deriveEarthContinuityAssessment,
+  deriveTowerFootingAssessment,
+  summarizeTowerGroups,
+  buildTowerGroupKey,
   buildExecutiveSnapshot,
-  asLooseNumber,
   round
 } = require('./reportModel');
 
@@ -78,7 +82,7 @@ function getReportTitle(report) {
   }
   if (
     selected.every((test) =>
-      ['soilResistivity', 'electrodeResistance', 'continuityTest', 'loopImpedanceTest', 'prospectiveFaultCurrent', 'riserIntegrityTest', 'earthContinuityTest'].includes(
+      ['soilResistivity', 'electrodeResistance', 'continuityTest', 'loopImpedanceTest', 'prospectiveFaultCurrent', 'riserIntegrityTest', 'earthContinuityTest', 'towerFootingResistance'].includes(
         test.id
       )
     )
@@ -351,6 +355,67 @@ function drawParagraph(doc, text, drawChrome) {
   doc.moveDown(1);
 }
 
+function drawSubsectionParagraph(doc, title, text, drawChrome) {
+  ensureSpace(doc, 40, drawChrome);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(9)
+    .fillColor(COLORS.brandDark)
+    .text(title.toUpperCase(), PAGE.margin, doc.y, {
+      width: doc.page.width - PAGE.margin * 2
+    });
+  doc.moveDown(0.2);
+  drawParagraph(doc, text, drawChrome);
+}
+
+function drawBarChart(doc, title, entries, drawChrome) {
+  const rows = (Array.isArray(entries) ? entries : []).filter((entry) => Number.isFinite(entry?.value));
+  if (!rows.length) {
+    return;
+  }
+
+  const chartHeight = rows.length * 28 + 54;
+  ensureSpace(doc, chartHeight, drawChrome);
+
+  const x = PAGE.margin;
+  const width = doc.page.width - PAGE.margin * 2;
+  const y = doc.y;
+  const labelWidth = Math.min(180, width * 0.38);
+  const barAreaWidth = width - labelWidth - 24;
+  const maxValue = Math.max(...rows.map((entry) => entry.value), 1);
+
+  doc.roundedRect(x, y, width, chartHeight, 12).fillAndStroke(COLORS.white, COLORS.border);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(9)
+    .fillColor(COLORS.brandDark)
+    .text(title, x + 12, y + 10, { width: width - 24 });
+
+  rows.forEach((entry, index) => {
+    const rowY = y + 32 + index * 28;
+    const barX = x + 12 + labelWidth;
+    const barY = rowY + 6;
+    const barWidth = Math.max(8, (barAreaWidth * entry.value) / maxValue);
+    const fill =
+      entry.tone === 'critical' ? COLORS.critical : entry.tone === 'warning' ? COLORS.warning : entry.tone === 'healthy' ? COLORS.healthy : COLORS.brand;
+
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor(COLORS.ink)
+      .text(entry.label, x + 12, rowY, { width: labelWidth - 8 });
+    doc.roundedRect(barX, barY, barAreaWidth, 12, 6).fill(COLORS.neutralSoft);
+    doc.roundedRect(barX, barY, barWidth, 12, 6).fill(fill);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(COLORS.ink)
+      .text(String(entry.value), barX + barAreaWidth + 6, rowY, { width: 40 });
+  });
+
+  doc.y = y + chartHeight + 8;
+}
+
 function drawTable(doc, columns, rows, drawChrome) {
   const totalWidth = doc.page.width - PAGE.margin * 2;
   const x = PAGE.margin;
@@ -374,6 +439,7 @@ function drawTable(doc, columns, rows, drawChrome) {
   doc.y = headerY + 28;
 
   rows.forEach((row, rowIndex) => {
+    const observationBlocks = Array.isArray(row.__observationBlocks) ? row.__observationBlocks.filter(Boolean) : [];
     const cellHeights = columns.map((column) => {
       return doc.heightOfString(safeText(row[column.key]), {
         width: totalWidth * column.width - 12,
@@ -381,7 +447,8 @@ function drawTable(doc, columns, rows, drawChrome) {
       });
     });
     const rowHeight = Math.max(24, ...cellHeights.map((height) => height + 10));
-    ensureSpace(doc, rowHeight + 6, drawChrome);
+    const observationHeight = estimateObservationBlocksHeight(doc, observationBlocks, totalWidth - 20);
+    ensureSpace(doc, rowHeight + 6 + observationHeight, drawChrome);
 
     const rowY = doc.y;
     doc
@@ -403,6 +470,126 @@ function drawTable(doc, columns, rows, drawChrome) {
     });
 
     doc.y = rowY + rowHeight + 4;
+    if (observationBlocks.length) {
+      drawObservationBlocks(doc, observationBlocks, x + 10, totalWidth - 20, drawChrome);
+    }
+  });
+}
+
+function buildObservationBlock(row, label = 'Row Observation') {
+  const text = safeText(row?.rowObservation, '');
+  const photos = (Array.isArray(row?.rowPhotos) ? row.rowPhotos : []).filter((photo) => safeText(photo?.dataUrl, ''));
+  if (!text && !photos.length) {
+    return null;
+  }
+  return {
+    label,
+    text,
+    photos
+  };
+}
+
+function dataUrlToBuffer(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!match) {
+    return null;
+  }
+  try {
+    return Buffer.from(match[1], 'base64');
+  } catch (_error) {
+    return null;
+  }
+}
+
+function estimateObservationBlockHeight(doc, block, width) {
+  let height = 38;
+  if (block.text) {
+    doc.font('Helvetica').fontSize(8.5);
+    height += doc.heightOfString(block.text, {
+      width: width - 24
+    });
+    height += 8;
+  }
+  if (block.photos.length) {
+    const thumbSize = 74;
+    const gap = 8;
+    const perRow = Math.max(1, Math.floor((width - 24 + gap) / (thumbSize + gap)));
+    const rowCount = Math.ceil(block.photos.length / perRow);
+    height += rowCount * thumbSize;
+    height += Math.max(0, rowCount - 1) * gap;
+    height += 8;
+  }
+  return height;
+}
+
+function estimateObservationBlocksHeight(doc, blocks, width) {
+  return blocks.reduce((total, block, index) => {
+    return total + estimateObservationBlockHeight(doc, block, width) + (index ? 6 : 0);
+  }, 0);
+}
+
+function drawObservationBlocks(doc, blocks, x, width, drawChrome) {
+  blocks.forEach((block, index) => {
+    const height = estimateObservationBlockHeight(doc, block, width);
+    ensureSpace(doc, height + 4, drawChrome);
+
+    const y = doc.y;
+    doc.roundedRect(x, y, width, height, 10).fillAndStroke(COLORS.brandSoft, COLORS.border);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(COLORS.brandDark)
+      .text(block.label.toUpperCase(), x + 12, y + 10, {
+        width: width - 24
+      });
+
+    let cursorY = y + 24;
+    if (block.text) {
+      doc
+        .font('Helvetica')
+        .fontSize(8.5)
+        .fillColor(COLORS.ink)
+        .text(block.text, x + 12, cursorY, {
+          width: width - 24
+        });
+      cursorY = doc.y + 8;
+    }
+
+    if (block.photos.length) {
+      const thumbSize = 74;
+      const gap = 8;
+      const perRow = Math.max(1, Math.floor((width - 24 + gap) / (thumbSize + gap)));
+
+      block.photos.forEach((photo, photoIndex) => {
+        const imageBuffer = dataUrlToBuffer(photo.dataUrl);
+        if (!imageBuffer) {
+          return;
+        }
+        const column = photoIndex % perRow;
+        const rowIndex = Math.floor(photoIndex / perRow);
+        const imageX = x + 12 + column * (thumbSize + gap);
+        const imageY = cursorY + rowIndex * (thumbSize + gap);
+        doc.roundedRect(imageX, imageY, thumbSize, thumbSize, 8).fillAndStroke(COLORS.white, COLORS.border);
+        try {
+          doc.image(imageBuffer, imageX + 4, imageY + 4, {
+            fit: [thumbSize - 8, thumbSize - 8],
+            align: 'center',
+            valign: 'center'
+          });
+        } catch (_error) {
+          doc
+            .font('Helvetica')
+            .fontSize(7.5)
+            .fillColor(COLORS.muted)
+            .text('Image unavailable', imageX + 8, imageY + 30, {
+              width: thumbSize - 16,
+              align: 'center'
+            });
+        }
+      });
+    }
+
+    doc.y = y + height + (index === blocks.length - 1 ? 4 : 6);
   });
 }
 
@@ -511,7 +698,11 @@ function renderSoilSection(doc, report, drawChrome) {
     soil.direction1.map((row, index) => ({
       spacing: row.spacing,
       resistivity: row.resistivity,
-      direction2Resistivity: soil.direction2[index] ? soil.direction2[index].resistivity : '-'
+      direction2Resistivity: soil.direction2[index] ? soil.direction2[index].resistivity : '-',
+      __observationBlocks: [
+        buildObservationBlock(row, 'Direction 1 Observation'),
+        buildObservationBlock(soil.direction2[index], 'Direction 2 Observation')
+      ].filter(Boolean)
     })),
     drawChrome
   );
@@ -532,18 +723,26 @@ function renderElectrodeSection(doc, report, drawChrome) {
   drawTable(
     doc,
     [
-      { key: 'tag', label: 'Pit Tag', width: 0.11 },
-      { key: 'location', label: 'Location', width: 0.17 },
-      { key: 'electrodeType', label: 'Electrode Type', width: 0.14 },
-      { key: 'materialType', label: 'Material', width: 0.12 },
-      { key: 'length', label: 'Length (m)', width: 0.1 },
-      { key: 'diameter', label: 'Dia (mm)', width: 0.1 },
-      { key: 'measuredResistance', label: 'Measured (ohm)', width: 0.11 },
-      { key: 'status', label: 'Status', width: 0.15 }
+      { key: 'tag', label: 'Pit Tag', width: 0.08 },
+      { key: 'location', label: 'Location', width: 0.1 },
+      { key: 'electrodeType', label: 'Type', width: 0.08 },
+      { key: 'materialType', label: 'Material', width: 0.08 },
+      { key: 'length', label: 'Length', width: 0.06 },
+      { key: 'diameter', label: 'Dia', width: 0.06 },
+      { key: 'resistanceWithoutGrid', label: 'Without Grid', width: 0.09 },
+      { key: 'resistanceWithGrid', label: 'With Grid', width: 0.09 },
+      { key: 'standard', label: 'Standard', width: 0.1 },
+      { key: 'status', label: 'Status', width: 0.12 },
+      { key: 'comment', label: 'Comment', width: 0.14 }
     ],
     report.electrodeResistance.map((row) => ({
       ...row,
-      status: getElectrodeStatus(asLooseNumber(row.measuredResistance)).label
+      resistanceWithoutGrid: safeText(row.resistanceWithoutGrid, ''),
+      resistanceWithGrid: safeText(row.resistanceWithGrid || row.measuredResistance, ''),
+      standard: 'IS 3043 / 4.60 ohm',
+      status: deriveElectrodeAssessment(row).status.label,
+      comment: safeText(row.observation, deriveElectrodeAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
     drawChrome
   );
@@ -555,15 +754,18 @@ function renderContinuitySection(doc, report, drawChrome) {
     doc,
     [
       { key: 'srNo', label: 'Sr. No.', width: 0.08 },
-      { key: 'mainLocation', label: 'Main Location', width: 0.21 },
-      { key: 'measurementPoint', label: 'Measurement Point', width: 0.27 },
-      { key: 'resistance', label: 'Resistance (ohm)', width: 0.14 },
-      { key: 'impedance', label: 'Impedance (ohm)', width: 0.14 },
-      { key: 'status', label: 'Status', width: 0.16 }
+      { key: 'mainLocation', label: 'Main Location', width: 0.18 },
+      { key: 'measurementPoint', label: 'Measurement Point', width: 0.2 },
+      { key: 'resistance', label: 'Resistance (ohm)', width: 0.12 },
+      { key: 'impedance', label: 'Impedance (ohm)', width: 0.12 },
+      { key: 'status', label: 'Status', width: 0.12 },
+      { key: 'comment', label: 'Comment', width: 0.18 }
     ],
     report.continuityTest.map((row) => ({
       ...row,
-      status: getContinuityStatus(asLooseNumber(row.resistance)).label
+      status: deriveContinuityAssessment(row).status.label,
+      comment: safeText(row.comment, deriveContinuityAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
     drawChrome
   );
@@ -575,14 +777,17 @@ function renderLoopSection(doc, report, drawChrome) {
     doc,
     [
       { key: 'srNo', label: 'Sr. No.', width: 0.1 },
-      { key: 'mainLocation', label: 'Main Location', width: 0.22 },
-      { key: 'panelEquipment', label: 'Panel / Equipment', width: 0.34 },
-      { key: 'measuredZs', label: 'Measured Zs (ohm)', width: 0.16 },
-      { key: 'status', label: 'Status', width: 0.18 }
+      { key: 'mainLocation', label: 'Main Location', width: 0.18 },
+      { key: 'panelEquipment', label: 'Panel / Equipment', width: 0.26 },
+      { key: 'measuredZs', label: 'Measured Zs (ohm)', width: 0.14 },
+      { key: 'status', label: 'Status', width: 0.14 },
+      { key: 'remarks', label: 'Remarks', width: 0.18 }
     ],
     report.loopImpedanceTest.map((row) => ({
       ...row,
-      status: getLoopImpedanceStatus(asLooseNumber(row.measuredZs)).label
+      status: deriveLoopImpedanceAssessment(row).status.label,
+      remarks: safeText(row.remarks, deriveLoopImpedanceAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
     drawChrome
   );
@@ -594,36 +799,45 @@ function renderFaultCurrentSection(doc, report, drawChrome) {
     doc,
     [
       { key: 'srNo', label: 'Sr. No.', width: 0.06 },
-      { key: 'location', label: 'Location', width: 0.12 },
-      { key: 'feederTag', label: 'Feeder & Tag', width: 0.15 },
-      { key: 'deviceType', label: 'Device', width: 0.11 },
-      { key: 'deviceRating', label: 'Rating (A)', width: 0.09 },
-      { key: 'breakingCapacity', label: 'Breaking (kA)', width: 0.1 },
-      { key: 'measuredPoints', label: 'Measured Points', width: 0.12 },
-      { key: 'loopImpedance', label: 'Loop Z (ohm)', width: 0.1 },
-      { key: 'prospectiveFaultCurrent', label: 'PFC', width: 0.09 },
-      { key: 'comment', label: 'Remark', width: 0.06 }
+      { key: 'location', label: 'Location', width: 0.1 },
+      { key: 'feederTag', label: 'Feeder & Tag', width: 0.12 },
+      { key: 'deviceType', label: 'Device', width: 0.08 },
+      { key: 'deviceRating', label: 'Rating (A)', width: 0.08 },
+      { key: 'breakingCapacity', label: 'Breaking (kA)', width: 0.09 },
+      { key: 'measuredPoints', label: 'Measured Points', width: 0.1 },
+      { key: 'loopImpedance', label: 'Loop Z (ohm)', width: 0.08 },
+      { key: 'prospectiveFaultCurrent', label: 'PFC', width: 0.08 },
+      { key: 'status', label: 'Status', width: 0.1 },
+      { key: 'comment', label: 'Comment', width: 0.11 }
     ],
-    report.prospectiveFaultCurrent,
+    report.prospectiveFaultCurrent.map((row) => ({
+      ...row,
+      status: deriveFaultCurrentAssessment(row).status.label,
+      comment: safeText(row.comment, deriveFaultCurrentAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
+    })),
     drawChrome
   );
 }
 
 function renderRiserSection(doc, report, drawChrome) {
-  drawSectionTitle(doc, 'Riser Integrity Test', 'Resistance verification towards equipment and grid.', drawChrome);
+  drawSectionTitle(doc, 'Riser / Grid Integrity Test', 'Resistance verification towards equipment and grid.', drawChrome);
   drawTable(
     doc,
     [
       { key: 'srNo', label: 'Sr. No.', width: 0.08 },
-      { key: 'mainLocation', label: 'Main Location', width: 0.2 },
-      { key: 'measurementPoint', label: 'Measurement Point', width: 0.28 },
-      { key: 'resistanceTowardsEquipment', label: 'Towards Equipment', width: 0.14 },
-      { key: 'resistanceTowardsGrid', label: 'Towards Grid', width: 0.14 },
-      { key: 'status', label: 'Status', width: 0.16 }
+      { key: 'mainLocation', label: 'Main Location', width: 0.16 },
+      { key: 'measurementPoint', label: 'Measurement Point', width: 0.2 },
+      { key: 'resistanceTowardsEquipment', label: 'Towards Equipment', width: 0.12 },
+      { key: 'resistanceTowardsGrid', label: 'Towards Grid', width: 0.12 },
+      { key: 'status', label: 'Status', width: 0.12 },
+      { key: 'comment', label: 'Comment', width: 0.2 }
     ],
     report.riserIntegrityTest.map((row) => ({
       ...row,
-      status: getRiserStatus(asLooseNumber(row.resistanceTowardsEquipment), asLooseNumber(row.resistanceTowardsGrid)).label
+      status: deriveRiserAssessment(row).status.label,
+      comment: safeText(row.comment, deriveRiserAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
     drawChrome
   );
@@ -636,16 +850,137 @@ function renderEarthContinuitySection(doc, report, drawChrome) {
     [
       { key: 'srNo', label: 'Sr. No.', width: 0.08 },
       { key: 'tag', label: 'Tag', width: 0.12 },
-      { key: 'locationBuildingName', label: 'Location / Building', width: 0.28 },
-      { key: 'distance', label: 'Distance', width: 0.12 },
-      { key: 'measuredValue', label: 'Measured Value', width: 0.16 },
-      { key: 'status', label: 'Status', width: 0.14 },
-      { key: 'remark', label: 'Remark', width: 0.1 }
+      { key: 'locationBuildingName', label: 'Location / Building', width: 0.2 },
+      { key: 'distance', label: 'Distance', width: 0.1 },
+      { key: 'measuredValue', label: 'Measured Value', width: 0.12 },
+      { key: 'status', label: 'Status', width: 0.12 },
+      { key: 'remark', label: 'Remark', width: 0.26 }
     ],
     report.earthContinuityTest.map((row) => ({
       ...row,
-      status: getEarthContinuityStatus(row.measuredValue).label
+      status: deriveEarthContinuityAssessment(row).status.label,
+      remark: safeText(row.remark, deriveEarthContinuityAssessment(row).comment),
+      __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
+    drawChrome
+  );
+}
+
+function renderTowerFootingSection(doc, report, drawChrome) {
+  const towerSummaries = summarizeTowerGroups(report.towerFootingResistance);
+  const towerGroups = Array.isArray(report.towerFootingResistance) ? report.towerFootingResistance : [];
+
+  drawSectionTitle(
+    doc,
+    'Tower Footing Resistance Measurement & Analysis',
+    'Each tower location is evaluated using 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
+    drawChrome
+  );
+
+  drawSubsectionParagraph(
+    doc,
+    'Objective',
+    'Assess each tower location by summing the 4 footing impedance readings to obtain Zt and summing the 4 footing current readings to obtain Itotal in amperes.',
+    drawChrome
+  );
+  drawSubsectionParagraph(
+    doc,
+    'Scope',
+    'This section covers one main tower location per grouped block, with fixed measurement point locations Foot-1 through Foot-4 and shared totals/remarks across the 4 footing rows.',
+    drawChrome
+  );
+  drawSubsectionParagraph(
+    doc,
+    'Standards',
+    'Project default tolerable impedance limit Zsat is taken as 10 ohm unless edited. Measurements are analyzed using the grouped comparison logic requested for this report.',
+    drawChrome
+  );
+  drawSubsectionParagraph(
+    doc,
+    'Theory',
+    'For each tower location, the total impedance Zt is obtained by summing the measured impedance values of Foot-1, Foot-2, Foot-3, and Foot-4. The total current Itotal is obtained by summing all measured current values in mA and converting the total to amperes by dividing by 1000.',
+    drawChrome
+  );
+  drawSubsectionParagraph(
+    doc,
+    'Methodology',
+    'Each tower location retains 4 fixed footing rows. Shared values are shown once per group in the Excel-style structure. Totals remain blank until all 4 required values for that calculation are entered. Remarks are assigned by comparing Zt against Zsat.',
+    drawChrome
+  );
+
+  const tableRows = towerGroups.flatMap((group) => {
+    const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+    const readings = Array.isArray(group.readings) ? group.readings : [];
+    return readings.map((reading, readingIndex) => ({
+      srNo: readingIndex === 0 ? safeText(group.srNo, '-') : '',
+      mainLocationTower: readingIndex === 0 ? safeText(group.mainLocationTower, '-') : '',
+      measurementPointLocation: safeText(reading.measurementPointLocation, `Foot-${readingIndex + 1}`),
+      footToEarthingConnectionStatus: safeText(reading.footToEarthingConnectionStatus, 'Given'),
+      measuredCurrentMa: safeText(reading.measuredCurrentMa, ''),
+      measuredImpedance: safeText(reading.measuredImpedance, ''),
+      totalImpedanceZt: readingIndex === 0 ? (assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt)) : '',
+      totalCurrentItotal: readingIndex === 0 ? (assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)) : '',
+      standardTolerableImpedanceZsat: readingIndex === 0 ? String(assessment.zsat) : '',
+      remarks: readingIndex === 0 ? assessment.comment : '',
+      __observationBlocks: [buildObservationBlock(reading, safeText(reading.measurementPointLocation, 'Foot'))].filter(Boolean)
+    }));
+  });
+
+  drawTable(
+    doc,
+    [
+      { key: 'srNo', label: 'Sr. No.', width: 0.06 },
+      { key: 'mainLocationTower', label: 'Main Location – Tower', width: 0.13 },
+      { key: 'measurementPointLocation', label: 'Measurement Point Location', width: 0.12 },
+      { key: 'footToEarthingConnectionStatus', label: 'Connection Status', width: 0.1 },
+      { key: 'measuredCurrentMa', label: 'Measured Current I (mA)', width: 0.09 },
+      { key: 'measuredImpedance', label: 'Measured Impedance (ohm)', width: 0.09 },
+      { key: 'totalImpedanceZt', label: 'Total Impedance Zt (ohm)', width: 0.1 },
+      { key: 'totalCurrentItotal', label: 'Total Current Itotal (A)', width: 0.09 },
+      { key: 'standardTolerableImpedanceZsat', label: 'Zsat', width: 0.08 },
+      { key: 'remarks', label: 'Remarks', width: 0.14 }
+    ],
+    tableRows,
+    drawChrome
+  );
+
+  drawBarChart(
+    doc,
+    'Tower Footing Graph: Zt vs Zsat',
+    towerGroups.flatMap((group) => {
+      const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+      if (!Number.isFinite(assessment.totalImpedanceZt)) {
+        return [];
+      }
+      return [
+        {
+          label: `${safeText(group.mainLocationTower, 'Tower')} Zt`,
+          value: assessment.totalImpedanceZt,
+          tone: assessment.status.tone
+        },
+        {
+          label: `${safeText(group.mainLocationTower, 'Tower')} Zsat`,
+          value: assessment.zsat,
+          tone: 'neutral'
+        }
+      ];
+    }),
+    drawChrome
+  );
+
+  drawSubsectionParagraph(
+    doc,
+    'Interpretation',
+    towerGroups.length
+      ? towerGroups
+          .map((group) => {
+            const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+            return `${safeText(group.mainLocationTower, 'Tower')} is rated ${assessment.status.label.toLowerCase()} with grouped Zt ${
+              assessment.totalImpedanceZt === null ? '-' : assessment.totalImpedanceZt
+            } ohm against Zsat ${assessment.zsat === null ? '-' : assessment.zsat} ohm.`;
+          })
+          .join(' ')
+      : 'No tower footing groups were available for interpretation.',
     drawChrome
   );
 }
@@ -653,13 +988,27 @@ function renderEarthContinuitySection(doc, report, drawChrome) {
 function renderConclusion(doc, report, drawChrome) {
   const soil = calculateSoilSummary(report);
   const electrodeOverLimit = report.electrodeResistance.filter((row) => {
-    return getElectrodeStatus(asLooseNumber(row.measuredResistance)).tone === 'critical';
+    return deriveElectrodeAssessment(row).status.tone === 'critical';
   }).length;
   const continuityAttention = report.continuityTest.filter((row) => {
-    return getContinuityStatus(asLooseNumber(row.resistance)).tone !== 'healthy';
+    return deriveContinuityAssessment(row).status.tone !== 'healthy';
   }).length;
   const loopAttention = report.loopImpedanceTest.filter((row) => {
-    return getLoopImpedanceStatus(asLooseNumber(row.measuredZs)).tone !== 'healthy';
+    return deriveLoopImpedanceAssessment(row).status.tone !== 'healthy';
+  }).length;
+  const faultAttention = report.prospectiveFaultCurrent.filter((row) => {
+    return !['healthy', 'neutral'].includes(deriveFaultCurrentAssessment(row).status.tone);
+  }).length;
+  const riserAttention = report.riserIntegrityTest.filter((row) => {
+    return !['healthy', 'neutral'].includes(deriveRiserAssessment(row).status.tone);
+  }).length;
+  const earthContinuityAttention = report.earthContinuityTest.filter((row) => {
+    return !['healthy', 'neutral'].includes(deriveEarthContinuityAssessment(row).status.tone);
+  }).length;
+  const towerSummaries = summarizeTowerGroups(report.towerFootingResistance);
+  const towerGroups = Array.isArray(report.towerFootingResistance) ? report.towerFootingResistance : [];
+  const towerFootingAttention = towerGroups.filter((row) => {
+    return !['healthy', 'neutral'].includes(deriveTowerFootingAssessment(row, towerSummaries.get(buildTowerGroupKey(row))).status.tone);
   }).length;
 
   drawSectionTitle(doc, 'Conclusion', 'High-level outcome of the selected measurement sections.', drawChrome);
@@ -691,6 +1040,34 @@ function renderConclusion(doc, report, drawChrome) {
       loopAttention
         ? `${loopAttention} loop impedance point(s) are above the healthy band and should be checked with the protection design.`
         : 'Loop impedance values are within the healthy band for the entered rows.'
+    );
+  }
+  if (report.tests.prospectiveFaultCurrent && report.prospectiveFaultCurrent.length) {
+    parts.push(
+      faultAttention
+        ? `${faultAttention} fault current row(s) need device-capacity review against the entered breaking capacity.`
+        : 'Prospective fault current values are within the entered device breaking capacities.'
+    );
+  }
+  if (report.tests.riserIntegrityTest && report.riserIntegrityTest.length) {
+    parts.push(
+      riserAttention
+        ? `${riserAttention} riser integrity row(s) exceed the continuity reference band and should be investigated.`
+        : 'Riser integrity readings are within the continuity reference band for the entered rows.'
+    );
+  }
+  if (report.tests.earthContinuityTest && report.earthContinuityTest.length) {
+    parts.push(
+      earthContinuityAttention
+        ? `${earthContinuityAttention} earth continuity point(s) need attention based on the recorded measured values.`
+        : 'Earth continuity readings are within the reference band for the entered rows.'
+    );
+  }
+  if (report.tests.towerFootingResistance && report.towerFootingResistance.length) {
+    parts.push(
+      towerFootingAttention
+        ? `${towerFootingAttention} tower footing row(s) need review against the grouped Zsat limit.`
+        : 'Tower footing groups are within the entered Zsat limits for the entered rows.'
     );
   }
 
@@ -743,6 +1120,9 @@ async function generateElectroReportPdf(report, options) {
   }
   if (report.tests.earthContinuityTest) {
     renderEarthContinuitySection(doc, report, drawChrome);
+  }
+  if (report.tests.towerFootingResistance) {
+    renderTowerFootingSection(doc, report, drawChrome);
   }
 
   renderConclusion(doc, report, drawChrome);

@@ -33,7 +33,7 @@ const LOCAL_TEST_LIBRARY = [
   },
   {
     id: 'riserIntegrityTest',
-    label: 'Riser Integrity Test',
+    label: 'Riser / Grid Integrity Test',
     shortLabel: 'Riser',
     description: 'Resistance verification towards equipment and earth grid.'
   },
@@ -42,6 +42,12 @@ const LOCAL_TEST_LIBRARY = [
     label: 'Earth Continuity Test',
     shortLabel: 'Earth Continuity',
     description: 'Earth path continuity by tag, location, and measured value.'
+  },
+  {
+    id: 'towerFootingResistance',
+    label: 'Tower Footing Resistance Measurement & Analysis',
+    shortLabel: 'Tower Footing',
+    description: 'Grouped tower footing impedance and current analysis with per-tower totals.'
   }
 ];
 
@@ -52,49 +58,76 @@ const TEST_STANDARD_REFERENCES = {
   loopImpedanceTest: ['IEC 60364-6', 'IS/IEC protective loop verification'],
   prospectiveFaultCurrent: ['IEC 60909', 'IS/IEC fault level assessment'],
   riserIntegrityTest: ['IS 3043:2018', 'IEC 60364 earth continuity guidance'],
-  earthContinuityTest: ['IS 3043:2018', 'IEC 60364 continuity verification']
+  earthContinuityTest: ['IS 3043:2018', 'IEC 60364 continuity verification'],
+  towerFootingResistance: ['Project default Zsat 10 ohm', 'Grouped tower footing analysis']
 };
 
+const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
+const TOWER_FOOT_POINTS = ['Foot-1', 'Foot-2', 'Foot-3', 'Foot-4'];
+
+function buildRowId(prefix = 'row') {
+  const timestamp = Date.now().toString(36);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-${timestamp}-${suffix}`;
+}
+
 function defaultSoilRow(spacing = '') {
-  return { spacing, resistivity: '' };
+  return {
+    rowId: buildRowId('soil'),
+    spacing,
+    resistivity: '',
+    rowObservation: '',
+    rowPhotos: []
+  };
 }
 
 function defaultElectrodeRow() {
   return {
+    rowId: buildRowId('electrode'),
     tag: '',
     location: '',
     electrodeType: 'Rod',
     materialType: 'Copper',
     length: '',
     diameter: '',
-    measuredResistance: '',
-    observation: ''
+    resistanceWithoutGrid: '',
+    resistanceWithGrid: '',
+    observation: '',
+    rowObservation: '',
+    rowPhotos: []
   };
 }
 
 function defaultContinuityRow(srNo = '') {
   return {
+    rowId: buildRowId('continuity'),
     srNo,
     mainLocation: '',
     measurementPoint: '',
     resistance: '',
     impedance: '',
-    comment: ''
+    comment: '',
+    rowObservation: '',
+    rowPhotos: []
   };
 }
 
 function defaultLoopRow(srNo = '') {
   return {
+    rowId: buildRowId('loop'),
     srNo,
     mainLocation: '',
     panelEquipment: '',
     measuredZs: '',
-    remarks: ''
+    remarks: '',
+    rowObservation: '',
+    rowPhotos: []
   };
 }
 
 function defaultFaultRow(srNo = '') {
   return {
+    rowId: buildRowId('fault'),
     srNo,
     location: '',
     feederTag: '',
@@ -105,29 +138,67 @@ function defaultFaultRow(srNo = '') {
     loopImpedance: '',
     prospectiveFaultCurrent: '',
     voltage: '230',
-    comment: ''
+    comment: '',
+    rowObservation: '',
+    rowPhotos: []
   };
 }
 
 function defaultRiserRow(srNo = '') {
   return {
+    rowId: buildRowId('riser'),
     srNo,
     mainLocation: '',
     measurementPoint: '',
     resistanceTowardsEquipment: '',
     resistanceTowardsGrid: '',
-    comment: ''
+    comment: '',
+    rowObservation: '',
+    rowPhotos: []
   };
 }
 
 function defaultEarthContinuityRow(srNo = '') {
   return {
+    rowId: buildRowId('earth'),
     srNo,
     tag: '',
     locationBuildingName: '',
     distance: '',
     measuredValue: '',
-    remark: ''
+    remark: '',
+    rowObservation: '',
+    rowPhotos: []
+  };
+}
+
+function defaultTowerFootingReading(foot) {
+  return {
+    measurementPointLocation: '',
+    footLabel: foot,
+    footToEarthingConnectionStatus: 'Given',
+    measuredCurrentMa: '',
+    measuredImpedance: '',
+    rowId: buildRowId('tower'),
+    rowObservation: '',
+    rowPhotos: []
+  };
+}
+
+function defaultTowerFootingGroup(srNo = '') {
+  return {
+    groupId: buildRowId('tower-group'),
+    srNo,
+    mainLocationTower: '',
+    readings: TOWER_FOOT_POINTS.map((foot) => {
+      const reading = defaultTowerFootingReading(foot);
+      reading.measurementPointLocation = foot;
+      return reading;
+    }),
+    totalImpedanceZt: '',
+    totalCurrentItotal: '',
+    standardTolerableImpedanceZsat: '10',
+    remarks: ''
   };
 }
 
@@ -152,11 +223,12 @@ function createDraft() {
       loopImpedanceTest: false,
       prospectiveFaultCurrent: false,
       riserIntegrityTest: false,
-      earthContinuityTest: false
+      earthContinuityTest: false,
+      towerFootingResistance: false
     },
     soilResistivity: {
-      direction1: [defaultSoilRow('0.5'), defaultSoilRow('1.0'), defaultSoilRow('1.5')],
-      direction2: [defaultSoilRow('0.5'), defaultSoilRow('1.0'), defaultSoilRow('1.5')],
+      direction1: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => defaultSoilRow(spacing)),
+      direction2: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => defaultSoilRow(spacing)),
       notes: ''
     },
     electrodeResistance: [defaultElectrodeRow()],
@@ -164,7 +236,8 @@ function createDraft() {
     loopImpedanceTest: [defaultLoopRow('1')],
     prospectiveFaultCurrent: [defaultFaultRow('1')],
     riserIntegrityTest: [defaultRiserRow('1')],
-    earthContinuityTest: [defaultEarthContinuityRow('1')]
+    earthContinuityTest: [defaultEarthContinuityRow('1')],
+    towerFootingResistance: [defaultTowerFootingGroup('1')]
   };
 }
 
@@ -185,6 +258,8 @@ const state = {
   activeReport: null,
   saving: false,
   exporting: false,
+  observationEditor: null,
+  observationUploading: false,
   toast: null
 };
 
@@ -205,6 +280,55 @@ function escapeHtml(value) {
   });
 }
 
+function cloneRowPhotos(photos) {
+  return (Array.isArray(photos) ? photos : []).map((photo) => ({
+    id: safeText(photo?.id, buildRowId('photo')),
+    name: safeText(photo?.name, 'Observation image'),
+    dataUrl: safeText(photo?.dataUrl, '')
+  }));
+}
+
+function rowHasObservationData(row) {
+  return Boolean(safeText(row?.rowObservation, '')) || cloneRowPhotos(row?.rowPhotos).some((photo) => photo.dataUrl);
+}
+
+function getElectrodeMeasuredValue(row) {
+  return toNumber(row?.resistanceWithGrid) ?? toNumber(row?.resistanceWithoutGrid) ?? toNumber(row?.measuredResistance);
+}
+
+function getSectionRows(source, section, direction) {
+  if (section === 'soilResistivity') {
+    return source.soilResistivity[direction] || [];
+  }
+  return source[section] || [];
+}
+
+function getSectionRow(source, section, index, direction, groupIndex = null) {
+  if (section === 'towerFootingResistance' && Number.isInteger(groupIndex)) {
+    return source.towerFootingResistance?.[groupIndex]?.readings?.[index] || null;
+  }
+  return getSectionRows(source, section, direction)[index] || null;
+}
+
+function getTestLabel(section) {
+  const match = LOCAL_TEST_LIBRARY.find((test) => test.id === section);
+  return match ? match.label : 'Measurement Row';
+}
+
+function getRowObservationTitle(section, index, direction, groupIndex = null) {
+  if (section === 'towerFootingResistance' && Number.isInteger(groupIndex)) {
+    const group = state.draft.towerFootingResistance?.[groupIndex];
+    const foot = group?.readings?.[index]?.measurementPointLocation || TOWER_FOOT_POINTS[index] || `Foot-${index + 1}`;
+    const tower = safeText(group?.mainLocationTower, `Tower ${groupIndex + 1}`);
+    return `Tower Footing Resistance Measurement & Analysis | ${tower} | ${foot}`;
+  }
+  const base = `${getTestLabel(section)} | Row ${index + 1}`;
+  if (section !== 'soilResistivity') {
+    return base;
+  }
+  return `${base} | ${direction === 'direction2' ? 'Direction 2' : 'Direction 1'}`;
+}
+
 function toNumber(value) {
   const numeric = Number.parseFloat(String(value === undefined || value === null ? '' : value).trim());
   return Number.isFinite(numeric) ? numeric : null;
@@ -216,6 +340,49 @@ function round(value, digits = 2) {
   }
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function loadFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name || 'image'}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageDataUrl(dataUrl, maxDimension = 1600, quality = 0.82) {
+  return new Promise((resolve) => {
+    const image = new window.Image();
+    image.onload = () => {
+      const largestSide = Math.max(image.width, image.height, 1);
+      const scale = Math.min(1, maxDimension / largestSide);
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
+async function buildObservationPhoto(file) {
+  const sourceDataUrl = await loadFileAsDataUrl(file);
+  const optimizedDataUrl = await compressImageDataUrl(sourceDataUrl);
+  return {
+    id: buildRowId('photo'),
+    name: safeText(file?.name, 'Observation image'),
+    dataUrl: optimizedDataUrl
+  };
 }
 
 function average(values) {
@@ -281,10 +448,10 @@ function getRiserStatus(equipment, grid) {
     return { label: 'Pending', tone: 'neutral' };
   }
   const highest = Math.max(...values);
-  if (highest <= 0.05) {
+  if (highest <= 0.5) {
     return { label: 'Healthy', tone: 'healthy' };
   }
-  if (highest <= 0.1) {
+  if (highest <= 1) {
     return { label: 'Needs Attention', tone: 'warning' };
   }
   return { label: 'Critical', tone: 'critical' };
@@ -302,6 +469,252 @@ function getEarthContinuityStatus(value) {
     return { label: 'Needs Attention', tone: 'warning' };
   }
   return { label: 'Critical', tone: 'critical' };
+}
+
+const STANDARD_GUIDANCE = {
+  electrodeResistance: {
+    reference: 'IS 3043',
+    limitLabel: '4.60 ohm project limit'
+  },
+  continuityTest: {
+    reference: 'Continuity guidance',
+    limitLabel: '0.50 ohm continuity reference'
+  },
+  loopImpedanceTest: {
+    reference: 'IEC 60364 / device-specific max Zs',
+    limitLabel: 'Circuit-specific maximum Zs'
+  },
+  prospectiveFaultCurrent: {
+    reference: 'IEC breaking-capacity check',
+    limitLabel: 'PFC must not exceed device breaking capacity'
+  },
+  riserIntegrityTest: {
+    reference: 'Continuity / bonding guidance',
+    limitLabel: '0.50 ohm continuity reference'
+  },
+  earthContinuityTest: {
+    reference: 'Earth continuity guidance',
+    limitLabel: '0.50 ohm continuity reference'
+  },
+  towerFootingResistance: {
+    reference: 'Project default tower footing limit',
+    limitLabel: '10.00 ohm Zsat default'
+  }
+};
+
+function deriveElectrodeAssessment(row) {
+  const measured = getElectrodeMeasuredValue(row);
+  const withoutGrid = toNumber(row?.resistanceWithoutGrid);
+  const withGrid = toNumber(row?.resistanceWithGrid) ?? toNumber(row?.measuredResistance);
+  const status = getElectrodeStatus(measured);
+  const standard = STANDARD_GUIDANCE.electrodeResistance;
+
+  let comment = `Enter the resistance value with grid to compare against the ${standard.limitLabel}.`;
+  if (status.tone === 'healthy') {
+    comment = `Resistance with grid is within the ${standard.limitLabel} under ${standard.reference}.`;
+  } else if (status.tone === 'critical') {
+    comment = `Resistance with grid exceeds the ${standard.limitLabel}; review earthing improvement as per ${standard.reference}.`;
+  }
+
+  if (Number.isFinite(withoutGrid) && Number.isFinite(withGrid)) {
+    if (withGrid > withoutGrid) {
+      comment += ' The with-grid value is higher than the without-grid value, so verify the test setup and bonding path.';
+    } else if (withGrid < withoutGrid) {
+      comment += ' The with-grid value improved after bonding to the grid, which is the expected trend.';
+    }
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function deriveContinuityAssessment(row) {
+  const resistance = toNumber(row?.resistance);
+  const impedance = toNumber(row?.impedance);
+  const status = getContinuityStatus(resistance);
+  const standard = STANDARD_GUIDANCE.continuityTest;
+
+  let comment = `Enter a resistance reading to assess continuity against the ${standard.limitLabel}.`;
+  if (status.tone === 'healthy') {
+    comment = `Continuity resistance is within the ${standard.limitLabel}; bond/joint continuity is acceptable.`;
+  } else if (status.tone === 'warning') {
+    comment = `Continuity resistance is above the ${standard.limitLabel}; inspect joints, terminations, and bonding integrity.`;
+  } else if (status.tone === 'critical') {
+    comment = `Continuity resistance is well above the ${standard.limitLabel}; urgent investigation of the continuity path is recommended.`;
+  }
+
+  if (Number.isFinite(impedance)) {
+    comment += ` Recorded impedance: ${round(impedance, 2)} ohm.`;
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function deriveLoopAssessment(row) {
+  const measured = toNumber(row?.measuredZs);
+  const status = getLoopStatus(measured);
+  const standard = STANDARD_GUIDANCE.loopImpedanceTest;
+
+  let comment = `Enter measured Zs and verify it against the protective device's maximum permitted Zs under ${standard.reference}.`;
+  if (status.tone === 'healthy') {
+    comment = `Measured Zs is in the healthy range, but final compliance still depends on the circuit/device-specific maximum Zs under ${standard.reference}.`;
+  } else if (status.tone === 'warning') {
+    comment = `Measured Zs is elevated; compare it carefully against the circuit/device-specific maximum Zs and confirm disconnection performance.`;
+  } else if (status.tone === 'critical') {
+    comment = `Measured Zs is high and likely to challenge disconnection performance; verify immediately against the protective device's maximum Zs.`;
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function deriveFaultAssessment(row) {
+  const pfc = toNumber(row?.prospectiveFaultCurrent);
+  const breakingCapacity = toNumber(row?.breakingCapacity);
+  const standard = STANDARD_GUIDANCE.prospectiveFaultCurrent;
+  let status = { label: 'Pending', tone: 'neutral' };
+  let comment = `Enter both prospective fault current and device breaking capacity to verify that ${standard.limitLabel}.`;
+
+  if (Number.isFinite(pfc) && Number.isFinite(breakingCapacity)) {
+    if (pfc <= breakingCapacity * 0.9) {
+      status = { label: 'Healthy', tone: 'healthy' };
+      comment = 'Prospective fault current is comfortably within the device breaking capacity.';
+    } else if (pfc <= breakingCapacity) {
+      status = { label: 'Needs Attention', tone: 'warning' };
+      comment = 'Prospective fault current is within the device breaking capacity, but the safety margin is small.';
+    } else {
+      status = { label: 'Critical', tone: 'critical' };
+      comment = 'Prospective fault current exceeds the device breaking capacity; review protective device selection immediately.';
+    }
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function deriveRiserAssessment(row) {
+  const equipment = toNumber(row?.resistanceTowardsEquipment);
+  const grid = toNumber(row?.resistanceTowardsGrid);
+  const status = getRiserStatus(equipment, grid);
+  const standard = STANDARD_GUIDANCE.riserIntegrityTest;
+
+  let comment = `Enter both resistance readings to assess continuity against the ${standard.limitLabel}.`;
+  if (status.tone === 'healthy') {
+    comment = `Riser continuity readings are within the ${standard.limitLabel} toward equipment and grid.`;
+  } else if (status.tone === 'warning') {
+    comment = `One or both riser continuity readings are above the ${standard.limitLabel}; inspect joints, lugs, and bonding interfaces.`;
+  } else if (status.tone === 'critical') {
+    comment = `Riser continuity readings are high; investigate the riser path, bonding terminations, and earth grid connection urgently.`;
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function deriveEarthContinuityAssessment(row) {
+  const measured = toNumber(row?.measuredValue);
+  const status = getEarthContinuityStatus(measured);
+  const standard = STANDARD_GUIDANCE.earthContinuityTest;
+
+  let comment = `Enter a measured value to assess earth continuity against the ${standard.limitLabel}.`;
+  if (status.tone === 'healthy') {
+    comment = `Earth continuity is within the ${standard.limitLabel}; the earth path is acceptable for this point.`;
+  } else if (status.tone === 'warning') {
+    comment = `Earth continuity is above the ${standard.limitLabel}; inspect the earth path, joints, and terminations.`;
+  } else if (status.tone === 'critical') {
+    comment = `Earth continuity is well above the ${standard.limitLabel}; urgent investigation of the earth path is recommended.`;
+  }
+
+  return {
+    status,
+    standard,
+    comment
+  };
+}
+
+function buildTowerGroupKey(group) {
+  const groupId = safeText(group?.groupId, '');
+  const location = safeText(group?.mainLocationTower, '');
+  return groupId || location || `group:${safeText(group?.srNo, 'tower')}`;
+}
+
+function summarizeTowerGroups(groups) {
+  const summaries = new Map();
+
+  (Array.isArray(groups) ? groups : []).forEach((group) => {
+    const readings = Array.isArray(group?.readings) ? group.readings : [];
+    const impedanceValues = readings.map((reading) => toNumber(reading?.measuredImpedance)).filter((value) => Number.isFinite(value));
+    const currentValues = readings.map((reading) => toNumber(reading?.measuredCurrentMa)).filter((value) => Number.isFinite(value));
+    const key = buildTowerGroupKey(group);
+    const hasAnyInput = Boolean(safeText(group?.mainLocationTower, '')) || readings.some((reading) => {
+      return (
+        safeText(reading?.footToEarthingConnectionStatus, 'Given') !== 'Given' ||
+        safeText(reading?.measuredCurrentMa, '') ||
+        safeText(reading?.measuredImpedance, '') ||
+        rowHasObservationData(reading)
+      );
+    });
+
+    summaries.set(key, {
+      impedanceCount: impedanceValues.length,
+      currentCount: currentValues.length,
+      totalImpedanceZt: impedanceValues.length === TOWER_FOOT_POINTS.length ? round(impedanceValues.reduce((sum, value) => sum + value, 0), 2) : null,
+      totalCurrentItotal:
+        currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0) / 1000, 4) : null,
+      hasAnyInput
+    });
+  });
+
+  return summaries;
+}
+
+function deriveTowerFootingAssessment(group, groupSummary) {
+  const standard = STANDARD_GUIDANCE.towerFootingResistance;
+  const zsat = toNumber(group?.standardTolerableImpedanceZsat) ?? 10;
+  const totalImpedanceZt = groupSummary?.totalImpedanceZt ?? null;
+  const totalCurrentItotal = groupSummary?.totalCurrentItotal ?? null;
+  let status = { label: 'Pending', tone: 'neutral' };
+  let comment = '-';
+
+  if (Number.isFinite(totalImpedanceZt)) {
+    if (totalImpedanceZt <= zsat) {
+      status = { label: 'Healthy', tone: 'healthy' };
+      comment = 'Healthy';
+    } else if (totalImpedanceZt <= zsat * 1.2) {
+      status = { label: 'Marginal', tone: 'warning' };
+      comment = 'Marginal';
+    } else {
+      status = { label: 'Not Acceptable', tone: 'critical' };
+      comment = 'Not Acceptable';
+    }
+  } else if (groupSummary?.hasAnyInput) {
+    comment = '-';
+  }
+
+  return {
+    status,
+    standard,
+    totalImpedanceZt,
+    totalCurrentItotal,
+    zsat: round(zsat, 2),
+    comment
+  };
 }
 
 function calculateSoilSummary(source) {
@@ -325,19 +738,43 @@ function selectedTestCount(source) {
 }
 
 function countActionRows(source) {
-  const electrodeCritical = (source.electrodeResistance || []).filter((row) => getElectrodeStatus(toNumber(row.measuredResistance)).tone === 'critical').length;
-  const continuityAttention = (source.continuityTest || []).filter((row) => getContinuityStatus(toNumber(row.resistance)).tone !== 'healthy' && getContinuityStatus(toNumber(row.resistance)).tone !== 'neutral').length;
-  const loopAttention = (source.loopImpedanceTest || []).filter((row) => getLoopStatus(toNumber(row.measuredZs)).tone !== 'healthy' && getLoopStatus(toNumber(row.measuredZs)).tone !== 'neutral').length;
-  const riserAttention = (source.riserIntegrityTest || []).filter((row) => getRiserStatus(toNumber(row.resistanceTowardsEquipment), toNumber(row.resistanceTowardsGrid)).tone !== 'healthy' && getRiserStatus(toNumber(row.resistanceTowardsEquipment), toNumber(row.resistanceTowardsGrid)).tone !== 'neutral').length;
-  const earthContinuityAttention = (source.earthContinuityTest || []).filter((row) => getEarthContinuityStatus(row.measuredValue).tone !== 'healthy' && getEarthContinuityStatus(row.measuredValue).tone !== 'neutral').length;
+  const towerSummaries = summarizeTowerGroups(source.towerFootingResistance || []);
+  const electrodeCritical = (source.electrodeResistance || []).filter((row) => getElectrodeStatus(getElectrodeMeasuredValue(row)).tone === 'critical').length;
+  const continuityAttention = (source.continuityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveContinuityAssessment(row).status.tone)).length;
+  const loopAttention = (source.loopImpedanceTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveLoopAssessment(row).status.tone)).length;
+  const faultAttention = (source.prospectiveFaultCurrent || []).filter((row) => deriveFaultAssessment(row).status.tone !== 'healthy' && deriveFaultAssessment(row).status.tone !== 'neutral').length;
+  const riserAttention = (source.riserIntegrityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveRiserAssessment(row).status.tone)).length;
+  const earthContinuityAttention = (source.earthContinuityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveEarthContinuityAssessment(row).status.tone)).length;
+  const towerGroups = Array.isArray(source.towerFootingResistance) ? source.towerFootingResistance : [];
+  const towerFootingAttention = towerGroups.filter((group) => {
+    return !['healthy', 'neutral'].includes(deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status.tone);
+  }).length;
+  const criticalTotal =
+    electrodeCritical +
+    (source.continuityTest || []).filter((row) => deriveContinuityAssessment(row).status.tone === 'critical').length +
+    (source.loopImpedanceTest || []).filter((row) => deriveLoopAssessment(row).status.tone === 'critical').length +
+    (source.prospectiveFaultCurrent || []).filter((row) => deriveFaultAssessment(row).status.tone === 'critical').length +
+    (source.riserIntegrityTest || []).filter((row) => deriveRiserAssessment(row).status.tone === 'critical').length +
+    (source.earthContinuityTest || []).filter((row) => deriveEarthContinuityAssessment(row).status.tone === 'critical').length +
+    towerGroups.filter((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status.tone === 'critical').length;
 
   return {
     electrodeCritical,
     continuityAttention,
     loopAttention,
+    faultAttention,
     riserAttention,
     earthContinuityAttention,
-    total: electrodeCritical + continuityAttention + loopAttention + riserAttention + earthContinuityAttention
+    towerFootingAttention,
+    criticalTotal,
+    total:
+      electrodeCritical +
+      continuityAttention +
+      loopAttention +
+      faultAttention +
+      riserAttention +
+      earthContinuityAttention +
+      towerFootingAttention
   };
 }
 
@@ -345,15 +782,17 @@ function buildAssessmentSummary(source) {
   const soil = calculateSoilSummary(source);
   const actions = countActionRows(source);
   const selected = selectedTests(source);
-  const criticalSignals = actions.electrodeCritical + (soil.category.tone === 'critical' ? 1 : 0);
-  const warningSignals = actions.total - actions.electrodeCritical + (soil.category.tone === 'warning' ? 1 : 0);
+  const criticalSignals = actions.criticalTotal + (soil.category.tone === 'critical' ? 1 : 0);
+  const warningSignals = actions.total - actions.criticalTotal + (soil.category.tone === 'warning' ? 1 : 0);
   const healthySignals = [
     source.tests.soilResistivity && soil.category.tone === 'healthy' ? 1 : 0,
     source.tests.electrodeResistance && actions.electrodeCritical === 0 && source.electrodeResistance.length ? 1 : 0,
     source.tests.continuityTest && actions.continuityAttention === 0 && source.continuityTest.length ? 1 : 0,
     source.tests.loopImpedanceTest && actions.loopAttention === 0 && source.loopImpedanceTest.length ? 1 : 0,
+    source.tests.prospectiveFaultCurrent && actions.faultAttention === 0 && source.prospectiveFaultCurrent.length ? 1 : 0,
     source.tests.riserIntegrityTest && actions.riserAttention === 0 && source.riserIntegrityTest.length ? 1 : 0,
-    source.tests.earthContinuityTest && actions.earthContinuityAttention === 0 && source.earthContinuityTest.length ? 1 : 0
+    source.tests.earthContinuityTest && actions.earthContinuityAttention === 0 && source.earthContinuityTest.length ? 1 : 0,
+    source.tests.towerFootingResistance && actions.towerFootingAttention === 0 && source.towerFootingResistance.length ? 1 : 0
   ].reduce((sum, value) => sum + value, 0);
 
   let tone = 'healthy';
@@ -482,7 +921,8 @@ function stepGuidance(stepId) {
     loopImpedanceTest: 'Record Zs values for protection verification at the tested points.',
     prospectiveFaultCurrent: 'Capture breaker and feeder context with the measured fault current values.',
     riserIntegrityTest: 'Use this for resistance checks towards equipment and towards the grid.',
-    earthContinuityTest: 'Record tagged earth continuity points with distance and measured value.'
+    earthContinuityTest: 'Record tagged earth continuity points with distance and measured value.',
+    towerFootingResistance: 'Rows sharing the same tower location are assessed together using grouped total impedance and current.'
   };
   return map[stepId] || 'Continue entering the field measurements for the selected scope.';
 }
@@ -745,7 +1185,7 @@ function dashboardView() {
       <div class="hero-banner">
         <div class="hero-copy">
           <p class="eyebrow">ElectroReports</p>
-          <h2>Electrical reporting for field engineers.</h2>
+          <h2>Electrical Reporting for Field Engineers</h2>
           <p>
             Capture site measurements, sync live Zoho Projects, and prepare clear client-ready reports with a faster,
             more dependable workflow.
@@ -1058,12 +1498,173 @@ function renderSelectionStep() {
   );
 }
 
+function actionButtonsCell(section, index, row, direction) {
+  const hasObservation = rowHasObservationData(row);
+  return `
+    <td class="table-action-cell">
+      <div class="table-action-buttons">
+        <button
+          class="icon-button icon-button-danger"
+          type="button"
+          data-action="remove-row"
+          data-section="${section}"
+          data-index="${index}"
+          ${direction ? `data-direction="${direction}"` : ''}
+          aria-label="Remove row"
+          title="Remove row"
+        >
+          <span class="icon-button-symbol">&times;</span>
+        </button>
+        <button
+          class="icon-button icon-button-observation ${hasObservation ? 'icon-button-observation-active' : ''}"
+          type="button"
+          data-action="open-row-observation"
+          data-section="${section}"
+          data-index="${index}"
+          ${direction ? `data-direction="${direction}"` : ''}
+          aria-label="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
+          title="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
+        >
+          <span class="icon-button-symbol">+</span>
+        </button>
+      </div>
+    </td>
+  `;
+}
+
+function renderObservationCard(row, title = 'Row Observation') {
+  const text = safeText(row?.rowObservation, '');
+  const photos = cloneRowPhotos(row?.rowPhotos).filter((photo) => photo.dataUrl);
+  if (!text && !photos.length) {
+    return '';
+  }
+
+  return `
+    <article class="row-observation-card">
+      <div class="row-observation-head">
+        <strong>${escapeHtml(title)}</strong>
+        ${row?.rowId ? `<span class="row-observation-badge">${escapeHtml(row.rowId)}</span>` : ''}
+      </div>
+      ${text ? `<p class="row-observation-copy">${escapeHtml(text)}</p>` : ''}
+      ${
+        photos.length
+          ? `<div class="row-observation-gallery">
+              ${photos
+                .map(
+                  (photo, photoIndex) => `
+                    <figure class="row-observation-photo">
+                      <img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name || `Observation photo ${photoIndex + 1}`)}" />
+                    </figure>
+                  `
+                )
+                .join('')}
+            </div>`
+          : ''
+      }
+    </article>
+  `;
+}
+
+function renderObservationDrawer() {
+  if (state.view !== 'builder' || !state.observationEditor) {
+    return '';
+  }
+
+  const { section, index, direction, remark, photos, rowId, groupIndex } = state.observationEditor;
+  const title = getRowObservationTitle(section, index, direction, groupIndex);
+
+  return `
+    <div class="observation-drawer-layer">
+      <button class="observation-drawer-backdrop" type="button" data-action="close-row-observation" aria-label="Close observation panel"></button>
+      <aside class="observation-drawer" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <div class="observation-drawer-head">
+          <div>
+            <p class="section-kicker">Row Observation</p>
+            <h3>${escapeHtml(title)}</h3>
+            <p class="muted">Attach optional field remarks and photo evidence only for this measurement row.</p>
+          </div>
+          <button class="icon-button" type="button" data-action="close-row-observation" aria-label="Close observation panel">
+            <span class="icon-button-symbol">&times;</span>
+          </button>
+        </div>
+
+        <div class="observation-meta-row">
+          <span class="row-observation-badge">${escapeHtml(rowId)}</span>
+          <span class="muted">Mobile friendly: tap the upload area to open camera or gallery.</span>
+        </div>
+
+        <div class="observation-drawer-body">
+          <label class="field">
+            <span>Observation / Remark</span>
+            <textarea class="text-area" rows="5" placeholder="Add optional row-specific observation..." data-observation-field="remark">${escapeHtml(
+              remark
+            )}</textarea>
+          </label>
+
+          <div class="field">
+            <span>Photos / Evidence</span>
+            <input id="rowObservationFiles" class="observation-upload-input" type="file" accept="image/*" multiple />
+            <label class="observation-upload-tile" for="rowObservationFiles">
+              <strong>${state.observationUploading ? 'Preparing images...' : 'Tap to add photos'}</strong>
+              <p>${state.observationUploading ? 'Optimizing images for report storage...' : 'Camera or gallery works on mobile devices.'}</p>
+            </label>
+            ${
+              photos.length
+                ? `<div class="observation-gallery">
+                    ${photos
+                      .map(
+                        (photo, photoIndex) => `
+                          <figure class="observation-thumb">
+                            <img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name || `Observation photo ${photoIndex + 1}`)}" />
+                            <button
+                              class="observation-remove-photo"
+                              type="button"
+                              data-action="remove-observation-photo"
+                              data-photo-index="${photoIndex}"
+                              aria-label="Remove photo"
+                            >
+                              &times;
+                            </button>
+                          </figure>
+                        `
+                      )
+                      .join('')}
+                  </div>`
+                : '<p class="observation-empty">No photos added for this row yet.</p>'
+            }
+          </div>
+        </div>
+
+        <div class="wizard-nav observation-drawer-actions">
+          <button class="button button-secondary" type="button" data-action="close-row-observation">Cancel</button>
+          <button class="button button-primary" type="button" data-action="save-row-observation" ${state.observationUploading ? 'disabled' : ''}>
+            Save Observation
+          </button>
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
+function autoTextCell(text) {
+  return `<div class="auto-eval-text">${escapeHtml(text)}</div>`;
+}
+
+function standardCell(reference, limitLabel) {
+  return `
+    <div class="standard-cell">
+      <strong>${escapeHtml(limitLabel)}</strong>
+      <span>${escapeHtml(reference)}</span>
+    </div>
+  `;
+}
+
 function soilRowHtml(direction, row, index) {
   return `
     <tr>
       <td><input class="table-input" value="${escapeHtml(row.spacing)}" data-section="soilResistivity" data-direction="${direction}" data-index="${index}" data-field="spacing" /></td>
       <td><input class="table-input" value="${escapeHtml(row.resistivity)}" data-section="soilResistivity" data-direction="${direction}" data-index="${index}" data-field="resistivity" /></td>
-      <td class="table-action-cell"><button class="icon-button" data-action="remove-row" data-section="soilResistivity" data-direction="${direction}" data-index="${index}">Remove</button></td>
+      ${actionButtonsCell('soilResistivity', index, row, direction)}
     </tr>
   `;
 }
@@ -1113,14 +1714,14 @@ function renderSoilStep() {
         ${tableSurface(
           'Direction 1',
           'Keep the measured columns exactly as per the sheet.',
-          '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th></th></tr>',
+          '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th>Action</th></tr>',
           state.draft.soilResistivity.direction1.map((row, index) => soilRowHtml('direction1', row, index)).join(''),
           '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="soilResistivity" data-direction="direction1">Add Measurement Row</button></div>'
         )}
         ${tableSurface(
           'Direction 2',
           'Second direction for the mean calculation.',
-          '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th></th></tr>',
+          '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th>Action</th></tr>',
           state.draft.soilResistivity.direction2.map((row, index) => soilRowHtml('direction2', row, index)).join(''),
           '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="soilResistivity" data-direction="direction2">Add Measurement Row</button></div>'
         )}
@@ -1134,7 +1735,8 @@ function renderSoilStep() {
 }
 
 function electrodeRowHtml(row, index) {
-  const status = getElectrodeStatus(toNumber(row.measuredResistance));
+  const assessment = deriveElectrodeAssessment(row);
+  const status = assessment.status;
   return `
     <tr>
       <td><input class="table-input" value="${escapeHtml(row.tag)}" data-section="electrodeResistance" data-index="${index}" data-field="tag" /></td>
@@ -1151,9 +1753,12 @@ function electrodeRowHtml(row, index) {
       </td>
       <td><input class="table-input" value="${escapeHtml(row.length)}" data-section="electrodeResistance" data-index="${index}" data-field="length" /></td>
       <td><input class="table-input" value="${escapeHtml(row.diameter)}" data-section="electrodeResistance" data-index="${index}" data-field="diameter" /></td>
-      <td><input class="table-input" value="${escapeHtml(row.measuredResistance)}" data-section="electrodeResistance" data-index="${index}" data-field="measuredResistance" /></td>
+      <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithoutGrid, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithoutGrid" /></td>
+      <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithGrid || row.measuredResistance, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithGrid" /></td>
+      <td>${standardCell(assessment.standard.reference, assessment.standard.limitLabel)}</td>
       <td>${pill(status.tone, status.label)}</td>
-      <td class="table-action-cell"><button class="icon-button" data-action="remove-row" data-section="electrodeResistance" data-index="${index}">Remove</button></td>
+      <td>${autoTextCell(assessment.comment)}</td>
+      ${actionButtonsCell('electrodeResistance', index, row)}
     </tr>
   `;
 }
@@ -1166,12 +1771,130 @@ function renderElectrodeStep() {
       <div class="limit-banner">Permissible limit: 4.60 ohm as per IS 3043</div>
       ${tableSurface(
         'Electrode Measurements',
-        'Status is calculated automatically from the measured resistance.',
-        '<tr><th>Pit Tag</th><th>Location</th><th>Electrode Type</th><th>Material</th><th>Length (m)</th><th>Dia (mm)</th><th>Measured (ohm)</th><th>Status</th><th></th></tr>',
+        'Status is calculated automatically from the resistance value with grid.',
+        '<tr><th>Pit Tag</th><th>Location</th><th>Electrode Type</th><th>Material</th><th>Length (m)</th><th>Dia (mm)</th><th>Resistance Value Without Grid (ohm)</th><th>Resistance Value With Grid (ohm)</th><th>Standard</th><th>Status</th><th>Comment / Observation</th><th>Action</th></tr>',
         state.draft.electrodeResistance.map((row, index) => electrodeRowHtml(row, index)).join(''),
         '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="electrodeResistance">Add Electrode</button></div>'
       )}
     `
+  );
+}
+
+function towerReadingActionCell(groupIndex, readingIndex, reading, rowSpan = 1) {
+  const hasObservation = rowHasObservationData(reading);
+  return `
+    <td class="table-action-cell tower-group-action-cell" ${rowSpan > 1 ? `rowspan="${rowSpan}"` : ''}>
+      <div class="table-action-buttons">
+        <button
+          class="icon-button icon-button-observation ${hasObservation ? 'icon-button-observation-active' : ''}"
+          type="button"
+          data-action="open-row-observation"
+          data-section="towerFootingResistance"
+          data-index="${readingIndex}"
+          data-group-index="${groupIndex}"
+          aria-label="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
+          title="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
+        >
+          <span class="icon-button-symbol">+</span>
+        </button>
+      </div>
+    </td>
+  `;
+}
+
+function towerGroupRowsHtml(group, groupIndex, summaries) {
+  const assessment = deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group)));
+  const readings = Array.isArray(group.readings) ? group.readings : [];
+
+  return readings
+    .map((reading, readingIndex) => {
+      const rowClass = [
+        readingIndex === 0 ? 'tower-group-row-start' : '',
+        readingIndex === readings.length - 1 ? 'tower-group-row-end' : ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const sharedCells =
+        readingIndex === 0
+          ? `
+              <td class="tower-group-cell tower-group-number" rowspan="${readings.length}">${escapeHtml(group.srNo)}</td>
+              <td class="tower-group-cell tower-group-main" rowspan="${readings.length}">
+                <input
+                  class="table-input"
+                  value="${escapeHtml(group.mainLocationTower)}"
+                  data-section="towerFootingResistance"
+                  data-index="${groupIndex}"
+                  data-field="mainLocationTower"
+                />
+                ${
+                  state.draft.towerFootingResistance.length > 1
+                    ? `<button class="button button-ghost tower-group-remove" type="button" data-action="remove-tower-group" data-group-index="${groupIndex}">Remove Tower</button>`
+                    : ''
+                }
+              </td>
+            `
+          : '';
+
+      const sharedSummaryCells =
+        readingIndex === 0
+          ? `
+              <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt))}</td>
+              <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal))}</td>
+              <td class="tower-group-cell" rowspan="${readings.length}">
+                <input
+                  class="table-input"
+                  value="${escapeHtml(safeText(group.standardTolerableImpedanceZsat, '10'))}"
+                  data-section="towerFootingResistance"
+                  data-index="${groupIndex}"
+                  data-field="standardTolerableImpedanceZsat"
+                />
+              </td>
+              <td class="tower-group-cell" rowspan="${readings.length}">
+                ${autoTextCell(assessment.comment)}
+              </td>
+            `
+          : '';
+
+      return `
+        <tr class="${rowClass}">
+          ${sharedCells}
+          <td class="tower-foot-label">${escapeHtml(reading.measurementPointLocation || TOWER_FOOT_POINTS[readingIndex])}</td>
+          <td>
+            <select
+              class="table-input"
+              data-section="towerFootingResistance"
+              data-index="${groupIndex}"
+              data-reading-index="${readingIndex}"
+              data-field="footToEarthingConnectionStatus"
+            >
+              ${['Given', 'Not Given']
+                .map((option) => `<option ${safeText(reading.footToEarthingConnectionStatus, 'Given') === option ? 'selected' : ''}>${option}</option>`)
+                .join('')}
+            </select>
+          </td>
+          <td><input class="table-input" value="${escapeHtml(reading.measuredCurrentMa)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredCurrentMa" /></td>
+          <td><input class="table-input" value="${escapeHtml(reading.measuredImpedance)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredImpedance" /></td>
+          ${sharedSummaryCells}
+          ${towerReadingActionCell(groupIndex, readingIndex, reading)}
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderTowerFootingStep() {
+  const summaries = summarizeTowerGroups(state.draft.towerFootingResistance);
+  return sectionCard(
+    'Tower Footing Resistance Measurement & Analysis',
+    'Measurement Sheet',
+    tableSurface(
+      'Tower Footing Resistance Measurement & Analysis',
+      'Each tower location contains 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
+      '<tr><th>Sr. No.</th><th>Main Location – Tower</th><th>Measurement Point Location</th><th>Foot to Earthing Connection Status</th><th>Measured Current I (mA)</th><th>Measured Impedance (ohm)</th><th>Total Impedance Zt (ohm)</th><th>Total Current Itotal (A)</th><th>Standard Tolerable Impedance value Zsat</th><th>Remarks</th><th>Action</th></tr>',
+      state.draft.towerFootingResistance.map((group, groupIndex) => towerGroupRowsHtml(group, groupIndex, summaries)).join(''),
+      '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="towerFootingResistance">Add New Tower Location</button></div>'
+    )
   );
 }
 
@@ -1182,7 +1905,7 @@ function genericStep(title, subtitle, section, columns, statusRenderer) {
     tableSurface(
       title,
       'Add rows as needed for the executed field scope.',
-      `<tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('')}<th></th></tr>`,
+      `<tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('')}<th>Action</th></tr>`,
       state.draft[section]
         .map((row, index) => {
           return `
@@ -1204,7 +1927,7 @@ function genericStep(title, subtitle, section, columns, statusRenderer) {
                   return `<td><input class="table-input" value="${escapeHtml(row[column.key])}" data-section="${section}" data-index="${index}" data-field="${column.key}" /></td>`;
                 })
                 .join('')}
-              <td class="table-action-cell"><button class="icon-button" data-action="remove-row" data-section="${section}" data-index="${index}">Remove</button></td>
+              ${actionButtonsCell(section, index, row)}
             </tr>
           `;
         })
@@ -1239,11 +1962,15 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const status = getContinuityStatus(toNumber(row.resistance));
-          return pill(status.tone, status.label);
+          const assessment = deriveContinuityAssessment(row);
+          return pill(assessment.status.tone, assessment.status.label);
         }
       },
-      { key: 'comment', label: 'Comment' }
+      {
+        key: 'comment',
+        label: 'Comment',
+        render: (row) => autoTextCell(deriveContinuityAssessment(row).comment)
+      }
     ]);
   }
   if (step === 'loopImpedanceTest') {
@@ -1256,11 +1983,15 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const status = getLoopStatus(toNumber(row.measuredZs));
-          return pill(status.tone, status.label);
+          const assessment = deriveLoopAssessment(row);
+          return pill(assessment.status.tone, assessment.status.label);
         }
       },
-      { key: 'remarks', label: 'Remarks' }
+      {
+        key: 'remarks',
+        label: 'Remarks',
+        render: (row) => autoTextCell(deriveLoopAssessment(row).comment)
+      }
     ]);
   }
   if (step === 'prospectiveFaultCurrent') {
@@ -1275,11 +2006,23 @@ function renderBuilderStep() {
       { key: 'loopImpedance', label: 'Loop Z (ohm)' },
       { key: 'prospectiveFaultCurrent', label: 'PFC' },
       { key: 'voltage', label: 'Voltage' },
-      { key: 'comment', label: 'Comment' }
+      {
+        key: 'status',
+        label: 'Status',
+        render: (row) => {
+          const assessment = deriveFaultAssessment(row);
+          return pill(assessment.status.tone, assessment.status.label);
+        }
+      },
+      {
+        key: 'comment',
+        label: 'Comment',
+        render: (row) => autoTextCell(deriveFaultAssessment(row).comment)
+      }
     ]);
   }
   if (step === 'riserIntegrityTest') {
-    return genericStep('Riser Integrity Test', 'Measurement Sheet', 'riserIntegrityTest', [
+    return genericStep('Riser / Grid Integrity Test', 'Measurement Sheet', 'riserIntegrityTest', [
       { key: 'srNo', label: 'Sr. No.' },
       { key: 'mainLocation', label: 'Main Location' },
       { key: 'measurementPoint', label: 'Measurement Point' },
@@ -1289,11 +2032,15 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const status = getRiserStatus(toNumber(row.resistanceTowardsEquipment), toNumber(row.resistanceTowardsGrid));
-          return pill(status.tone, status.label);
+          const assessment = deriveRiserAssessment(row);
+          return pill(assessment.status.tone, assessment.status.label);
         }
       },
-      { key: 'comment', label: 'Comment' }
+      {
+        key: 'comment',
+        label: 'Comment',
+        render: (row) => autoTextCell(deriveRiserAssessment(row).comment)
+      }
     ]);
   }
   if (step === 'earthContinuityTest') {
@@ -1307,12 +2054,19 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const status = getEarthContinuityStatus(row.measuredValue);
-          return pill(status.tone, status.label);
+          const assessment = deriveEarthContinuityAssessment(row);
+          return pill(assessment.status.tone, assessment.status.label);
         }
       },
-      { key: 'remark', label: 'Remark' }
+      {
+        key: 'remark',
+        label: 'Remark',
+        render: (row) => autoTextCell(deriveEarthContinuityAssessment(row).comment)
+      }
     ]);
+  }
+  if (step === 'towerFootingResistance') {
+    return renderTowerFootingStep();
   }
   return '';
 }
@@ -1423,7 +2177,8 @@ function reportSectionBlock(title, content) {
   `;
 }
 
-function simpleDetailTable(columns, rows) {
+function simpleDetailTable(columns, rows, options = {}) {
+  const observationRenderer = options.observationRenderer || null;
   return `
     <div class="table-wrap">
       <table class="data-table">
@@ -1432,7 +2187,81 @@ function simpleDetailTable(columns, rows) {
         </thead>
         <tbody>
           ${rows
-            .map((row) => `<tr>${columns.map((column) => `<td>${column.render ? column.render(row) : escapeHtml(row[column.key])}</td>`).join('')}</tr>`)
+            .map((row, index) => {
+              const observationHtml = observationRenderer ? observationRenderer(row, index) : renderObservationCard(row);
+              return `
+                <tr>${columns.map((column) => `<td>${column.render ? column.render(row) : escapeHtml(row[column.key])}</td>`).join('')}</tr>
+                ${
+                  observationHtml
+                    ? `<tr class="detail-table-observation"><td colspan="${columns.length}"><div class="row-observation-stack">${observationHtml}</div></td></tr>`
+                    : ''
+                }
+              `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function towerFootingDetailTable(groups) {
+  const summaries = summarizeTowerGroups(groups);
+  return `
+    <div class="table-wrap">
+      <table class="data-table tower-data-table">
+        <thead>
+          <tr>
+            <th>Sr. No.</th>
+            <th>Main Location – Tower</th>
+            <th>Measurement Point Location</th>
+            <th>Foot to Earthing Connection Status</th>
+            <th>Measured Current I (mA)</th>
+            <th>Measured Impedance (ohm)</th>
+            <th>Total Impedance Zt (ohm)</th>
+            <th>Total Current Itotal (A)</th>
+            <th>Standard Tolerable Impedance Value Zsat</th>
+            <th>Remarks</th>
+            <th>Observation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(Array.isArray(groups) ? groups : [])
+            .map((group) => {
+              const assessment = deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group)));
+              const readings = Array.isArray(group.readings) ? group.readings : [];
+              return readings
+                .map((reading, readingIndex) => {
+                  return `
+                    <tr class="${readingIndex === 0 ? 'tower-group-row-start' : ''} ${readingIndex === readings.length - 1 ? 'tower-group-row-end' : ''}">
+                      ${
+                        readingIndex === 0
+                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(group.srNo)}</td>
+                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(group.mainLocationTower)}</td>`
+                          : ''
+                      }
+                      <td class="tower-foot-label">${escapeHtml(reading.measurementPointLocation)}</td>
+                      <td>${escapeHtml(safeText(reading.footToEarthingConnectionStatus, 'Given'))}</td>
+                      <td>${escapeHtml(safeText(reading.measuredCurrentMa, ''))}</td>
+                      <td>${escapeHtml(safeText(reading.measuredImpedance, ''))}</td>
+                      ${
+                        readingIndex === 0
+                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
+                              assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt)
+                            )}</td>
+                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
+                               assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)
+                             )}</td>
+                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(String(assessment.zsat))}</td>
+                             <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.comment)}</td>`
+                          : ''
+                      }
+                      <td>${renderObservationCard(reading, safeText(reading.measurementPointLocation, 'Foot')) || '-'}</td>
+                    </tr>
+                  `;
+                })
+                .join('');
+            })
             .join('')}
         </tbody>
       </table>
@@ -1520,7 +2349,17 @@ function detailView() {
                   spacing: row.spacing,
                   direction1: row.resistivity,
                   direction2: report.soilResistivity.direction2[index] ? report.soilResistivity.direction2[index].resistivity : '-'
-                }))
+                })),
+                {
+                  observationRenderer: (_row, index) => {
+                    return [
+                      renderObservationCard(report.soilResistivity.direction1[index], 'Direction 1 Observation'),
+                      renderObservationCard(report.soilResistivity.direction2[index], 'Direction 2 Observation')
+                    ]
+                      .filter(Boolean)
+                      .join('');
+                  }
+                }
               )}
               ${
                 report.soilResistivity.notes
@@ -1542,16 +2381,32 @@ function detailView() {
                 { label: 'Material', key: 'materialType' },
                 { label: 'Length (m)', key: 'length' },
                 { label: 'Dia (mm)', key: 'diameter' },
-                { label: 'Measured (ohm)', key: 'measuredResistance' },
+                { label: 'Resistance Without Grid (ohm)', key: 'resistanceWithoutGrid' },
+                { label: 'Resistance With Grid (ohm)', key: 'resistanceWithGrid' },
+                {
+                  label: 'Standard',
+                  render: () => standardCell(STANDARD_GUIDANCE.electrodeResistance.reference, STANDARD_GUIDANCE.electrodeResistance.limitLabel)
+                },
                 {
                   label: 'Status',
                   render: (row) => {
-                    const status = getElectrodeStatus(toNumber(row.measuredResistance));
-                    return pill(status.tone, status.label);
+                    const assessment = deriveElectrodeAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
                   }
+                },
+                {
+                  label: 'Comment / Observation',
+                  render: (row) => autoTextCell(deriveElectrodeAssessment(row).comment)
                 }
               ],
-              report.electrodeResistance
+              report.electrodeResistance.map((row) => ({
+                ...row,
+                resistanceWithoutGrid: safeText(row.resistanceWithoutGrid, ''),
+                resistanceWithGrid: safeText(row.resistanceWithGrid || row.measuredResistance, '')
+              })),
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
           )
         : ''}
@@ -1569,13 +2424,19 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const status = getContinuityStatus(toNumber(row.resistance));
-                    return pill(status.tone, status.label);
+                    const assessment = deriveContinuityAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
-                { label: 'Comment', key: 'comment' }
+                {
+                  label: 'Comment',
+                  render: (row) => autoTextCell(safeText(row.comment, deriveContinuityAssessment(row).comment))
+                }
               ],
-              report.continuityTest
+              report.continuityTest,
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
           )
         : ''}
@@ -1592,13 +2453,19 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const status = getLoopStatus(toNumber(row.measuredZs));
-                    return pill(status.tone, status.label);
+                    const assessment = deriveLoopAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
-                { label: 'Remarks', key: 'remarks' }
+                {
+                  label: 'Remarks',
+                  render: (row) => autoTextCell(safeText(row.remarks, deriveLoopAssessment(row).comment))
+                }
               ],
-              report.loopImpedanceTest
+              report.loopImpedanceTest,
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
           )
         : ''}
@@ -1618,16 +2485,29 @@ function detailView() {
                 { label: 'Loop Z (ohm)', key: 'loopImpedance' },
                 { label: 'PFC', key: 'prospectiveFaultCurrent' },
                 { label: 'Voltage', key: 'voltage' },
-                { label: 'Comment', key: 'comment' }
+                {
+                  label: 'Status',
+                  render: (row) => {
+                    const assessment = deriveFaultAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
+                  }
+                },
+                {
+                  label: 'Comment',
+                  render: (row) => autoTextCell(safeText(row.comment, deriveFaultAssessment(row).comment))
+                }
               ],
-              report.prospectiveFaultCurrent
+              report.prospectiveFaultCurrent,
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
           )
         : ''}
 
       ${report.tests.riserIntegrityTest
         ? reportSectionBlock(
-            'Riser Integrity Test',
+            'Riser / Grid Integrity Test',
             simpleDetailTable(
               [
                 { label: 'Sr. No.', key: 'srNo' },
@@ -1638,13 +2518,19 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const status = getRiserStatus(toNumber(row.resistanceTowardsEquipment), toNumber(row.resistanceTowardsGrid));
-                    return pill(status.tone, status.label);
+                    const assessment = deriveRiserAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
-                { label: 'Comment', key: 'comment' }
+                {
+                  label: 'Comment',
+                  render: (row) => autoTextCell(safeText(row.comment, deriveRiserAssessment(row).comment))
+                }
               ],
-              report.riserIntegrityTest
+              report.riserIntegrityTest,
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
           )
         : ''}
@@ -1662,14 +2548,27 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const status = getEarthContinuityStatus(row.measuredValue);
-                    return pill(status.tone, status.label);
+                    const assessment = deriveEarthContinuityAssessment(row);
+                    return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
-                { label: 'Remark', key: 'remark' }
+                {
+                  label: 'Remark',
+                  render: (row) => autoTextCell(safeText(row.remark, deriveEarthContinuityAssessment(row).comment))
+                }
               ],
-              report.earthContinuityTest
+              report.earthContinuityTest,
+              {
+                observationRenderer: (row) => renderObservationCard(row)
+              }
             )
+          )
+        : ''}
+
+      ${report.tests.towerFootingResistance
+        ? reportSectionBlock(
+            'Tower Footing Resistance Measurement & Analysis',
+            towerFootingDetailTable(report.towerFootingResistance)
           )
         : ''}
     </section>
@@ -1721,6 +2620,7 @@ function render() {
       ${state.view === 'builder' ? builderView() : ''}
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
     </main>
+    ${renderObservationDrawer()}
     ${toastHtml()}
   `;
   bindMotionEffects();
@@ -1734,12 +2634,21 @@ function buildFocusSelector(element) {
   if (element.dataset.bind) {
     return `[data-bind="${element.dataset.bind}"]`;
   }
+  if (element.dataset.observationField) {
+    return `[data-observation-field="${element.dataset.observationField}"]`;
+  }
   if (element.dataset.section) {
     const parts = [
       `[data-section="${element.dataset.section}"]`,
       `[data-index="${element.dataset.index}"]`,
       `[data-field="${element.dataset.field}"]`
     ];
+    if (element.dataset.readingIndex) {
+      parts.push(`[data-reading-index="${element.dataset.readingIndex}"]`);
+    }
+    if (element.dataset.groupIndex) {
+      parts.push(`[data-group-index="${element.dataset.groupIndex}"]`);
+    }
     if (element.dataset.direction) {
       parts.push(`[data-direction="${element.dataset.direction}"]`);
     }
@@ -1778,6 +2687,66 @@ function setByPath(target, bind, value) {
     cursor = cursor[segments[i]];
   }
   cursor[segments[segments.length - 1]] = value;
+}
+
+function openObservationEditor(section, index, direction, groupIndex = null) {
+  const row = getSectionRow(state.draft, section, index, direction, groupIndex);
+  if (!row) {
+    return;
+  }
+  state.observationEditor = {
+    section,
+    index,
+    direction,
+    groupIndex,
+    rowId: safeText(row.rowId, buildRowId('row')),
+    remark: safeText(row.rowObservation, ''),
+    photos: cloneRowPhotos(row.rowPhotos)
+  };
+}
+
+function closeObservationEditor() {
+  state.observationEditor = null;
+  state.observationUploading = false;
+}
+
+function saveObservationEditor() {
+  if (!state.observationEditor) {
+    return;
+  }
+  const row = getSectionRow(
+    state.draft,
+    state.observationEditor.section,
+    state.observationEditor.index,
+    state.observationEditor.direction,
+    state.observationEditor.groupIndex
+  );
+  if (!row) {
+    closeObservationEditor();
+    return;
+  }
+  row.rowId = state.observationEditor.rowId;
+  row.rowObservation = String(state.observationEditor.remark || '').trim();
+  row.rowPhotos = cloneRowPhotos(state.observationEditor.photos).filter((photo) => photo.dataUrl);
+  closeObservationEditor();
+  showToast('Row observation saved.', 'healthy');
+}
+
+async function appendObservationFiles(fileList) {
+  if (!state.observationEditor || !fileList?.length) {
+    return;
+  }
+  state.observationUploading = true;
+  render();
+  try {
+    const uploaded = await Promise.all(Array.from(fileList).map((file) => buildObservationPhoto(file)));
+    state.observationEditor.photos.push(...uploaded.filter((photo) => photo.dataUrl));
+  } catch (error) {
+    showToast(error.message || 'Failed to add row photos.', 'critical');
+  } finally {
+    state.observationUploading = false;
+    render();
+  }
 }
 
 function validateProjectStep() {
@@ -1832,7 +2801,8 @@ function renumberSection(section) {
 
 function addRow(section, direction) {
   if (section === 'soilResistivity') {
-    state.draft.soilResistivity[direction].push(defaultSoilRow(''));
+    const nextSpacing = SOIL_SPACING_PRESETS[state.draft.soilResistivity[direction].length] || '';
+    state.draft.soilResistivity[direction].push(defaultSoilRow(nextSpacing));
     return;
   }
   if (section === 'electrodeResistance') {
@@ -1857,10 +2827,22 @@ function addRow(section, direction) {
   }
   if (section === 'earthContinuityTest') {
     state.draft.earthContinuityTest.push(defaultEarthContinuityRow(String(state.draft.earthContinuityTest.length + 1)));
+    return;
+  }
+  if (section === 'towerFootingResistance') {
+    state.draft.towerFootingResistance.push(defaultTowerFootingGroup(String(state.draft.towerFootingResistance.length + 1)));
+    return;
   }
 }
 
 function removeRow(section, index, direction) {
+  if (
+    state.observationEditor &&
+    state.observationEditor.section === section &&
+    safeText(state.observationEditor.direction, '') === safeText(direction, '')
+  ) {
+    closeObservationEditor();
+  }
   if (section === 'soilResistivity') {
     if (state.draft.soilResistivity[direction].length === 1) {
       showToast('Keep at least one row in each soil direction.', 'warning');
@@ -1877,8 +2859,23 @@ function removeRow(section, index, direction) {
   renumberSection(section);
 }
 
+function removeTowerGroup(groupIndex) {
+  if (state.observationEditor && state.observationEditor.section === 'towerFootingResistance' && state.observationEditor.groupIndex === groupIndex) {
+    closeObservationEditor();
+  }
+  if (state.draft.towerFootingResistance.length === 1) {
+    showToast('Keep at least one tower location group in the selected section.', 'warning');
+    return;
+  }
+  state.draft.towerFootingResistance.splice(groupIndex, 1);
+  state.draft.towerFootingResistance.forEach((group, index) => {
+    group.srNo = String(index + 1);
+  });
+}
+
 async function saveReport() {
   state.saving = true;
+  closeObservationEditor();
   render();
   try {
     const created = await api('/api/reports', {
@@ -1950,6 +2947,7 @@ document.addEventListener('click', async (event) => {
   const action = button.dataset.action;
 
   if (action === 'new-report') {
+    closeObservationEditor();
     state.draft = createDraft();
     state.stepIndex = 0;
     state.view = 'builder';
@@ -1958,6 +2956,7 @@ document.addEventListener('click', async (event) => {
   }
 
   if (action === 'go-dashboard') {
+    closeObservationEditor();
     state.view = 'dashboard';
     state.activeReport = null;
     render();
@@ -2018,6 +3017,43 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'remove-tower-group') {
+    removeTowerGroup(Number(button.dataset.groupIndex));
+    render();
+    return;
+  }
+
+  if (action === 'open-row-observation') {
+    openObservationEditor(
+      button.dataset.section,
+      Number(button.dataset.index),
+      button.dataset.direction,
+      button.dataset.groupIndex === undefined ? null : Number(button.dataset.groupIndex)
+    );
+    render();
+    return;
+  }
+
+  if (action === 'close-row-observation') {
+    closeObservationEditor();
+    render();
+    return;
+  }
+
+  if (action === 'save-row-observation') {
+    saveObservationEditor();
+    render();
+    return;
+  }
+
+  if (action === 'remove-observation-photo') {
+    if (state.observationEditor) {
+      state.observationEditor.photos.splice(Number(button.dataset.photoIndex), 1);
+      render();
+    }
+    return;
+  }
+
   if (action === 'save-report') {
     if (!validateProjectStep() || !validateSelectionStep()) {
       return;
@@ -2069,6 +3105,13 @@ document.addEventListener('input', (event) => {
     return;
   }
 
+  if (target.matches('[data-observation-field]')) {
+    if (state.observationEditor) {
+      state.observationEditor[target.dataset.observationField] = target.value;
+    }
+    return;
+  }
+
   if (target.id === 'reportSearchInput') {
     state.search = target.value;
     window.clearTimeout(document.searchDebounce);
@@ -2081,11 +3124,18 @@ document.addEventListener('input', (event) => {
   if (target.matches('[data-section]')) {
     const section = target.dataset.section;
     const index = Number(target.dataset.index);
+    const readingIndex = target.dataset.readingIndex === undefined ? null : Number(target.dataset.readingIndex);
     const field = target.dataset.field;
     const direction = target.dataset.direction;
 
     if (section === 'soilResistivity') {
       state.draft.soilResistivity[direction][index][field] = target.value;
+    } else if (section === 'towerFootingResistance') {
+      if (Number.isInteger(readingIndex)) {
+        state.draft.towerFootingResistance[index].readings[readingIndex][field] = target.value;
+      } else {
+        state.draft.towerFootingResistance[index][field] = target.value;
+      }
     } else {
       state.draft[section][index][field] = target.value;
     }
@@ -2093,23 +3143,42 @@ document.addEventListener('input', (event) => {
   }
 });
 
-document.addEventListener('change', (event) => {
+document.addEventListener('change', async (event) => {
   const target = event.target;
   if (target.id === 'zohoProjectPicker') {
     applyZohoProject(target.value);
     return;
   }
+  if (target.id === 'rowObservationFiles') {
+    await appendObservationFiles(target.files);
+    target.value = '';
+    return;
+  }
   if (target.matches('[data-section]')) {
     const section = target.dataset.section;
     const index = Number(target.dataset.index);
+    const readingIndex = target.dataset.readingIndex === undefined ? null : Number(target.dataset.readingIndex);
     const field = target.dataset.field;
     const direction = target.dataset.direction;
     if (section === 'soilResistivity') {
       state.draft.soilResistivity[direction][index][field] = target.value;
+    } else if (section === 'towerFootingResistance') {
+      if (Number.isInteger(readingIndex)) {
+        state.draft.towerFootingResistance[index].readings[readingIndex][field] = target.value;
+      } else {
+        state.draft.towerFootingResistance[index][field] = target.value;
+      }
     } else {
       state.draft[section][index][field] = target.value;
     }
     rerenderPreservingFocus();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.observationEditor) {
+    closeObservationEditor();
+    render();
   }
 });
 
