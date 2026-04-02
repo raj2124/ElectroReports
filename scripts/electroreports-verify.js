@@ -15,9 +15,9 @@ const {
   summarizeTowerGroups,
   buildTowerGroupKey,
   buildExecutiveSnapshot
-} = require('../electroreports/src/reportModel');
-const { generateElectroReportPdf } = require('../electroreports/src/pdfService');
-const { createReportStore } = require('../electroreports/src/reportStore');
+} = require('../src/reportModel');
+const { generateElectroReportPdf } = require('../src/pdfService');
+const { createReportStore } = require('../src/reportStore');
 
 function assert(condition, message) {
   if (!condition) {

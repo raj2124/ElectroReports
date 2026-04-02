@@ -1,13 +1,13 @@
 const path = require('path');
 
 const { buildPayload } = require('./electroreports-verify');
-const { normalizeReportInput } = require('../electroreports/src/reportModel');
-const { generateReportNarrative, isAiConfigured } = require('../electroreports/src/aiService');
-const { generateElectroReportPdf } = require('../electroreports/src/pdfService');
+const { normalizeReportInput } = require('../src/reportModel');
+const { generateReportNarrative, isAiConfigured } = require('../src/aiService');
+const { generateElectroReportPdf } = require('../src/pdfService');
 
 async function main() {
   if (!isAiConfigured()) {
-    throw new Error('OpenAI is not configured. Add OPENAI_API_KEY in electroreports/.env before generating the AI reference PDF.');
+    throw new Error('OpenAI is not configured. Add OPENAI_API_KEY in .env before generating the AI reference PDF.');
   }
 
   const payload = buildPayload();

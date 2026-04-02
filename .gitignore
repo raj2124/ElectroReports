@@ -1,5 +1,6 @@
 # Node
 node_modules/
+node_modules
 npm-debug.log
 npm-debug.log*
 yarn-error.log
@@ -9,21 +10,16 @@ yarn-error.log
 .env.local
 .env.*.local
 
-# Build / output
-dist/
-build/
+# Generated output
 generated-pdfs/
-data/
 tmp-electroreports-pdf-check/
-electroreports/.tmp-ql/
-!electroreports/data/
-electroreports/data/*
-!electroreports/data/reports.json/
-!electroreports/data/reports.json
+.tmp-ql/
 
-# OS
+# Keep saved report data
+data/*
+!data/reports.json
+
+# OS / editor
 .DS_Store
-
-# Editor
 .vscode/
 .idea/
