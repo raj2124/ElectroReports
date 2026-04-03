@@ -21,35 +21,49 @@ const {
   validateTowerFootingOcrPayload
 } = require('./ocrValidation');
 
+class OcrWorkflowError extends Error {
+  constructor(message, { status = 400, code = 'OCR_WORKFLOW_ERROR', details = null } = {}) {
+    super(message);
+    this.name = 'OcrWorkflowError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function workflowError(message, status, code, details = null) {
+  return new OcrWorkflowError(message, { status, code, details });
+}
+
 function ensureGeminiConfigured(config) {
   if (!config?.gemini?.enabled) {
-    throw new Error('Gemini OCR is disabled.');
+    throw workflowError('Gemini OCR is disabled.', 503, 'OCR_DISABLED');
   }
 
   if (!String(config?.gemini?.apiKey || '').trim()) {
-    throw new Error('Gemini API key is not configured.');
+    throw workflowError('Gemini API key is not configured.', 503, 'OCR_API_KEY_MISSING');
   }
 }
 
 function assertSupportedFile(schema, file) {
   if (!file) {
-    throw new Error('Please upload a sheet image or PDF.');
+    throw workflowError('Please upload a sheet image or PDF.', 400, 'OCR_FILE_MISSING');
   }
 
   const mimeType = String(file.mimetype || '').trim().toLowerCase();
   if (!schema.supportedMimeTypes.has(mimeType)) {
-    throw new Error('Unsupported file type. Please upload PDF, PNG, JPG, JPEG, or WEBP.');
+    throw workflowError('Unsupported file type. Please upload PDF, PNG, JPG, JPEG, or WEBP.', 415, 'OCR_UNSUPPORTED_FILE');
   }
 
   if (!file.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
-    throw new Error('Uploaded file is empty.');
+    throw workflowError('Uploaded file is empty.', 400, 'OCR_EMPTY_FILE');
   }
 }
 
 function extractJsonPayload(rawText) {
   const text = String(rawText || '').trim();
   if (!text) {
-    throw new Error('Gemini returned an empty OCR response.');
+    throw workflowError('Gemini returned an empty OCR response.', 502, 'OCR_EMPTY_RESPONSE');
   }
 
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -61,9 +75,13 @@ function extractJsonPayload(rawText) {
     const firstBrace = candidate.indexOf('{');
     const lastBrace = candidate.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+      try {
+        return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+      } catch (_nestedError) {
+        throw workflowError('Gemini OCR response was not valid JSON.', 502, 'OCR_INVALID_JSON');
+      }
     }
-    throw new Error('Gemini OCR response was not valid JSON.');
+    throw workflowError('Gemini OCR response was not valid JSON.', 502, 'OCR_INVALID_JSON');
   }
 }
 
@@ -98,31 +116,54 @@ async function requestPreview(config, file, schema, prompt, validator) {
   assertSupportedFile(schema, file);
   const model = createModel(config);
 
-  const result = await model.generateContent({
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: String(file.mimetype || '').trim(),
-              data: file.buffer.toString('base64')
+  let result;
+  try {
+    result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: String(file.mimetype || '').trim(),
+                data: file.buffer.toString('base64')
+              }
             }
-          }
-        ]
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json'
       }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json'
+    });
+  } catch (error) {
+    if (error instanceof OcrWorkflowError) {
+      throw error;
     }
-  });
+    throw workflowError(
+      'Gemini OCR request failed. Please try again with a clearer sheet image or PDF.',
+      502,
+      'OCR_UPSTREAM_FAILURE'
+    );
+  }
 
   const response = await result.response;
   const text = typeof response.text === 'function' ? response.text() : '';
   const parsed = extractJsonPayload(text);
-  return validator(parsed);
+  try {
+    return validator(parsed);
+  } catch (error) {
+    if (error instanceof OcrWorkflowError) {
+      throw error;
+    }
+    throw workflowError(
+      error instanceof Error ? error.message : 'The uploaded sheet could not be mapped into the expected format.',
+      422,
+      'OCR_VALIDATION_FAILED'
+    );
+  }
 }
 
 async function previewSoilSheetWithGemini(config, file) {
@@ -291,6 +332,7 @@ async function previewTowerFootingSheetWithGemini(config, file) {
 }
 
 module.exports = {
+  OcrWorkflowError,
   previewSoilSheetWithGemini,
   previewElectrodeSheetWithGemini,
   previewContinuitySheetWithGemini,

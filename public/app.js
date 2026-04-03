@@ -70,6 +70,8 @@ const EQUIPMENT_LIBRARY = [
   { id: 'mi3290', label: 'MI 3290 GF Earth Analyser' },
   { id: 'kyoritsu4118a', label: 'Kyoritsu Digital PSC Loop Tester 4118A' }
 ];
+const DRAFT_STORAGE_KEY = 'electroreports-builder-draft-v1';
+const DRAFT_AUTOSAVE_DELAY_MS = 450;
 
 function buildRowId(prefix = 'row') {
   const timestamp = Date.now().toString(36);
@@ -273,7 +275,8 @@ function createDraft() {
     prospectiveFaultCurrent: defaultFaultGroup(1),
     riserIntegrityTest: [defaultRiserRow('1')],
     earthContinuityTest: [defaultEarthContinuityRow('1')],
-    towerFootingResistance: [defaultTowerFootingGroup('1')]
+    towerFootingResistance: [defaultTowerFootingGroup('1')],
+    ocrImports: {}
   };
 }
 
@@ -283,6 +286,7 @@ function createOcrSheetState() {
     scanning: false,
     selectedFile: null,
     preview: null,
+    previewMeta: null,
     draftPatch: null,
     warnings: [],
     uncertainFields: [],
@@ -333,8 +337,188 @@ const state = {
   exporting: false,
   observationEditor: null,
   observationUploading: false,
-  toast: null
+  toast: null,
+  restoredDraftNoticePending: false
 };
+
+function getLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function cloneSerializable(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeRestoredOcrImports(input) {
+  const normalized = {};
+  const source = input && typeof input === 'object' ? input : {};
+  LOCAL_TEST_LIBRARY.forEach((test) => {
+    const record = source[test.id];
+    if (!record || typeof record !== 'object') {
+      return;
+    }
+    normalized[test.id] = {
+      sheetId: test.id,
+      sheetLabel: safeText(record.sheetLabel, test.label),
+      fileName: safeText(record.fileName, ''),
+      mimeType: safeText(record.mimeType, ''),
+      fileSize: Number.isFinite(Number(record.fileSize)) ? Number(record.fileSize) : null,
+      model: safeText(record.model, ''),
+      scannedAt: safeText(record.scannedAt, ''),
+      appliedAt: safeText(record.appliedAt, ''),
+      extractedCount: Number.isFinite(Number(record.extractedCount)) ? Number(record.extractedCount) : null,
+      warnings: (Array.isArray(record.warnings) ? record.warnings : []).map((value) => safeText(value, '')).filter(Boolean),
+      uncertainFields: (Array.isArray(record.uncertainFields) ? record.uncertainFields : [])
+        .map((item) => ({
+          path: safeText(item?.path, ''),
+          reason: safeText(item?.reason, '')
+        }))
+        .filter((item) => item.path || item.reason)
+    };
+  });
+  return normalized;
+}
+
+function restoreDraftShape(payload) {
+  const draft = createDraft();
+  const source = payload && typeof payload === 'object' ? payload : {};
+
+  if (source.project && typeof source.project === 'object') {
+    draft.project = { ...draft.project, ...cloneSerializable(source.project) };
+  }
+
+  if (source.tests && typeof source.tests === 'object') {
+    draft.tests = { ...draft.tests, ...cloneSerializable(source.tests) };
+  }
+
+  if (source.soilResistivity && typeof source.soilResistivity === 'object') {
+    draft.soilResistivity = cloneSerializable(source.soilResistivity);
+  }
+
+  [
+    'electrodeResistance',
+    'continuityTest',
+    'loopImpedanceTest',
+    'prospectiveFaultCurrent',
+    'riserIntegrityTest',
+    'earthContinuityTest',
+    'towerFootingResistance'
+  ].forEach((section) => {
+    if (Array.isArray(source[section])) {
+      draft[section] = cloneSerializable(source[section]);
+    }
+  });
+
+  draft.ocrImports = normalizeRestoredOcrImports(source.ocrImports);
+  return draft;
+}
+
+function projectHasMeaningfulData(source) {
+  const project = source?.project || {};
+  return Boolean(
+    safeText(project.projectNo, '') ||
+      safeText(project.clientName, '') ||
+      safeText(project.siteLocation, '') ||
+      safeText(project.workOrder, '') ||
+      safeText(project.engineerName, '') ||
+      safeText(project.zohoProjectId, '') ||
+      safeText(project.zohoProjectName, '') ||
+      safeText(project.zohoProjectOwner, '') ||
+      safeText(project.zohoProjectStage, '')
+  );
+}
+
+function testsDifferFromDefault(source) {
+  const defaultTests = createDraft().tests;
+  return Object.keys(defaultTests).some((key) => Boolean(source?.tests?.[key]) !== Boolean(defaultTests[key]));
+}
+
+function draftHasMeaningfulProgress(source) {
+  return Boolean(
+    projectHasMeaningfulData(source) ||
+      testsDifferFromDefault(source) ||
+      draftHasMeaningfulSoilData(source) ||
+      draftHasMeaningfulElectrodeData(source) ||
+      draftHasMeaningfulContinuityData(source) ||
+      draftHasMeaningfulLoopData(source) ||
+      draftHasMeaningfulFaultData(source) ||
+      draftHasMeaningfulRiserData(source) ||
+      draftHasMeaningfulEarthContinuityData(source) ||
+      draftHasMeaningfulTowerData(source) ||
+      Object.keys(normalizeRestoredOcrImports(source?.ocrImports)).length
+  );
+}
+
+function persistDraftSnapshotNow() {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
+  }
+
+  if (state.view !== 'builder' || !draftHasMeaningfulProgress(state.draft)) {
+    storage.removeItem(DRAFT_STORAGE_KEY);
+    return;
+  }
+
+  storage.setItem(
+    DRAFT_STORAGE_KEY,
+    JSON.stringify({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      stepIndex: state.stepIndex,
+      draft: cloneSerializable(state.draft)
+    })
+  );
+}
+
+function scheduleDraftAutosave() {
+  window.clearTimeout(scheduleDraftAutosave.timeoutId);
+  scheduleDraftAutosave.timeoutId = window.setTimeout(() => {
+    persistDraftSnapshotNow();
+  }, DRAFT_AUTOSAVE_DELAY_MS);
+}
+
+function clearDraftSnapshot() {
+  window.clearTimeout(scheduleDraftAutosave.timeoutId);
+  const storage = getLocalStorage();
+  if (storage) {
+    storage.removeItem(DRAFT_STORAGE_KEY);
+  }
+}
+
+function restoreDraftSnapshot() {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return false;
+  }
+
+  const raw = storage.getItem(DRAFT_STORAGE_KEY);
+  if (!raw) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const restoredDraft = restoreDraftShape(parsed?.draft);
+    if (!draftHasMeaningfulProgress(restoredDraft)) {
+      storage.removeItem(DRAFT_STORAGE_KEY);
+      return false;
+    }
+
+    state.draft = restoredDraft;
+    state.stepIndex = Number.isInteger(parsed?.stepIndex) ? parsed.stepIndex : 0;
+    state.view = 'builder';
+    state.restoredDraftNoticePending = true;
+    return true;
+  } catch (_error) {
+    storage.removeItem(DRAFT_STORAGE_KEY);
+    return false;
+  }
+}
 
 function safeText(value, fallback = '-') {
   const text = String(value === undefined || value === null ? '' : value).trim();
@@ -430,6 +614,7 @@ function resetOcrSheetState(sheetId, keepMode = true) {
   const sheetState = getOcrSheetState(sheetId);
   sheetState.selectedFile = null;
   sheetState.preview = null;
+  sheetState.previewMeta = null;
   sheetState.draftPatch = null;
   sheetState.warnings = [];
   sheetState.uncertainFields = [];
@@ -453,6 +638,36 @@ function resetAllOcrStates(keepMode = false) {
   ].forEach((sheetId) => {
     resetOcrSheetState(sheetId, keepMode);
   });
+}
+
+function buildOcrImportRecord(sheetId, sheetState) {
+  const preview = sheetState.preview || {};
+  const extractedCount = Array.isArray(preview.locations)
+    ? preview.locations.length
+    : Array.isArray(preview.rows)
+      ? preview.rows.length
+      : Array.isArray(preview.groups)
+        ? preview.groups.length
+        : null;
+
+  return {
+    sheetId,
+    sheetLabel: getOcrSheetLabel(sheetId),
+    fileName: safeText(sheetState.previewMeta?.fileName, ''),
+    mimeType: safeText(sheetState.previewMeta?.mimeType, ''),
+    fileSize: Number.isFinite(Number(sheetState.previewMeta?.fileSize)) ? Number(sheetState.previewMeta.fileSize) : null,
+    model: safeText(state.ocr.model, ''),
+    scannedAt: safeText(sheetState.previewMeta?.scannedAt, new Date().toISOString()),
+    appliedAt: new Date().toISOString(),
+    extractedCount,
+    warnings: (Array.isArray(sheetState.warnings) ? sheetState.warnings : []).map((value) => safeText(value, '')).filter(Boolean),
+    uncertainFields: (Array.isArray(sheetState.uncertainFields) ? sheetState.uncertainFields : [])
+      .map((item) => ({
+        path: safeText(item?.path, ''),
+        reason: safeText(item?.reason, '')
+      }))
+      .filter((item) => item.path || item.reason)
+  };
 }
 
 function draftHasMeaningfulElectrodeData(source) {
@@ -1743,6 +1958,7 @@ async function previewSheetOcr(sheetId) {
   sheetState.scanning = true;
   sheetState.error = '';
   sheetState.preview = null;
+  sheetState.previewMeta = null;
   sheetState.draftPatch = null;
   sheetState.warnings = [];
   sheetState.uncertainFields = [];
@@ -1753,6 +1969,12 @@ async function previewSheetOcr(sheetId) {
     formData.append('document', sheetState.selectedFile);
     const result = await apiFormData(route, formData);
     sheetState.preview = result.preview || null;
+    sheetState.previewMeta = {
+      fileName: safeText(result.fileName, sheetState.selectedFile?.name || 'uploaded-sheet'),
+      mimeType: safeText(result.mimeType, sheetState.selectedFile?.type || ''),
+      fileSize: Number.isFinite(Number(result.fileSize)) ? Number(result.fileSize) : Number(sheetState.selectedFile?.size || 0),
+      scannedAt: safeText(result.scannedAt, new Date().toISOString())
+    };
     sheetState.draftPatch = result.draftPatch || null;
     sheetState.warnings = Array.isArray(result.preview?.warnings) ? result.preview.warnings : [];
     sheetState.uncertainFields = Array.isArray(result.preview?.uncertainFields) ? result.preview.uncertainFields : [];
@@ -1928,6 +2150,11 @@ function applySheetOcrPreview(sheetId) {
     return;
   }
 
+  state.draft.ocrImports = {
+    ...(state.draft.ocrImports || {}),
+    [sheetId]: buildOcrImportRecord(sheetId, sheetState)
+  };
+  scheduleDraftAutosave();
   resetOcrSheetState(sheetId, false);
   getOcrSheetState(sheetId).mode = 'manual';
   showToast(`OCR preview applied to the ${getOcrSheetLabel(sheetId)} sheet.`, 'healthy');
@@ -4483,6 +4710,9 @@ function render() {
     ${renderObservationDrawer()}
     ${toastHtml()}
   `;
+  if (state.view === 'builder') {
+    scheduleDraftAutosave();
+  }
   bindMotionEffects();
   updateMotionEffects();
 }
@@ -4593,6 +4823,7 @@ function saveObservationEditor() {
   row.rowId = state.observationEditor.rowId;
   row.rowObservation = String(state.observationEditor.remark || '').trim();
   row.rowPhotos = cloneRowPhotos(state.observationEditor.photos).filter((photo) => photo.dataUrl);
+  scheduleDraftAutosave();
   closeObservationEditor();
   showToast('Row observation saved.', 'healthy');
 }
@@ -4806,6 +5037,7 @@ async function saveReport() {
     state.view = 'detail';
     state.draft = createDraft();
     state.stepIndex = 0;
+    clearDraftSnapshot();
     showToast('Report saved successfully.', 'healthy');
     await loadReports();
   } catch (error) {
@@ -4940,6 +5172,7 @@ document.addEventListener('click', async (event) => {
     state.stepIndex = 0;
     state.view = 'builder';
     resetAllOcrStates(false);
+    clearDraftSnapshot();
     render();
     return;
   }
@@ -4949,6 +5182,7 @@ document.addEventListener('click', async (event) => {
     state.view = 'dashboard';
     state.activeReport = null;
     resetAllOcrStates(false);
+    persistDraftSnapshotNow();
     render();
     return;
   }
@@ -5163,6 +5397,7 @@ document.addEventListener('input', (event) => {
 
   if (target.matches('[data-bind]')) {
     setByPath(state.draft, target.dataset.bind, target.value);
+    scheduleDraftAutosave();
     return;
   }
 
@@ -5203,6 +5438,7 @@ document.addEventListener('input', (event) => {
     } else {
       state.draft[section][index][field] = target.value;
     }
+    scheduleDraftAutosave();
     rerenderPreservingFocus();
   }
 });
@@ -5238,6 +5474,7 @@ document.addEventListener('change', async (event) => {
     const [file] = Array.from(target.files || []);
     sheetState.selectedFile = file || null;
     sheetState.preview = null;
+    sheetState.previewMeta = null;
     sheetState.draftPatch = null;
     sheetState.warnings = [];
     sheetState.uncertainFields = [];
@@ -5270,6 +5507,7 @@ document.addEventListener('change', async (event) => {
     } else {
       state.draft[section][index][field] = target.value;
     }
+    scheduleDraftAutosave();
     rerenderPreservingFocus();
   }
 });
@@ -5282,12 +5520,21 @@ document.addEventListener('keydown', (event) => {
 });
 
 async function init() {
+  restoreDraftSnapshot();
   render();
+  if (state.restoredDraftNoticePending) {
+    state.restoredDraftNoticePending = false;
+    showToast('Recovered your in-progress draft.', 'warning');
+  }
   await loadAiStatus();
   await loadOcrStatus();
   await loadCatalog();
   await loadZohoProjects();
   await loadReports();
 }
+
+window.addEventListener('beforeunload', () => {
+  persistDraftSnapshotNow();
+});
 
 init();

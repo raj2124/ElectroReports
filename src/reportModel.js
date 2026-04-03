@@ -263,7 +263,8 @@ function buildDefaultDraft() {
     prospectiveFaultCurrent: createDefaultFaultGroupRows(1),
     riserIntegrityTest: [createDefaultRiserIntegrityRow()],
     earthContinuityTest: [createDefaultEarthContinuityRow()],
-    towerFootingResistance: [{ ...createDefaultTowerFootingGroup(), srNo: '1' }]
+    towerFootingResistance: [{ ...createDefaultTowerFootingGroup(), srNo: '1' }],
+    ocrImports: {}
   };
 }
 
@@ -1028,7 +1029,8 @@ function normalizeReportInput(payload) {
         standardTolerableImpedanceZsat: assessment.zsat === null ? '10' : String(assessment.zsat),
         remarks: assessment.comment
       };
-    })
+    }),
+    ocrImports: normalizeOcrImports(input?.ocrImports)
   };
 
   if (tests.soilResistivity) {
@@ -1147,6 +1149,48 @@ function buildExecutiveSnapshot(report) {
   };
 }
 
+function normalizeOcrImports(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  const normalized = {};
+
+  TEST_LIBRARY.forEach((test) => {
+    const record = source[test.id];
+    if (!record || typeof record !== 'object') {
+      return;
+    }
+
+    const warnings = (Array.isArray(record.warnings) ? record.warnings : [])
+      .map((value) => asTrimmedString(value))
+      .filter(Boolean);
+
+    const uncertainFields = (Array.isArray(record.uncertainFields) ? record.uncertainFields : [])
+      .map((item) => ({
+        path: asTrimmedString(item?.path),
+        reason: asTrimmedString(item?.reason)
+      }))
+      .filter((item) => item.path || item.reason);
+
+    const fileSize = Number.parseInt(String(record.fileSize ?? ''), 10);
+    const extractedCount = Number.parseInt(String(record.extractedCount ?? ''), 10);
+
+    normalized[test.id] = {
+      sheetId: test.id,
+      sheetLabel: asTrimmedString(record.sheetLabel) || test.label,
+      fileName: asTrimmedString(record.fileName),
+      mimeType: asTrimmedString(record.mimeType),
+      fileSize: Number.isFinite(fileSize) ? fileSize : null,
+      model: asTrimmedString(record.model),
+      scannedAt: asTrimmedString(record.scannedAt),
+      appliedAt: asTrimmedString(record.appliedAt),
+      extractedCount: Number.isFinite(extractedCount) ? extractedCount : null,
+      warnings,
+      uncertainFields
+    };
+  });
+
+  return normalized;
+}
+
 module.exports = {
   TEST_LIBRARY,
   EQUIPMENT_LIBRARY,
@@ -1171,6 +1215,7 @@ module.exports = {
   buildTowerGroupKey,
   STANDARD_GUIDANCE,
   buildExecutiveSnapshot,
+  normalizeOcrImports,
   createDefaultSoilRow,
   createDefaultSoilLocation,
   createDefaultElectrodeRow,

@@ -95,6 +95,44 @@ app.get('/api/ocr/status', (_req, res) => {
   });
 });
 
+function sendOcrError(res, error, fallbackMessage) {
+  const status = Number.isInteger(error?.status) ? error.status : 500;
+  return res.status(status).json({
+    message: error instanceof Error ? error.message : fallbackMessage,
+    code: error?.code || undefined,
+    details: error?.details || undefined
+  });
+}
+
+function createOcrPreviewHandler(previewFn, mapFn, fallbackMessage) {
+  return async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          message: 'Please choose a sheet image or PDF to scan.',
+          code: 'OCR_FILE_MISSING'
+        });
+      }
+
+      const preview = await previewFn(config, req.file);
+      const draftPatch = mapFn(preview);
+
+      return res.json({
+        success: true,
+        preview,
+        draftPatch,
+        fileName: req.file.originalname || 'uploaded-sheet',
+        mimeType: req.file.mimetype || '',
+        fileSize: req.file.size || 0,
+        scannedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error(fallbackMessage, error);
+      return sendOcrError(res, error, fallbackMessage);
+    }
+  };
+}
+
 app.get('/api/zoho/projects', async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
@@ -198,189 +236,53 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
   }
 });
 
-app.post('/api/ocr/soil/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
+app.post('/api/ocr/soil/preview', upload.single('document'), createOcrPreviewHandler(
+  previewSoilSheetWithGemini,
+  mapSoilOcrPreviewToDraft,
+  'Failed to scan soil resistivity sheet.'
+));
 
-    const preview = await previewSoilSheetWithGemini(config, req.file);
-    const draftPatch = mapSoilOcrPreviewToDraft(preview);
+app.post('/api/ocr/electrode/preview', upload.single('document'), createOcrPreviewHandler(
+  previewElectrodeSheetWithGemini,
+  mapElectrodeOcrPreviewToDraft,
+  'Failed to scan earth electrode sheet.'
+));
 
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Soil OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan soil resistivity sheet.'
-    });
-  }
-});
+app.post('/api/ocr/continuity/preview', upload.single('document'), createOcrPreviewHandler(
+  previewContinuitySheetWithGemini,
+  mapContinuityOcrPreviewToDraft,
+  'Failed to scan continuity sheet.'
+));
 
-app.post('/api/ocr/electrode/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
+app.post('/api/ocr/loop/preview', upload.single('document'), createOcrPreviewHandler(
+  previewLoopImpedanceSheetWithGemini,
+  mapLoopImpedanceOcrPreviewToDraft,
+  'Failed to scan loop impedance sheet.'
+));
 
-    const preview = await previewElectrodeSheetWithGemini(config, req.file);
-    const draftPatch = mapElectrodeOcrPreviewToDraft(preview);
+app.post('/api/ocr/fault/preview', upload.single('document'), createOcrPreviewHandler(
+  previewProspectiveFaultSheetWithGemini,
+  mapProspectiveFaultOcrPreviewToDraft,
+  'Failed to scan prospective fault current sheet.'
+));
 
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Electrode OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan earth electrode sheet.'
-    });
-  }
-});
+app.post('/api/ocr/riser/preview', upload.single('document'), createOcrPreviewHandler(
+  previewRiserIntegritySheetWithGemini,
+  mapRiserIntegrityOcrPreviewToDraft,
+  'Failed to scan riser integrity sheet.'
+));
 
-app.post('/api/ocr/continuity/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
+app.post('/api/ocr/earth-continuity/preview', upload.single('document'), createOcrPreviewHandler(
+  previewEarthContinuitySheetWithGemini,
+  mapEarthContinuityOcrPreviewToDraft,
+  'Failed to scan earth continuity sheet.'
+));
 
-    const preview = await previewContinuitySheetWithGemini(config, req.file);
-    const draftPatch = mapContinuityOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Continuity OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan continuity sheet.'
-    });
-  }
-});
-
-app.post('/api/ocr/loop/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
-
-    const preview = await previewLoopImpedanceSheetWithGemini(config, req.file);
-    const draftPatch = mapLoopImpedanceOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Loop Impedance OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan loop impedance sheet.'
-    });
-  }
-});
-
-app.post('/api/ocr/fault/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
-
-    const preview = await previewProspectiveFaultSheetWithGemini(config, req.file);
-    const draftPatch = mapProspectiveFaultOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Prospective Fault Current OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan prospective fault current sheet.'
-    });
-  }
-});
-
-app.post('/api/ocr/riser/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
-
-    const preview = await previewRiserIntegritySheetWithGemini(config, req.file);
-    const draftPatch = mapRiserIntegrityOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Riser Integrity OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan riser integrity sheet.'
-    });
-  }
-});
-
-app.post('/api/ocr/earth-continuity/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
-
-    const preview = await previewEarthContinuitySheetWithGemini(config, req.file);
-    const draftPatch = mapEarthContinuityOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Earth Continuity OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan earth continuity sheet.'
-    });
-  }
-});
-
-app.post('/api/ocr/tower-footing/preview', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Please choose a sheet image or PDF to scan.' });
-    }
-
-    const preview = await previewTowerFootingSheetWithGemini(config, req.file);
-    const draftPatch = mapTowerFootingOcrPreviewToDraft(preview);
-
-    return res.json({
-      success: true,
-      preview,
-      draftPatch,
-      fileName: req.file.originalname || 'uploaded-sheet'
-    });
-  } catch (error) {
-    console.error('Failed to preview Tower Footing OCR with Gemini', error);
-    return res.status(500).json({
-      message: error instanceof Error ? error.message : 'Failed to scan tower footing sheet.'
-    });
-  }
-});
+app.post('/api/ocr/tower-footing/preview', upload.single('document'), createOcrPreviewHandler(
+  previewTowerFootingSheetWithGemini,
+  mapTowerFootingOcrPreviewToDraft,
+  'Failed to scan tower footing sheet.'
+));
 
 app.get('*', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));

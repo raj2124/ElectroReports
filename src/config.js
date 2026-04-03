@@ -56,7 +56,7 @@ module.exports = {
   gemini: {
     enabled: toBool(process.env.GEMINI_ENABLED, true),
     apiKey: String(process.env.GEMINI_API_KEY || '').trim(),
-    model: String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim(),
+    model: String(process.env.GEMINI_MODEL || 'gemini-2.5-pro').trim(),
     maxUploadBytes: Number.parseInt(process.env.GEMINI_MAX_UPLOAD_BYTES || '15728640', 10)
   },
   envPath
