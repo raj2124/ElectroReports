@@ -239,6 +239,24 @@ function readCustomValue(project, aliases) {
   return '';
 }
 
+// Read a custom field value by label/name alias from project.custom_fields ONLY.
+// Unlike readCustomValue, this does NOT scan arbitrary top-level project keys
+// (which include noisy fields such as bug_client_permission="allexternal" that
+// falsely match the "client" alias), so it is safe for ambiguous aliases.
+function readCustomFieldValue(project, aliases) {
+  if (!project || !Array.isArray(project.custom_fields)) {
+    return '';
+  }
+  const normalizedAliases = aliases.map((name) => String(name).toLowerCase());
+  for (const field of project.custom_fields) {
+    const key = String(field?.label || field?.name || '').toLowerCase();
+    if (normalizedAliases.some((alias) => key.includes(alias))) {
+      return field?.value || field?.text || '';
+    }
+  }
+  return '';
+}
+
 function readNestedText(source, keys) {
   if (!source || typeof source !== 'object') {
     return '';
@@ -388,24 +406,61 @@ function extractStage(project) {
   return nonGeneric || allCandidates[0];
 }
 
+// Parse client/customer info out of the Zoho project NAME string. Used ONLY as a
+// fallback when the authoritative custom fields are empty. Two real-world formats
+// exist on the live portal:
+//   A) dash format      SEQ-DEPT-FY-CUST           e.g. 025-D02_PSS-26-SPPL  (DEPT may contain "_")
+//   B) underscore fmt   SEQ_MM_FY_DEPT_CUST[_...]  e.g. 561_03_26_TS_AIL_EA_NEO
+// Returns null for names matching neither, so callers keep the raw name and leave
+// client blank (never guess, never show garbage).
+function parseProjectNameParts(rawName) {
+  const name = asText(rawName).trim();
+  if (!name) {
+    return null;
+  }
+
+  // Format A: exactly SEQ-DEPT-FY-CUST when split on "-".
+  const dashParts = name.split('-').map((part) => part.trim());
+  if (dashParts.length === 4) {
+    const [seq, dept, fy, customer] = dashParts;
+    if (/^\d{2,4}$/.test(seq) && /^\d{2,4}$/.test(fy) && customer) {
+      return { format: 'dash', seq, dept, fy, customer };
+    }
+  }
+
+  // Format B: SEQ_MM_FY_DEPT_CUST with optional trailing scope tokens (customer = 5th token).
+  const underscoreParts = name.split('_').map((part) => part.trim());
+  if (underscoreParts.length >= 5) {
+    const [seq, mm, fy, dept, customer] = underscoreParts;
+    if (/^\d{2,4}$/.test(seq) && /^\d{1,2}$/.test(mm) && /^\d{2,4}$/.test(fy) && customer) {
+      return { format: 'underscore', seq, mm, fy, dept, customer };
+    }
+  }
+
+  return null;
+}
+
 function normalizeProject(project) {
   const id = extractProjectId(project);
   const name = asText(project.name || project.project_name);
+  const parsedName = parseProjectNameParts(name);
   const projectNumber =
     readCustomValue(project, ['project number', 'project no']) ||
     asText(project.project_no) ||
     asText(project.project_number) ||
+    name ||
     '';
   const workOrderNo =
     readCustomValue(project, ['work order', 'wo number', 'work order no']) ||
     asText(project.work_order_no) ||
     '';
   const clientName =
-    readCustomValue(project, ['client']) ||
-    asText(project.client_name) ||
-    asText(project.client?.name) ||
-    asText(project.customer_name) ||
-    asText(project.customer?.name) ||
+    sanitizeClientName(readCustomFieldValue(project, ['client'])) ||
+    sanitizeClientName(project.client_name) ||
+    sanitizeClientName(project.client?.name) ||
+    sanitizeClientName(project.customer_name) ||
+    sanitizeClientName(project.customer?.name) ||
+    (parsedName ? sanitizeClientName(parsedName.customer) : '') ||
     '';
   const updatedAt =
     asText(project.last_updated_time) ||
@@ -1410,10 +1465,40 @@ async function getProjectTasks(projectRef, options = {}) {
   return fetchProjectTasksFromZoho(resolvedId, options);
 }
 
+// Projects created before this date still sync and stay resolvable (for manual
+// mapping of stragglers), but are hidden from the picker dropdown list. Filtering
+// uses the normalized createdAt, sourced from Zoho's created_date_long (epoch-ms).
+const PICKER_MIN_CREATED_MS = Date.parse('2026-01-01T00:00:00Z');
+
+function projectCreatedMs(project) {
+  const raw = asText(project && project.createdAt).trim();
+  if (!raw) {
+    return null;
+  }
+  if (/^\d{10,}$/.test(raw)) {
+    return Number(raw);
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function filterProjectsForPicker(projects) {
+  return (Array.isArray(projects) ? projects : []).filter((project) => {
+    const ms = projectCreatedMs(project);
+    // Fail-open: keep projects with a missing/unparseable created date rather than
+    // risk hiding a valid recent project.
+    if (ms === null) {
+      return true;
+    }
+    return ms >= PICKER_MIN_CREATED_MS;
+  });
+}
+
 module.exports = {
   getProjects,
   getPortalUsers,
   getProjectUsers,
   getProjectClientUsers,
-  getProjectTasks
+  getProjectTasks,
+  filterProjectsForPicker
 };

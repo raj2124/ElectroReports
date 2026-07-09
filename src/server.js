@@ -8,7 +8,7 @@ const { createReportStore } = require('./reportStore');
 const { normalizeReportInput, TEST_LIBRARY } = require('./reportModel');
 const { generateElectroReportPdf } = require('./pdfService');
 const { getAiStatus, generateReportNarrative } = require('./aiService');
-const { getProjects, getProjectUsers, getPortalUsers } = require('./zohoClient');
+const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker } = require('./zohoClient');
 const {
   previewSoilSheetWithGemini,
   previewElectrodeSheetWithGemini,
@@ -137,7 +137,7 @@ app.get('/api/zoho/projects', async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
     const projects = await getProjects(query);
-    return res.json(projects);
+    return res.json(filterProjectsForPicker(projects));
   } catch (error) {
     console.error('Failed to load Zoho projects', error);
     return res.status(500).json({ message: 'Failed to load Zoho projects.' });
