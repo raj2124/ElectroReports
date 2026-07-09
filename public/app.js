@@ -327,8 +327,10 @@ const state = {
   zoho: {
     projects: [],
     users: [],
+    clientUsers: [],
     loadingProjects: false,
-    loadingUsers: false
+    loadingUsers: false,
+    loadingClientUsers: false
   },
   draft: createDraft(),
   stepIndex: 0,
@@ -2229,6 +2231,32 @@ async function loadZohoUsers(projectId) {
   }
 }
 
+async function loadZohoClientUsers(projectId) {
+  if (!projectId) {
+    state.zoho.clientUsers = [];
+    return;
+  }
+  state.zoho.loadingClientUsers = true;
+  render();
+  try {
+    const clientUsers = await api(`/api/zoho/projects/${encodeURIComponent(projectId)}/client-users`);
+    state.zoho.clientUsers = Array.isArray(clientUsers) ? clientUsers : [];
+    // Company name wins: prefer the Zoho client company over the name-parsed abbreviation.
+    const withCompany = state.zoho.clientUsers.find((user) => safeText(user.companyName, ''));
+    if (withCompany) {
+      state.draft.project.clientName = safeText(withCompany.companyName, state.draft.project.clientName);
+    }
+  } catch (error) {
+    // Client contacts are supplementary (e.g. portal returns 403 without the
+    // client-user scope); keep the parsed client name and fail silently in the UI.
+    state.zoho.clientUsers = [];
+    console.warn('Zoho client contacts unavailable:', error.message);
+  } finally {
+    state.zoho.loadingClientUsers = false;
+    render();
+  }
+}
+
 function applyZohoProject(projectId) {
   const project = state.zoho.projects.find((item) => String(item.id) === String(projectId));
   if (!project) {
@@ -2237,6 +2265,7 @@ function applyZohoProject(projectId) {
     state.draft.project.zohoProjectOwner = '';
     state.draft.project.zohoProjectStage = '';
     state.zoho.users = [];
+    state.zoho.clientUsers = [];
     render();
     return;
   }
@@ -2255,6 +2284,7 @@ function applyZohoProject(projectId) {
     state.draft.project.engineerName = safeText(project.ownerName, '');
   }
   loadZohoUsers(project.id);
+  loadZohoClientUsers(project.id);
   showToast(`Synced ${safeText(project.projectNumber || project.name)} from Zoho Projects.`, 'healthy');
   render();
 }
@@ -2588,6 +2618,29 @@ function renderProjectStep() {
           `
           : state.zoho.loadingUsers
             ? '<div class="zoho-user-strip"><span>Loading Zoho users...</span></div>'
+            : ''
+      }
+      ${
+        state.zoho.clientUsers && state.zoho.clientUsers.length
+          ? `
+            <div class="zoho-user-strip">
+              <span>Client contact (from Zoho)</span>
+              <p class="zoho-user-help">Client-side contacts on this Zoho project. Shown for reference; not saved to the report.</p>
+              <div class="tag-cloud">
+                ${state.zoho.clientUsers
+                  .map((user) => {
+                    const nm = safeText(user.displayName || user.name, 'Client contact');
+                    const em = safeText(user.email, '');
+                    const co = safeText(user.companyName, '');
+                    const label = nm + (em ? ` <${em}>` : '') + (co ? ` — ${co}` : '');
+                    return `<span class="soft-chip">${escapeHtml(label)}</span>`;
+                  })
+                  .join('')}
+              </div>
+            </div>
+          `
+          : state.zoho.loadingClientUsers
+            ? '<div class="zoho-user-strip"><span>Loading client contacts...</span></div>'
             : ''
       }
       <div class="field-grid">

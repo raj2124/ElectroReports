@@ -8,7 +8,7 @@ const { createReportStore } = require('./reportStore');
 const { normalizeReportInput, TEST_LIBRARY } = require('./reportModel');
 const { generateElectroReportPdf } = require('./pdfService');
 const { getAiStatus, generateReportNarrative } = require('./aiService');
-const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker } = require('./zohoClient');
+const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const {
   previewSoilSheetWithGemini,
   previewElectrodeSheetWithGemini,
@@ -161,6 +161,31 @@ app.get('/api/zoho/users', async (_req, res) => {
   } catch (error) {
     console.error('Failed to load Zoho users', error);
     return res.status(500).json({ message: 'Failed to load Zoho users.' });
+  }
+});
+
+app.get('/api/zoho/projects/:id/client-users', async (req, res) => {
+  try {
+    const users = await getProjectClientUsers(req.params.id);
+    return res.json(users);
+  } catch (error) {
+    console.error('Failed to load Zoho client users', error);
+    return res.status(500).json({ message: 'Failed to load Zoho client users.' });
+  }
+});
+
+app.get('/api/zoho/projects/:id/tasks', async (req, res) => {
+  try {
+    const tasks = await getProjectTasks(req.params.id, {
+      query: String(req.query.q || '').trim(),
+      status: String(req.query.status || '').trim(),
+      index: req.query.index,
+      range: req.query.range
+    });
+    return res.json(tasks);
+  } catch (error) {
+    console.error('Failed to load Zoho project tasks', error);
+    return res.status(500).json({ message: 'Failed to load Zoho project tasks.' });
   }
 });
 
