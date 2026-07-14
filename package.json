@@ -10,6 +10,7 @@
     "generate:ai-reference": "node scripts/generate-electroreports-ai-reference.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",

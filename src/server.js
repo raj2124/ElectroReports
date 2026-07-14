@@ -7,7 +7,12 @@ const config = require('./config');
 const { createReportStore } = require('./reportStore');
 const { normalizeReportInput, TEST_LIBRARY } = require('./reportModel');
 const { generateElectroReportPdf } = require('./pdfService');
-const { getAiStatus, generateReportNarrative } = require('./aiService');
+const {
+  getAiStatus,
+  generateReportNarrative,
+  generateMeasurementObservations,
+  sanityCheckNarrative
+} = require('./aiService');
 const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const {
   previewSoilSheetWithGemini,
@@ -221,10 +226,30 @@ app.post('/api/reports/:id/ai/generate', async (req, res) => {
   }
 
   try {
+    // PRIMARY: Claude writes the narrative (falls back to OpenAI inside aiService).
     const narrative = await generateReportNarrative(report);
+
+    // SECONDARY (OpenAI): observations/recommendations for measurement sheets and
+    // a sanity-check of Claude's narrative. Both are best-effort — a failure here
+    // must not block the report from receiving its narrative.
+    let observations = null;
+    let sanityCheck = null;
+    try {
+      observations = await generateMeasurementObservations(report);
+    } catch (obsError) {
+      console.error('OpenAI observation generation failed (non-blocking).', obsError);
+    }
+    try {
+      sanityCheck = await sanityCheckNarrative(report, narrative);
+    } catch (checkError) {
+      console.error('OpenAI narrative sanity-check failed (non-blocking).', checkError);
+    }
+
     const updated = store.updateReport(req.params.id, (current) => ({
       ...current,
-      aiNarrative: narrative
+      aiNarrative: narrative,
+      aiObservations: observations,
+      aiSanityCheck: sanityCheck
     }));
     return res.json(updated);
   } catch (error) {

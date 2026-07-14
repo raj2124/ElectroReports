@@ -9,6 +9,9 @@ yarn-error.log
 .env
 .env.local
 .env.*.local
+.env.backup
+.env.*
+!.env.example
 
 # Generated output
 generated-pdfs/

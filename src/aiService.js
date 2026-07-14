@@ -2,9 +2,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const config = require('./config');
-const { REPORT_AI_SYSTEM_GUIDE } = require('./aiReferenceGuide');
+const { REPORT_AI_SYSTEM_GUIDE, REPORT_AI_OBSERVATION_GUIDE } = require('./aiReferenceGuide');
 const {
   TEST_LIBRARY,
   EQUIPMENT_LIBRARY,
@@ -24,8 +25,12 @@ const {
 } = require('./reportModel');
 
 let openAiClient = null;
+let anthropicClient = null;
 const referenceFileCache = new Map();
 const AI_HIGHLIGHT_LIMIT = 6;
+// Guard so the base64-encoded reference PDFs stay well under the 32 MB
+// Anthropic request limit (leaving headroom for the prompt + context).
+const CLAUDE_REFERENCE_MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 
 function safeText(value, fallback = '') {
   const text = String(value === undefined || value === null ? '' : value).trim();
@@ -479,48 +484,132 @@ ${JSON.stringify(context, null, 2)}
 `.trim();
 }
 
-function isAiConfigured() {
-  return Boolean(config.ai.apiKey);
+// ---------------------------------------------------------------------------
+// Provider configuration + clients
+//   Claude (Anthropic /v1/messages) = PRIMARY narrative brain.
+//   OpenAI (Responses API)          = SECONDARY: observations + sanity-check,
+//                                     and the narrative fallback if Claude fails.
+// GUARDRAIL: neither provider may emit a number or pass/fail band that appears
+// in a report. All values come from reportModel.js via buildAiContext().
+// ---------------------------------------------------------------------------
+
+function isOpenAiConfigured() {
+  return Boolean(config.openai.apiKey);
 }
 
-function getClient() {
-  if (!isAiConfigured()) {
+// Backward-compatible alias (older callers used isAiConfigured()).
+function isAiConfigured() {
+  return isOpenAiConfigured();
+}
+
+function isClaudeConfigured() {
+  return Boolean(config.claude.apiKey);
+}
+
+function getOpenAiClient() {
+  if (!isOpenAiConfigured()) {
     throw new Error('OpenAI API key is not configured for ElectroReports.');
   }
   if (!openAiClient) {
-    openAiClient = new OpenAI({ apiKey: config.ai.apiKey });
+    openAiClient = new OpenAI({ apiKey: config.openai.apiKey });
   }
   return openAiClient;
 }
 
-async function getReferenceFileIds(client) {
-  const ids = [];
-  const referencePaths = discoverReferencePdfPaths();
-
-  for (const filePath of referencePaths) {
-    const stats = fs.statSync(filePath);
-    const cached = referenceFileCache.get(filePath);
-    if (cached && cached.size === stats.size && cached.mtimeMs === stats.mtimeMs) {
-      ids.push(cached.fileId);
-      continue;
-    }
-    const uploaded = await client.files.create({
-      file: fs.createReadStream(filePath),
-      purpose: 'user_data'
-    });
-    referenceFileCache.set(filePath, {
-      fileId: uploaded.id,
-      size: stats.size,
-      mtimeMs: stats.mtimeMs
-    });
-    ids.push(uploaded.id);
+function getClaudeClient() {
+  if (!isClaudeConfigured()) {
+    throw new Error('Anthropic (Claude) API key is not configured for ElectroReports.');
   }
-
-  return ids;
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic({ apiKey: config.claude.apiKey });
+  }
+  return anthropicClient;
 }
 
-async function generateReportNarrative(report) {
-  const client = getClient();
+// Read the reference booklet PDFs discovered by discoverReferencePdfPaths() and
+// return them as base64 document blocks for Claude. This is what makes grounding
+// actually work — the old getReferenceFileIds() uploader was never called.
+function readReferenceDocuments() {
+  const documents = [];
+  let totalBytes = 0;
+  for (const filePath of discoverReferencePdfPaths()) {
+    try {
+      const buffer = fs.readFileSync(filePath);
+      if (totalBytes + buffer.length > CLAUDE_REFERENCE_MAX_TOTAL_BYTES) {
+        continue;
+      }
+      totalBytes += buffer.length;
+      documents.push({ name: path.basename(filePath), base64: buffer.toString('base64') });
+    } catch (_error) {
+      // Skip unreadable / missing reference files silently.
+    }
+  }
+  return documents;
+}
+
+function extractClaudeText(response) {
+  const blocks = Array.isArray(response?.content) ? response.content : [];
+  return blocks
+    .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('')
+    .trim();
+}
+
+function parseStructuredJson(text, providerLabel) {
+  try {
+    return JSON.parse(text || '{}');
+  } catch (_error) {
+    throw new Error(`${providerLabel} returned an unexpected structured-output format.`);
+  }
+}
+
+// PRIMARY narrative path — Claude via the Anthropic Messages API. Feeds the ETPL
+// system guide AND the reference booklet PDFs as real document blocks, and
+// reproduces the exact same JSON schema the OpenAI path produced.
+async function generateNarrativeWithClaude(report) {
+  const client = getClaudeClient();
+  const context = buildAiContext(report);
+  const referenceDocs = readReferenceDocuments();
+  const referenceDocuments = referenceDocs.map((doc) => doc.name);
+
+  const content = [];
+  for (const doc of referenceDocs) {
+    content.push({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: doc.base64 }
+    });
+  }
+  content.push({
+    type: 'text',
+    text: buildNarrativePrompt({ ...context, referenceDocuments })
+  });
+
+  const response = await client.messages.create({
+    model: config.claude.model,
+    max_tokens: 8000,
+    system: REPORT_AI_SYSTEM_GUIDE,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      format: { type: 'json_schema', schema: buildNarrativeSchema() }
+    },
+    messages: [{ role: 'user', content }]
+  });
+
+  const parsed = parseStructuredJson(extractClaudeText(response), 'Claude');
+  return {
+    generatedAt: new Date().toISOString(),
+    provider: 'claude',
+    model: response.model || config.claude.model,
+    referenceDocuments,
+    ...parsed
+  };
+}
+
+// SECONDARY / FALLBACK narrative path — the original OpenAI Responses call,
+// preserved verbatim so the report can still be produced if Claude fails.
+async function generateNarrativeWithOpenAI(report) {
+  const client = getOpenAiClient();
   const context = buildAiContext(report);
   const referenceDocuments = discoverReferencePdfPaths().map((filePath) => path.basename(filePath));
   const content = [
@@ -534,7 +623,7 @@ async function generateReportNarrative(report) {
   ];
 
   const response = await client.responses.create({
-    model: config.ai.model,
+    model: config.openai.model,
     instructions: REPORT_AI_SYSTEM_GUIDE,
     input: [
       {
@@ -552,25 +641,249 @@ async function generateReportNarrative(report) {
     }
   });
 
-  let parsed;
-  try {
-    parsed = JSON.parse(response.output_text || '{}');
-  } catch (_error) {
-    throw new Error('OpenAI returned an unexpected AI narrative format.');
-  }
-
+  const parsed = parseStructuredJson(response.output_text, 'OpenAI');
   return {
     generatedAt: new Date().toISOString(),
-    model: response.model || config.ai.model,
+    provider: 'openai',
+    model: response.model || config.openai.model,
     referenceDocuments,
+    ...parsed
+  };
+}
+
+// Public entry point. Claude is primary; OpenAI is the fallback if the Claude
+// call is unavailable or errors. Same return contract in both cases, so the
+// server + PDF code downstream is unchanged.
+async function generateReportNarrative(report) {
+  if (isClaudeConfigured()) {
+    try {
+      return await generateNarrativeWithClaude(report);
+    } catch (error) {
+      console.error('Claude narrative generation failed; falling back to OpenAI.', error);
+    }
+  }
+  return generateNarrativeWithOpenAI(report);
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI SECONDARY role: measurement-sheet observations / recommendations.
+// Only the two modules that expose engineer observation+recommendation columns
+// (Earth Electrode Resistance, Riser / Grid Integrity) are covered — those are
+// the cells that print. OpenAI DESCRIBES results in prose; it must not emit any
+// number or pass/fail band (those come from reportModel.js).
+// ---------------------------------------------------------------------------
+
+function buildObservationSchema() {
+  const rowItems = (extraKey) => ({
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        index: { type: 'integer' },
+        [extraKey]: { type: 'string' },
+        observation: { type: 'string' },
+        recommendation: { type: 'string' }
+      },
+      required: ['index', extraKey, 'observation', 'recommendation']
+    }
+  });
+
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      electrodeResistance: rowItems('tag'),
+      riserIntegrityTest: rowItems('measurementPoint')
+    },
+    required: ['electrodeResistance', 'riserIntegrityTest']
+  };
+}
+
+function buildObservationPrompt(context) {
+  return `
+You are completing the engineer observation and recommendation columns for the
+Earth Electrode Resistance and Riser / Grid Integrity measurement sheets.
+
+For each row (identified by its zero-based "index", matching row order in the
+supplied facts) write:
+- observation: one concise sentence describing the recorded condition of that row
+  in field-engineer language, grounded in the already-computed status/comment.
+- recommendation: one concise, field-practical next action for that row.
+
+Hard rules:
+- Describe results; never compute or restate any numeric value, resistance,
+  average, percentage, or pass/fail band. Those belong to the deterministic
+  application output only.
+- Base observations strictly on the provided per-row status/comment facts; do not
+  invent conditions, standards, or measurements.
+- If a module is not selected or has no rows, return an empty array for it.
+- Keep wording aligned with Elegrow's finalized booklet style and suitable for a
+  final client submission.
+
+Report context JSON:
+${JSON.stringify(context, null, 2)}
+`.trim();
+}
+
+// Runs only when at least one of the two supported modules is selected.
+async function generateMeasurementObservations(report) {
+  const wantsElectrode = Boolean(report?.tests?.electrodeResistance);
+  const wantsRiser = Boolean(report?.tests?.riserIntegrityTest);
+  if (!wantsElectrode && !wantsRiser) {
+    return null;
+  }
+
+  const client = getOpenAiClient();
+  const context = buildAiContext(report);
+  const response = await client.responses.create({
+    model: config.openai.model,
+    instructions: REPORT_AI_OBSERVATION_GUIDE,
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: buildObservationPrompt(context) }]
+      }
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'electroreports_observations',
+        strict: true,
+        schema: buildObservationSchema()
+      }
+    }
+  });
+
+  const parsed = parseStructuredJson(response.output_text, 'OpenAI');
+  return {
+    generatedAt: new Date().toISOString(),
+    provider: 'openai',
+    model: response.model || config.openai.model,
+    modules: parsed
+  };
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI SECONDARY role: sanity-check Claude's narrative against the
+// deterministic results. Verify/describe only — no numbers emitted.
+// ---------------------------------------------------------------------------
+
+function buildSanityCheckSchema() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      consistent: { type: 'boolean' },
+      flags: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            area: { type: 'string' },
+            severity: { type: 'string' },
+            issue: { type: 'string' }
+          },
+          required: ['area', 'severity', 'issue']
+        }
+      },
+      notes: { type: 'string' }
+    },
+    required: ['consistent', 'flags', 'notes']
+  };
+}
+
+function buildSanityCheckPrompt(context, narrative) {
+  return `
+Cross-check the drafted report narrative against the deterministic application
+results. You are a NARROW numeric/verdict verifier — not an author, editor, or
+style reviewer.
+
+Flag an inconsistency ONLY when the narrative states a specific numeric value or
+a pass/fail verdict (e.g. compliant/non-compliant, healthy/critical, safe/unsafe)
+that DIRECTLY CONTRADICTS the corresponding value or status in the deterministic
+results below. Example: the narrative calls an electrode "healthy" when its
+deterministic status is "critical", or cites a mean soil resistivity that differs
+from the deterministic figure.
+
+Do NOT flag any of the following. These are always acceptable and are NOT
+inconsistencies:
+- Citations or references to standards (e.g. IS 3043, IEEE 80, IEEE 81) or their
+  named limits/clauses. These are correct and expected for an Earthing System
+  Health Assessment.
+- Engineering context, methodology, background, or explanatory prose.
+- Narrative, recommendations, or qualitative descriptions that do not state a
+  number or verdict contradicting the deterministic results.
+- A value, standard, or fact simply being ABSENT from the deterministic JSON.
+  Only a direct contradiction counts — never treat "not present" or
+  "not verifiable" as an inconsistency.
+
+Output:
+- consistent: false ONLY if you find at least one number or verdict that
+  contradicts the deterministic results; otherwise true.
+- flags: one entry per contradiction (area = section/module, severity =
+  "critical" | "warning" | "info", issue = quote the narrative claim AND the
+  contradicting deterministic value). Empty if none.
+- notes: a one-line overall verdict.
+
+Do not rewrite the narrative and do not emit any numeric report value yourself.
+
+Deterministic results JSON:
+${JSON.stringify(context, null, 2)}
+
+Drafted narrative JSON:
+${JSON.stringify(narrative, null, 2)}
+`.trim();
+}
+
+async function sanityCheckNarrative(report, narrative) {
+  if (!narrative) {
+    return null;
+  }
+  const client = getOpenAiClient();
+  const context = buildAiContext(report);
+  const response = await client.responses.create({
+    model: config.openai.model,
+    instructions: REPORT_AI_SYSTEM_GUIDE,
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: buildSanityCheckPrompt(context, narrative) }]
+      }
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'electroreports_sanity_check',
+        strict: true,
+        schema: buildSanityCheckSchema()
+      }
+    }
+  });
+
+  const parsed = parseStructuredJson(response.output_text, 'OpenAI');
+  return {
+    generatedAt: new Date().toISOString(),
+    provider: 'openai',
+    model: response.model || config.openai.model,
     ...parsed
   };
 }
 
 function getAiStatus() {
   return {
-    configured: isAiConfigured(),
-    model: config.ai.model,
+    narrativeProvider: isClaudeConfigured() ? 'claude' : 'openai',
+    claude: {
+      configured: isClaudeConfigured(),
+      model: config.claude.model,
+      role: config.claude.role
+    },
+    openai: {
+      configured: isOpenAiConfigured(),
+      model: config.openai.model,
+      role: config.openai.role
+    },
     referenceDocuments: discoverReferencePdfPaths().map((filePath) => path.basename(filePath))
   };
 }
@@ -578,5 +891,9 @@ function getAiStatus() {
 module.exports = {
   getAiStatus,
   generateReportNarrative,
-  isAiConfigured
+  generateMeasurementObservations,
+  sanityCheckNarrative,
+  isAiConfigured,
+  isClaudeConfigured,
+  isOpenAiConfigured
 };

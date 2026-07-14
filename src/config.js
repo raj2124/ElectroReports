@@ -26,6 +26,26 @@ const referencePdfPaths = String(process.env.OPENAI_REFERENCE_PDFS || '')
   .map((entry) => entry.trim())
   .filter(Boolean);
 
+// AI provider roles (Session 3 rewire):
+//   Claude  = PRIMARY   -> report narrative (overallAssessment, executiveSummary,
+//                          closingSummary, keyFindings, moduleSummaries)
+//   OpenAI  = SECONDARY  -> measurement-sheet observations/recommendations/remarks
+//                          + sanity-check of Claude's narrative (no numbers)
+//   Gemini  = OCR only   (unchanged)
+const claude = {
+  apiKey: String(process.env.ANTHROPIC_API_KEY || '').trim(),
+  model: String(process.env.ANTHROPIC_MODEL || 'claude-opus-4-8').trim(),
+  role: String(process.env.CLAUDE_ROLE || 'report-narrative').trim(),
+  referencePdfPaths
+};
+
+const openai = {
+  apiKey: String(process.env.OPENAI_API_KEY || '').trim(),
+  model: String(process.env.OPENAI_MODEL || 'gpt-5.6-sol').trim(),
+  role: String(process.env.OPENAI_ROLE || 'observations-and-sanity-check').trim(),
+  referencePdfPaths
+};
+
 module.exports = {
   app: {
     rootDir,
@@ -48,11 +68,11 @@ module.exports = {
     clientSecret: process.env.ZOHO_CLIENT_SECRET || '',
     projectsEndpoint: process.env.ZOHO_PROJECTS_ENDPOINT || ''
   },
-  ai: {
-    apiKey: String(process.env.OPENAI_API_KEY || '').trim(),
-    model: String(process.env.OPENAI_MODEL || 'gpt-5.2').trim(),
-    referencePdfPaths
-  },
+  claude,
+  openai,
+  // `ai` kept as a backward-compatible alias to the OpenAI config so existing
+  // references (getAiStatus, fallback path) keep working after the role split.
+  ai: openai,
   gemini: {
     enabled: toBool(process.env.GEMINI_ENABLED, true),
     apiKey: String(process.env.GEMINI_API_KEY || '').trim(),

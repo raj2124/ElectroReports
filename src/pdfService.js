@@ -1743,6 +1743,27 @@ function getAiModuleSummary(report, testId) {
   return safeText(match?.summary, '');
 }
 
+// OpenAI-generated observation/recommendation prose for the engineer columns.
+// Numbers and pass/fail bands are never sourced from here — only prose text.
+function getAiRowObservation(report, testId, rowIndex, identifier) {
+  const observations =
+    report && typeof report.aiObservations === 'object' && report.aiObservations ? report.aiObservations : null;
+  const modules = observations && typeof observations.modules === 'object' ? observations.modules : null;
+  const rows = modules && Array.isArray(modules[testId]) ? modules[testId] : [];
+  // Match on the row's stable identifier first (the model can misassign the
+  // zero-based index while still tagging the right row), then fall back to index.
+  const idKey = testId === 'electrodeResistance' ? 'tag' : 'measurementPoint';
+  const id = safeText(identifier, '');
+  let match = id ? rows.find((entry) => safeText(entry?.[idKey], '') === id) : null;
+  if (!match) {
+    match = rows.find((entry) => Number(entry?.index) === Number(rowIndex));
+  }
+  return {
+    observation: safeText(match?.observation, ''),
+    recommendation: safeText(match?.recommendation, '')
+  };
+}
+
 function renderAiModuleSummary(doc, report, testId, drawChrome, heading = 'Assessment Summary') {
   const summary = getAiModuleSummary(report, testId);
   if (!summary) {
@@ -2647,14 +2668,14 @@ function renderElectrodeSection(doc, report, drawChrome) {
       { key: 'recommendation', label: 'Recommendation', width: 0.12 },
       { key: 'priority', label: 'Priority', width: 0.05 }
     ],
-    report.electrodeResistance.map((row) => ({
+    report.electrodeResistance.map((row, index) => ({
       ...row,
       resistanceWithoutGrid: safeText(row.resistanceWithoutGrid, ''),
       resistanceWithGrid: safeText(row.resistanceWithGrid || row.measuredResistance, ''),
       standard: 'IS 3043 / 4.60 ohm',
       comment: toReportBandLabel(deriveElectrodeAssessment(row).status),
-      observation: '',
-      recommendation: '',
+      observation: getAiRowObservation(report, 'electrodeResistance', index, row.tag).observation,
+      recommendation: getAiRowObservation(report, 'electrodeResistance', index, row.tag).recommendation,
       priority: '',
       __cellStyles: {
         comment: getStatusCellStyle(deriveElectrodeAssessment(row).status.tone)
@@ -2796,11 +2817,11 @@ function renderRiserSection(doc, report, drawChrome) {
       { key: 'observation', label: 'Observation', width: 0.12 },
       { key: 'recommendation', label: 'Recommendation', width: 0.1 }
     ],
-    report.riserIntegrityTest.map((row) => ({
+    report.riserIntegrityTest.map((row, index) => ({
       ...row,
       comment: toRiserCommentLabel(deriveRiserAssessment(row).status),
-      observation: '',
-      recommendation: '',
+      observation: getAiRowObservation(report, 'riserIntegrityTest', index, row.measurementPoint).observation,
+      recommendation: getAiRowObservation(report, 'riserIntegrityTest', index, row.measurementPoint).recommendation,
       __cellStyles: {
         comment: getStatusCellStyle(deriveRiserAssessment(row).status.tone)
       },
