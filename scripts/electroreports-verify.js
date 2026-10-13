@@ -195,29 +195,33 @@ async function main() {
   assert(soil.direction1Average === 85, `Expected soil direction 1 average 85, got ${soil.direction1Average}`);
   assert(soil.direction2Average === 95, `Expected soil direction 2 average 95, got ${soil.direction2Average}`);
   assert(soil.overallAverage === 90, `Expected soil overall average 90, got ${soil.overallAverage}`);
-  assert(soil.category.label === 'Low', `Expected soil category Low, got ${soil.category.label}`);
+  assert(soil.category.label === 'Mildly corrosive', `Expected soil category Mildly corrosive (IS 3043 Table 4, 50-100 ohm-m), got ${soil.category.label}`);
 
-  assert(deriveElectrodeAssessment(report.electrodeResistance[0]).status.label === 'Healthy', 'Electrode row 1 should be healthy.');
-  assert(deriveElectrodeAssessment(report.electrodeResistance[1]).status.tone === 'critical', 'Electrode row 2 should be critical.');
+  // rho = 90 ohm-m, 3 m x 25 mm rod: limit (100*90/(2*pi*300))*ln(600/2.5) = 26.17 ohm; compared on the without-grid reading.
+  const electrode1 = deriveElectrodeAssessment(report.electrodeResistance[0], report);
+  const electrode2 = deriveElectrodeAssessment(report.electrodeResistance[1], report);
+  assert(electrode1.limit === 26.17, `Expected rod limit 26.17, got ${electrode1.limit}`);
+  assert(electrode1.status.label === 'Healthy' && electrode1.priority === 'P3', 'Electrode row 1 should be healthy, P3.');
+  assert(electrode2.status.label === 'Healthy' && electrode2.priority === 'P3', 'Electrode row 2 (4.8 ohm vs 26.17 ohm limit) should be healthy, P3.');
 
   assert(deriveContinuityAssessment(report.continuityTest[0]).status.tone === 'healthy', 'Continuity row 1 should be healthy.');
-  assert(deriveContinuityAssessment(report.continuityTest[1]).status.tone === 'warning', 'Continuity row 2 should be warning.');
+  assert(deriveContinuityAssessment(report.continuityTest[1]).status.tone === 'healthy', 'Continuity row 2 (0.8 ohm < 1 ohm) should be healthy.');
   assert(deriveContinuityAssessment(report.continuityTest[2]).status.tone === 'critical', 'Continuity row 3 should be critical.');
 
   assert(deriveLoopImpedanceAssessment(report.loopImpedanceTest[0]).status.tone === 'healthy', 'Loop row 1 should be healthy.');
-  assert(deriveLoopImpedanceAssessment(report.loopImpedanceTest[1]).status.tone === 'warning', 'Loop row 2 should be warning.');
-  assert(deriveLoopImpedanceAssessment(report.loopImpedanceTest[2]).status.tone === 'critical', 'Loop row 3 should be critical.');
+  assert(deriveLoopImpedanceAssessment(report.loopImpedanceTest[1]).status.tone === 'healthy', 'Loop row 2 (1.3 ohm <= 1.8 ohm) should be healthy.');
+  assert(deriveLoopImpedanceAssessment(report.loopImpedanceTest[2]).status.tone === 'healthy', 'Loop row 3 (exactly the 1.8 ohm limit) should be healthy.');
 
   assert(deriveFaultCurrentAssessment(report.prospectiveFaultCurrent[0]).status.tone === 'healthy', 'PFC row 1 should be healthy.');
-  assert(deriveFaultCurrentAssessment(report.prospectiveFaultCurrent[1]).status.tone === 'warning', 'PFC row 2 should be warning.');
+  assert(deriveFaultCurrentAssessment(report.prospectiveFaultCurrent[1]).status.tone === 'healthy', 'PFC row 2 (19 kA < 20 kA device) should be healthy.');
   assert(deriveFaultCurrentAssessment(report.prospectiveFaultCurrent[2]).status.tone === 'critical', 'PFC row 3 should be critical.');
 
   assert(deriveRiserAssessment(report.riserIntegrityTest[0]).status.tone === 'healthy', 'Riser row 1 should be healthy.');
-  assert(deriveRiserAssessment(report.riserIntegrityTest[1]).status.tone === 'warning', 'Riser row 2 should be warning.');
+  assert(deriveRiserAssessment(report.riserIntegrityTest[1]).status.tone === 'healthy', 'Riser row 2 (0.7 / 0.4 ohm <= 1 ohm) should be healthy.');
   assert(deriveRiserAssessment(report.riserIntegrityTest[2]).status.tone === 'critical', 'Riser row 3 should be critical.');
 
   assert(deriveEarthContinuityAssessment(report.earthContinuityTest[0]).status.tone === 'healthy', 'Earth continuity row 1 should be healthy.');
-  assert(deriveEarthContinuityAssessment(report.earthContinuityTest[1]).status.tone === 'warning', 'Earth continuity row 2 should be warning.');
+  assert(deriveEarthContinuityAssessment(report.earthContinuityTest[1]).status.tone === 'healthy', 'Earth continuity row 2 (0.7 ohm < 1 ohm) should be healthy.');
   assert(deriveEarthContinuityAssessment(report.earthContinuityTest[2]).status.tone === 'critical', 'Earth continuity row 3 should be critical.');
 
   const towerSummaries = summarizeTowerGroups(report.towerFootingResistance);
@@ -258,7 +262,7 @@ async function main() {
 
   console.log('[electroreports] Verification PASS');
   console.log(
-    `[electroreports] Soil=${soil.overallAverage} ohm-m | ElectrodeCritical=1 | ContinuityWarnings=1 | ContinuityCritical=1 | TowerHealthy=${towerAAssessment.comment} | TowerMarginal=${towerBAssessment.comment}`
+    `[electroreports] Soil=${soil.overallAverage} ohm-m (${soil.category.label}) | RodLimit=${electrode1.limit} ohm | ContinuityCritical=1 | TowerHealthy=${towerAAssessment.comment} | TowerMarginal=${towerBAssessment.comment}`
   );
 }
 

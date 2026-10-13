@@ -1580,28 +1580,28 @@ function buildObservationSheetRows(report) {
     pushRow('Soil Resistivity Test', soil.locations.map((location) => ({ tone: location.category?.tone || 'neutral' })));
   }
   if (report.tests.electrodeResistance) {
-    pushRow('Earth Electrode Resistance Test', report.electrodeResistance.map((row) => deriveElectrodeAssessment(row).status));
+    pushRow('Earth Electrode Resistance Test', report.electrodeResistance.map((row) => deriveElectrodeAssessment(row, report).status));
   }
   if (report.tests.continuityTest) {
-    pushRow('Earthing Continuity Test', report.continuityTest.map((row) => deriveContinuityAssessment(row).status));
+    pushRow('Earthing Continuity Test', report.continuityTest.map((row) => deriveContinuityAssessment(row, report).status));
   }
   if (report.tests.loopImpedanceTest) {
-    pushRow('Earth Loop Impedance Test', report.loopImpedanceTest.map((row) => deriveLoopImpedanceAssessment(row).status));
+    pushRow('Earth Loop Impedance Test', report.loopImpedanceTest.map((row) => deriveLoopImpedanceAssessment(row, report).status));
   }
   if (report.tests.prospectiveFaultCurrent) {
-    pushRow('Prospective Fault Current Test', report.prospectiveFaultCurrent.map((row) => deriveFaultCurrentAssessment(row).status));
+    pushRow('Prospective Fault Current Test', report.prospectiveFaultCurrent.map((row) => deriveFaultCurrentAssessment(row, report).status));
   }
   if (report.tests.riserIntegrityTest) {
-    pushRow('Riser / Grid Integrity Test', report.riserIntegrityTest.map((row) => deriveRiserAssessment(row).status));
+    pushRow('Riser / Grid Integrity Test', report.riserIntegrityTest.map((row) => deriveRiserAssessment(row, report).status));
   }
   if (report.tests.earthContinuityTest) {
-    pushRow('Ground Resistance / Earth Continuity Test', report.earthContinuityTest.map((row) => deriveEarthContinuityAssessment(row).status));
+    pushRow('Ground Resistance / Earth Continuity Test', report.earthContinuityTest.map((row) => deriveEarthContinuityAssessment(row, report).status));
   }
   if (report.tests.towerFootingResistance) {
     const summaries = summarizeTowerGroups(report.towerFootingResistance);
     pushRow(
       'Tower Footing Test',
-      report.towerFootingResistance.map((group) => deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group))).status)
+      report.towerFootingResistance.map((group) => deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group)), report).status)
     );
   }
   return rows;
@@ -1653,49 +1653,49 @@ function buildComplianceSummaryRows(report) {
       id: 'electrodeResistance',
       label: 'Earth Electrode Resistance Test',
       testArea: 'Earth Pit Resistance',
-      rows: report.electrodeResistance.map((row) => deriveElectrodeAssessment(row).status)
+      rows: report.electrodeResistance.map((row) => deriveElectrodeAssessment(row, report).status)
     },
     {
       enabled: report.tests.continuityTest,
       id: 'continuityTest',
       label: 'Earthing Continuity Test',
       testArea: 'Grid Integrity',
-      rows: report.continuityTest.map((row) => deriveContinuityAssessment(row).status)
+      rows: report.continuityTest.map((row) => deriveContinuityAssessment(row, report).status)
     },
     {
       enabled: report.tests.loopImpedanceTest,
       id: 'loopImpedanceTest',
       label: 'Earth Loop Impedance Test',
       testArea: 'Loop Impedance',
-      rows: report.loopImpedanceTest.map((row) => deriveLoopImpedanceAssessment(row).status)
+      rows: report.loopImpedanceTest.map((row) => deriveLoopImpedanceAssessment(row, report).status)
     },
     {
       enabled: report.tests.prospectiveFaultCurrent,
       id: 'prospectiveFaultCurrent',
       label: 'Prospective Fault Current Test',
       testArea: 'Fault Current',
-      rows: report.prospectiveFaultCurrent.map((row) => deriveFaultCurrentAssessment(row).status)
+      rows: report.prospectiveFaultCurrent.map((row) => deriveFaultCurrentAssessment(row, report).status)
     },
     {
       enabled: report.tests.riserIntegrityTest,
       id: 'riserIntegrityTest',
       label: 'Riser Integrity & Bonding Test',
       testArea: 'Riser Integrity',
-      rows: report.riserIntegrityTest.map((row) => deriveRiserAssessment(row).status)
+      rows: report.riserIntegrityTest.map((row) => deriveRiserAssessment(row, report).status)
     },
     {
       enabled: report.tests.earthContinuityTest,
       id: 'earthContinuityTest',
       label: 'Ground Resistance / Earth Continuity Test',
       testArea: 'Earth Continuity',
-      rows: report.earthContinuityTest.map((row) => deriveEarthContinuityAssessment(row).status)
+      rows: report.earthContinuityTest.map((row) => deriveEarthContinuityAssessment(row, report).status)
     },
     {
       enabled: report.tests.towerFootingResistance,
       id: 'towerFootingResistance',
       label: 'Tower Footing Test',
       testArea: 'Tower Footing',
-      rows: report.towerFootingResistance.map((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status)
+      rows: report.towerFootingResistance.map((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), report).status)
     }
   ];
 
@@ -2138,7 +2138,7 @@ function renderElectrodeSummarySection(doc, drawChrome) {
 function renderRiserSummarySection(doc, report, drawChrome) {
   const counts = { Healthy: 0, 'Un-Healthy': 0 };
   report.riserIntegrityTest.forEach((row) => {
-    const label = toRiserCommentLabel(deriveRiserAssessment(row).status) === 'Healthy' ? 'Healthy' : 'Un-Healthy';
+    const label = toRiserCommentLabel(deriveRiserAssessment(row, report).status) === 'Healthy' ? 'Healthy' : 'Un-Healthy';
     counts[label] += 1;
   });
 
@@ -2225,7 +2225,7 @@ function getMethodologyBlocks(report) {
       title: 'Earth Electrode Resistance Testing',
       objective: 'To measure the resistance of individual earth electrodes and compare the measured values against the standard resistance derived from soil conditions and electrode geometry.',
       methodology: [
-        'The electrode is measured with the required field test setup and the entered with-grid value is treated as the primary acceptance value.',
+        'The electrode is measured with the required field test setup and the without-grid (isolated electrode) reading is compared with the calculated limit; the with-grid reading is used only when no isolated reading was taken.',
         'Measured values are compared with the applicable project or standard reference limit.',
         'Observations and engineer remarks may be captured at row level for each electrode location.'
       ]
@@ -2647,7 +2647,7 @@ function renderElectrodeSection(doc, report, drawChrome) {
   drawSubsectionParagraph(
     doc,
     'Theory',
-    'Measured earth electrode resistance values are compared against the applicable limit to evaluate the effectiveness of the electrode/grid path. The with-grid value is treated as the main acceptance value in the report.',
+    'Measured earth electrode resistance values are compared against the applicable limit to evaluate the effectiveness of the electrode/grid path. The without-grid (isolated electrode) reading is compared with the limit calculated for the electrode under IS 3043:2018 Cl. 14.2.',
     drawChrome
   );
 
@@ -2672,13 +2672,16 @@ function renderElectrodeSection(doc, report, drawChrome) {
       ...row,
       resistanceWithoutGrid: safeText(row.resistanceWithoutGrid, ''),
       resistanceWithGrid: safeText(row.resistanceWithGrid || row.measuredResistance, ''),
-      standard: 'IS 3043 / 4.60 ohm',
-      comment: toReportBandLabel(deriveElectrodeAssessment(row).status),
+      standard: (() => {
+        const assessment = deriveElectrodeAssessment(row, report);
+        return assessment.limit === null ? 'IS 3043:2018 Cl. 14.2' : `IS 3043:2018 Cl. 14.2 / ${assessment.limit.toFixed(2)} ohm`;
+      })(),
+      comment: toReportBandLabel(deriveElectrodeAssessment(row, report).status),
       observation: getAiRowObservation(report, 'electrodeResistance', index, row.tag).observation,
       recommendation: getAiRowObservation(report, 'electrodeResistance', index, row.tag).recommendation,
       priority: '',
       __cellStyles: {
-        comment: getStatusCellStyle(deriveElectrodeAssessment(row).status.tone)
+        comment: getStatusCellStyle(deriveElectrodeAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2710,11 +2713,11 @@ function renderContinuitySection(doc, report, drawChrome) {
     ],
     report.continuityTest.map((row) => ({
       ...row,
-      status: deriveContinuityAssessment(row).status.label,
-      comment: safeText(row.comment, deriveContinuityAssessment(row).comment),
+      status: deriveContinuityAssessment(row, report).status.label,
+      comment: safeText(row.comment, deriveContinuityAssessment(row, report).comment),
       __cellStyles: {
-        status: getStatusCellStyle(deriveContinuityAssessment(row).status.tone),
-        comment: getStatusCellStyle(deriveContinuityAssessment(row).status.tone)
+        status: getStatusCellStyle(deriveContinuityAssessment(row, report).status.tone),
+        comment: getStatusCellStyle(deriveContinuityAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2748,9 +2751,9 @@ function renderLoopSection(doc, report, drawChrome) {
     report.loopImpedanceTest.map((row) => ({
       ...row,
       loopImpedance: safeText(row.loopImpedance || row.measuredZs, ''),
-      remarks: safeText(row.remarks, toReportBandLabel(deriveLoopImpedanceAssessment(row).status)),
+      remarks: safeText(row.remarks, toReportBandLabel(deriveLoopImpedanceAssessment(row, report).status)),
       __cellStyles: {
-        remarks: getStatusCellStyle(deriveLoopImpedanceAssessment(row).status.tone)
+        remarks: getStatusCellStyle(deriveLoopImpedanceAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2785,9 +2788,9 @@ function renderFaultCurrentSection(doc, report, drawChrome) {
     ],
     report.prospectiveFaultCurrent.map((row) => ({
       ...row,
-      remark: safeText(row.comment, toReportBandLabel(deriveFaultCurrentAssessment(row).status)),
+      remark: safeText(row.comment, toReportBandLabel(deriveFaultCurrentAssessment(row, report).status)),
       __cellStyles: {
-        remark: getStatusCellStyle(deriveFaultCurrentAssessment(row).status.tone)
+        remark: getStatusCellStyle(deriveFaultCurrentAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2819,11 +2822,11 @@ function renderRiserSection(doc, report, drawChrome) {
     ],
     report.riserIntegrityTest.map((row, index) => ({
       ...row,
-      comment: toRiserCommentLabel(deriveRiserAssessment(row).status),
+      comment: toRiserCommentLabel(deriveRiserAssessment(row, report).status),
       observation: getAiRowObservation(report, 'riserIntegrityTest', index, row.measurementPoint).observation,
       recommendation: getAiRowObservation(report, 'riserIntegrityTest', index, row.measurementPoint).recommendation,
       __cellStyles: {
-        comment: getStatusCellStyle(deriveRiserAssessment(row).status.tone)
+        comment: getStatusCellStyle(deriveRiserAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2855,11 +2858,11 @@ function renderEarthContinuitySection(doc, report, drawChrome) {
     ],
     report.earthContinuityTest.map((row) => ({
       ...row,
-      status: deriveEarthContinuityAssessment(row).status.label,
-      remark: safeText(row.remark, deriveEarthContinuityAssessment(row).comment),
+      status: deriveEarthContinuityAssessment(row, report).status.label,
+      remark: safeText(row.remark, deriveEarthContinuityAssessment(row, report).comment),
       __cellStyles: {
-        status: getStatusCellStyle(deriveEarthContinuityAssessment(row).status.tone),
-        remark: getStatusCellStyle(deriveEarthContinuityAssessment(row).status.tone)
+        status: getStatusCellStyle(deriveEarthContinuityAssessment(row, report).status.tone),
+        remark: getStatusCellStyle(deriveEarthContinuityAssessment(row, report).status.tone)
       },
       __observationBlocks: [buildObservationBlock(row)].filter(Boolean)
     })),
@@ -2912,7 +2915,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
   );
 
   const tableRows = towerGroups.flatMap((group) => {
-    const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+    const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), report);
     const readings = Array.isArray(group.readings) ? group.readings : [];
     return readings.map((reading, readingIndex) => ({
       srNo: safeText(group.srNo, '-'),
@@ -2956,7 +2959,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
     towerGroups.length
       ? towerGroups
           .map((group) => {
-            const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+            const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), report);
             return `${safeText(group.mainLocationTower, 'Tower')} is rated ${assessment.status.label.toLowerCase()} with grouped Zt ${
               assessment.totalImpedanceZt === null ? '-' : assessment.totalImpedanceZt
             } ohm against Zsat ${assessment.zsat === null ? '-' : assessment.zsat} ohm.`;
@@ -2971,27 +2974,27 @@ function renderConclusion(doc, report, drawChrome) {
   const narrative = getStoredAiNarrative(report);
   const soil = calculateSoilSummary(report);
   const electrodeOverLimit = report.electrodeResistance.filter((row) => {
-    return deriveElectrodeAssessment(row).status.tone === 'critical';
+    return deriveElectrodeAssessment(row, report).status.tone === 'critical';
   }).length;
   const continuityAttention = report.continuityTest.filter((row) => {
-    return deriveContinuityAssessment(row).status.tone !== 'healthy';
+    return deriveContinuityAssessment(row, report).status.tone !== 'healthy';
   }).length;
   const loopAttention = report.loopImpedanceTest.filter((row) => {
-    return deriveLoopImpedanceAssessment(row).status.tone !== 'healthy';
+    return deriveLoopImpedanceAssessment(row, report).status.tone !== 'healthy';
   }).length;
   const faultAttention = report.prospectiveFaultCurrent.filter((row) => {
-    return !['healthy', 'neutral'].includes(deriveFaultCurrentAssessment(row).status.tone);
+    return !['healthy', 'neutral'].includes(deriveFaultCurrentAssessment(row, report).status.tone);
   }).length;
   const riserAttention = report.riserIntegrityTest.filter((row) => {
-    return !['healthy', 'neutral'].includes(deriveRiserAssessment(row).status.tone);
+    return !['healthy', 'neutral'].includes(deriveRiserAssessment(row, report).status.tone);
   }).length;
   const earthContinuityAttention = report.earthContinuityTest.filter((row) => {
-    return !['healthy', 'neutral'].includes(deriveEarthContinuityAssessment(row).status.tone);
+    return !['healthy', 'neutral'].includes(deriveEarthContinuityAssessment(row, report).status.tone);
   }).length;
   const towerSummaries = summarizeTowerGroups(report.towerFootingResistance);
   const towerGroups = Array.isArray(report.towerFootingResistance) ? report.towerFootingResistance : [];
   const towerFootingAttention = towerGroups.filter((row) => {
-    return !['healthy', 'neutral'].includes(deriveTowerFootingAssessment(row, towerSummaries.get(buildTowerGroupKey(row))).status.tone);
+    return !['healthy', 'neutral'].includes(deriveTowerFootingAssessment(row, towerSummaries.get(buildTowerGroupKey(row)), report).status.tone);
   }).length;
 
   drawSectionTitle(doc, 'Conclusion', 'High-level outcome of the selected measurement sections.', drawChrome);
@@ -3012,8 +3015,8 @@ function renderConclusion(doc, report, drawChrome) {
   if (report.tests.electrodeResistance) {
     parts.push(
       electrodeOverLimit
-        ? `${electrodeOverLimit} electrode reading(s) exceed the 4.60 ohm permissible limit and should be reviewed.`
-        : 'All entered electrode resistance readings are within the 4.60 ohm permissible limit.'
+        ? `${electrodeOverLimit} electrode reading(s) exceed their calculated IS 3043:2018 Cl. 14.2 limit and should be reviewed.`
+        : 'All assessed electrode resistance readings are within their calculated IS 3043:2018 Cl. 14.2 limit.'
     );
   }
   if (report.tests.continuityTest && report.continuityTest.length) {

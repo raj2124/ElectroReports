@@ -126,9 +126,10 @@ check('final follows the same review workflow; delete cleans side tables', () =>
 
 // --- reportModel additions --------------------------------------------------
 check('Not measurable electrode status is neutral and survives normalization', () => {
-  assert.deepStrictEqual(getElectrodeStatus(9, { notMeasurable: true }), { label: 'Not measurable', tone: 'neutral' });
-  assert.strictEqual(getElectrodeStatus(9).tone, 'critical'); // unchanged without the flag
-  assert.strictEqual(deriveElectrodeAssessment({ notMeasurable: true }).status.label, 'Not measurable');
+  assert.deepStrictEqual(getElectrodeStatus(9, { notMeasurable: true }), { label: 'Not Measurable', tone: 'neutral' });
+  assert.strictEqual(getElectrodeStatus(9, { limit: 6 }).tone, 'critical'); // over the calculated limit
+  assert.strictEqual(getElectrodeStatus(9).label, 'Pending'); // no calculated limit, so no verdict
+  assert.strictEqual(deriveElectrodeAssessment({ notMeasurable: true }).status.label, 'Not Measurable');
   const n = normalizeReportInput({
     project: { ...project, reportDate: '2026-07-10' }, tests: { electrodeResistance: true },
     electrodeResistance: [{ tag: 'E1', notMeasurable: true }, { tag: 'E2', resistanceWithGrid: '2' }]
@@ -141,7 +142,7 @@ check('overall status thresholds', () => {
   const u = (healthy, bad) => [...Array(healthy).fill({ tone: 'healthy' }), ...Array(bad).fill({ tone: 'critical' })];
   assert.strictEqual(summarizeOverallStatus(u(10, 0)).label, 'Healthy');
   assert.strictEqual(summarizeOverallStatus(u(9, 1)).label, 'Healthy - Minor Actions'); // exactly 90%
-  assert.strictEqual(summarizeOverallStatus(u(8, 2)).label, 'Attention Required');
+  assert.strictEqual(summarizeOverallStatus(u(8, 2)).label, '>Attention Required');
   assert.strictEqual(summarizeOverallStatus([{ tone: 'neutral' }]).label, 'Pending');
   assert.strictEqual(summarizeOverallStatus([...u(10, 0), { tone: 'neutral' }]).label, 'Healthy'); // not-measurable excluded
 });
@@ -150,13 +151,13 @@ check('panel healthy only if all 3 phases healthy', () => {
   const row = (z) => ({ loopImpedance: z });
   const ok = summarizePanels([row('0.5'), row('0.5'), row('0.5')], deriveLoopImpedanceAssessment);
   assert.strictEqual(ok[0].status.tone, 'healthy');
-  const one = summarizePanels([row('0.5'), row('0.5'), row('1.2')], deriveLoopImpedanceAssessment);
-  assert.strictEqual(one[0].status.tone, 'warning');
+  const one = summarizePanels([row('0.5'), row('0.5'), row('2.0')], deriveLoopImpedanceAssessment);
+  assert.strictEqual(one[0].status.tone, 'critical'); // one phase over the 1.8 ohm Zs limit fails the panel
   const bad = summarizePanels([row('0.5'), row('0.5'), row('3')], deriveLoopImpedanceAssessment);
   assert.strictEqual(bad[0].status.tone, 'critical');
   const short = summarizePanels([row('0.5'), row('0.5')], deriveLoopImpedanceAssessment);
   assert.strictEqual(short[0].status.tone, 'warning'); // incomplete panel is not healthy
-  assert.strictEqual(buildOverallStatus({ tests: { loopImpedanceTest: true }, loopImpedanceTest: [row('0.5'), row('0.5'), row('1.2')] }).label, 'Attention Required');
+  assert.strictEqual(buildOverallStatus({ tests: { loopImpedanceTest: true }, loopImpedanceTest: [row('0.5'), row('0.5'), row('2.0')] }).label, '>Attention Required');
 });
 
 console.log(`\n${passed} checks passed.`);

@@ -119,42 +119,42 @@ function buildComplianceSummary(report) {
       id: 'electrodeResistance',
       label: 'Earth Electrode Resistance Test',
       testArea: 'Earth Pit Resistance',
-      rows: report.electrodeResistance.map((row) => ({ status: deriveElectrodeAssessment(row).status }))
+      rows: report.electrodeResistance.map((row) => ({ status: deriveElectrodeAssessment(row, report).status }))
     },
     {
       enabled: report.tests.continuityTest,
       id: 'continuityTest',
       label: 'Earthing Continuity Test',
       testArea: 'Grid Integrity',
-      rows: report.continuityTest.map((row) => ({ status: deriveContinuityAssessment(row).status }))
+      rows: report.continuityTest.map((row) => ({ status: deriveContinuityAssessment(row, report).status }))
     },
     {
       enabled: report.tests.loopImpedanceTest,
       id: 'loopImpedanceTest',
       label: 'Earth Loop Impedance Test',
       testArea: 'Loop Impedance',
-      rows: report.loopImpedanceTest.map((row) => ({ status: deriveLoopImpedanceAssessment(row).status }))
+      rows: report.loopImpedanceTest.map((row) => ({ status: deriveLoopImpedanceAssessment(row, report).status }))
     },
     {
       enabled: report.tests.prospectiveFaultCurrent,
       id: 'prospectiveFaultCurrent',
       label: 'Prospective Fault Current Test',
       testArea: 'Fault Current',
-      rows: report.prospectiveFaultCurrent.map((row) => ({ status: deriveFaultCurrentAssessment(row).status }))
+      rows: report.prospectiveFaultCurrent.map((row) => ({ status: deriveFaultCurrentAssessment(row, report).status }))
     },
     {
       enabled: report.tests.riserIntegrityTest,
       id: 'riserIntegrityTest',
       label: 'Riser / Grid Integrity Test',
       testArea: 'Riser Integrity',
-      rows: report.riserIntegrityTest.map((row) => ({ status: deriveRiserAssessment(row).status }))
+      rows: report.riserIntegrityTest.map((row) => ({ status: deriveRiserAssessment(row, report).status }))
     },
     {
       enabled: report.tests.earthContinuityTest,
       id: 'earthContinuityTest',
       label: 'Earth Continuity Test',
       testArea: 'Earth Continuity',
-      rows: report.earthContinuityTest.map((row) => ({ status: deriveEarthContinuityAssessment(row).status }))
+      rows: report.earthContinuityTest.map((row) => ({ status: deriveEarthContinuityAssessment(row, report).status }))
     },
     {
       enabled: report.tests.towerFootingResistance,
@@ -162,7 +162,7 @@ function buildComplianceSummary(report) {
       label: 'Tower Footing Resistance Measurement & Analysis',
       testArea: 'Tower Footing',
       rows: report.towerFootingResistance.map((group) => ({
-        status: deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status
+        status: deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), report).status
       }))
     }
   ];
@@ -201,7 +201,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     electrodeResistance: report.tests.electrodeResistance
       ? report.electrodeResistance.map((row) => {
-          const assessment = deriveElectrodeAssessment(row);
+          const assessment = deriveElectrodeAssessment(row, report);
           return {
             tag: safeText(row.tag),
             location: safeText(row.location),
@@ -214,7 +214,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     continuityTest: report.tests.continuityTest
       ? report.continuityTest.map((row) => {
-          const assessment = deriveContinuityAssessment(row);
+          const assessment = deriveContinuityAssessment(row, report);
           return {
             mainLocation: safeText(row.mainLocation),
             measurementPoint: safeText(row.measurementPoint),
@@ -228,7 +228,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     loopImpedanceTest: report.tests.loopImpedanceTest
       ? report.loopImpedanceTest.map((row) => {
-          const assessment = deriveLoopImpedanceAssessment(row);
+          const assessment = deriveLoopImpedanceAssessment(row, report);
           return {
             location: safeText(row.location),
             feederTag: safeText(row.feederTag),
@@ -246,7 +246,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     prospectiveFaultCurrent: report.tests.prospectiveFaultCurrent
       ? report.prospectiveFaultCurrent.map((row) => {
-          const assessment = deriveFaultCurrentAssessment(row);
+          const assessment = deriveFaultCurrentAssessment(row, report);
           return {
             location: safeText(row.location),
             feederTag: safeText(row.feederTag),
@@ -265,7 +265,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     riserIntegrityTest: report.tests.riserIntegrityTest
       ? report.riserIntegrityTest.map((row) => {
-          const assessment = deriveRiserAssessment(row);
+          const assessment = deriveRiserAssessment(row, report);
           return {
             mainLocation: safeText(row.mainLocation),
             measurementPoint: safeText(row.measurementPoint),
@@ -279,7 +279,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     earthContinuityTest: report.tests.earthContinuityTest
       ? report.earthContinuityTest.map((row) => {
-          const assessment = deriveEarthContinuityAssessment(row);
+          const assessment = deriveEarthContinuityAssessment(row, report);
           return {
             tag: safeText(row.tag),
             location: safeText(row.locationBuildingName),
@@ -293,7 +293,7 @@ function buildDetailedModuleFacts(report) {
       : [],
     towerFootingResistance: report.tests.towerFootingResistance
       ? report.towerFootingResistance.map((group) => {
-          const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)));
+          const assessment = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), report);
           return {
             srNo: safeText(group.srNo),
             mainLocationTower: safeText(group.mainLocationTower),
