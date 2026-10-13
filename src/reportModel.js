@@ -325,7 +325,12 @@ function getSoilCategory(value) {
   return { label: 'High', tone: 'critical' };
 }
 
-function getElectrodeStatus(value) {
+// `options.notMeasurable` marks an electrode that could not be tested on site. It is
+// neutral (neither pass nor fail) and is excluded from the overall-status pass rate.
+function getElectrodeStatus(value, options = {}) {
+  if (options && options.notMeasurable) {
+    return { label: 'Not measurable', tone: 'neutral' };
+  }
   if (!Number.isFinite(value)) {
     return { label: 'Pending', tone: 'neutral' };
   }
@@ -429,17 +434,20 @@ function deriveElectrodeAssessment(row) {
   const measured = getElectrodeMeasuredValue(row);
   const withoutGrid = asLooseNumber(row?.resistanceWithoutGrid);
   const withGrid = asLooseNumber(row?.resistanceWithGrid) ?? asLooseNumber(row?.measuredResistance);
-  const status = getElectrodeStatus(measured);
+  const notMeasurable = Boolean(row?.notMeasurable);
+  const status = getElectrodeStatus(measured, { notMeasurable });
   const standard = STANDARD_GUIDANCE.electrodeResistance;
 
   let comment = `Enter the resistance value with grid to compare against the ${standard.limitLabel}.`;
-  if (status.tone === 'healthy') {
+  if (notMeasurable) {
+    comment = 'Electrode could not be measured on site; excluded from the pass rate.';
+  } else if (status.tone === 'healthy') {
     comment = `Resistance with grid is within the ${standard.limitLabel} under ${standard.reference}.`;
   } else if (status.tone === 'critical') {
     comment = `Resistance with grid exceeds the ${standard.limitLabel}; review earthing improvement as per ${standard.reference}.`;
   }
 
-  if (Number.isFinite(withoutGrid) && Number.isFinite(withGrid)) {
+  if (!notMeasurable && Number.isFinite(withoutGrid) && Number.isFinite(withGrid)) {
     if (withGrid > withoutGrid) {
       comment += ' The with-grid value is higher than the without-grid value, so verify the test setup and bonding path.';
     } else if (withGrid < withoutGrid) {
@@ -966,11 +974,15 @@ function normalizeReportInput(payload) {
     ).map((row, index) => {
       const source = Array.isArray(input?.electrodeResistance) ? input.electrodeResistance[index] : null;
       const resistanceWithGrid = row.resistanceWithGrid || asTrimmedString(source?.measuredResistance);
-      return {
+      const normalizedRow = {
         ...row,
         resistanceWithGrid,
         observation: asTrimmedString(source?.observation)
       };
+      if (source?.notMeasurable === true || source?.notMeasurable === 'true') {
+        normalizedRow.notMeasurable = true;
+      }
+      return normalizedRow;
     }),
     continuityTest: normalizeRows(
       input?.continuityTest,
@@ -1133,19 +1145,99 @@ function calculateSoilSummary(report) {
   };
 }
 
+
+// A panel is one location's three phase readings (R-E, Y-E, B-E), stored as
+// consecutive rows. It is healthy only if all 3 phases are present and healthy.
+function summarizePanels(rows, deriveAssessment) {
+  const list = Array.isArray(rows) ? rows : [];
+  const panels = [];
+  for (let start = 0; start < list.length; start += PHASE_MEASURED_POINTS.length) {
+    const phases = list.slice(start, start + PHASE_MEASURED_POINTS.length).map((row) => deriveAssessment(row).status);
+    const complete = phases.length === PHASE_MEASURED_POINTS.length;
+    const allHealthy = complete && phases.every((status) => status.tone === 'healthy');
+    const anyCritical = phases.some((status) => status.tone === 'critical');
+    const allNeutral = phases.length > 0 && phases.every((status) => status.tone === 'neutral');
+    let status = { label: 'Needs Attention', tone: 'warning' };
+    if (allHealthy) {
+      status = { label: 'Healthy', tone: 'healthy' };
+    } else if (anyCritical) {
+      status = { label: 'Critical', tone: 'critical' };
+    } else if (allNeutral) {
+      status = { label: 'Pending', tone: 'neutral' };
+    }
+    panels.push({ startIndex: start, phases, status });
+  }
+  return panels;
+}
+
+// Overall status from a list of pass/fail units ({ tone }). Neutral units (pending,
+// not measurable) are not measurable and stay out of the pass rate.
+//   0 unhealthy            -> "Healthy"
+//   pass rate >= 90%       -> "Healthy - Minor Actions"
+//   otherwise              -> "Attention Required"
+function summarizeOverallStatus(units) {
+  const measured = (Array.isArray(units) ? units : []).filter((unit) => {
+    return unit && ['healthy', 'warning', 'critical'].includes(unit.tone);
+  });
+  const healthy = measured.filter((unit) => unit.tone === 'healthy').length;
+  const unhealthy = measured.length - healthy;
+  const passRate = measured.length ? healthy / measured.length : null;
+
+  let label = 'Pending';
+  let tone = 'neutral';
+  if (measured.length) {
+    if (unhealthy === 0) {
+      label = 'Healthy';
+      tone = 'healthy';
+    } else if (passRate >= 0.9) {
+      label = 'Healthy - Minor Actions';
+      tone = 'warning';
+    } else {
+      label = 'Attention Required';
+      tone = 'critical';
+    }
+  }
+  return { label, tone, total: measured.length, healthy, unhealthy, passRate: passRate === null ? null : round(passRate, 4) };
+}
+
+function buildOverallStatus(report) {
+  const units = [];
+  const push = (rows, derive) => (Array.isArray(rows) ? rows : []).forEach((row) => units.push(derive(row).status));
+  const selected = (id) => Boolean(report?.tests?.[id]);
+
+  if (selected('electrodeResistance')) push(report.electrodeResistance, deriveElectrodeAssessment);
+  if (selected('continuityTest')) push(report.continuityTest, deriveContinuityAssessment);
+  if (selected('loopImpedanceTest')) {
+    summarizePanels(report.loopImpedanceTest, deriveLoopImpedanceAssessment).forEach((panel) => units.push(panel.status));
+  }
+  if (selected('prospectiveFaultCurrent')) {
+    summarizePanels(report.prospectiveFaultCurrent, deriveFaultCurrentAssessment).forEach((panel) => units.push(panel.status));
+  }
+  if (selected('riserIntegrityTest')) push(report.riserIntegrityTest, deriveRiserAssessment);
+  if (selected('earthContinuityTest')) push(report.earthContinuityTest, deriveEarthContinuityAssessment);
+  if (selected('towerFootingResistance')) {
+    const summaries = summarizeTowerGroups(report.towerFootingResistance);
+    (report.towerFootingResistance || []).forEach((group) => {
+      units.push(deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group))).status);
+    });
+  }
+  return summarizeOverallStatus(units);
+}
+
 function buildExecutiveSnapshot(report) {
   const soil = calculateSoilSummary(report);
   const selectedTests = TEST_LIBRARY.filter((test) => report?.tests?.[test.id]);
 
   const healthyElectrodes = (report?.electrodeResistance || []).filter((row) => {
-    return getElectrodeStatus(getElectrodeMeasuredValue(row)).tone === 'healthy';
+    return getElectrodeStatus(getElectrodeMeasuredValue(row), { notMeasurable: Boolean(row?.notMeasurable) }).tone === 'healthy';
   }).length;
 
   return {
     selectedTests,
     soil,
     healthyElectrodes,
-    totalElectrodes: (report?.electrodeResistance || []).length
+    totalElectrodes: (report?.electrodeResistance || []).length,
+    overallStatus: buildOverallStatus(report)
   };
 }
 
@@ -1215,6 +1307,9 @@ module.exports = {
   buildTowerGroupKey,
   STANDARD_GUIDANCE,
   buildExecutiveSnapshot,
+  summarizePanels,
+  summarizeOverallStatus,
+  buildOverallStatus,
   normalizeOcrImports,
   createDefaultSoilRow,
   createDefaultSoilLocation,
