@@ -1,0 +1,257 @@
+{
+  "document": "ET-D03-REG-002",
+  "title": "ESHA Standards Acceptance List",
+  "revision": "R0 (draft 2)",
+  "rules_for_use": [
+    "Every limit, formula and classification used in an ESHA report must come from the project's active profile in this list.",
+    "A project uses ETPL-DEFAULT unless a client profile exists. A client profile overrides only the criteria it lists; all others fall back to ETPL-DEFAULT.",
+    "basis = 'standard' means the value is stated in the cited clause. basis = 'etpl_acceptance' means ETPL's adopted criterion; the report prints it as an ETPL acceptance criterion with the reference shown. basis = 'client_spec' means taken from the client's specification document.",
+    "The report's Basis of Assessment table is generated from the resolved profile, so the printed source always matches the value used.",
+    "Changes to this list are controlled: revision, date and approver recorded."
+  ],
+  "profiles": {
+    "ETPL-DEFAULT": {
+      "description": "Default for Indian industrial and utility sites",
+      "criteria": [
+        {
+          "id": "SOIL-METHOD",
+          "test": "soil_resistivity",
+          "parameter": "Method and calculation",
+          "rule": "Wenner 4-probe, probe depth 10-15 cm, rho = 2*pi*a*R",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "40.3, 40.4.1"
+        },
+        {
+          "id": "SOIL-CLASS",
+          "test": "soil_resistivity",
+          "parameter": "Classification",
+          "rule": "Corrosivity: <25 severely; 25-50 moderately; 50-100 mildly; >100 very mildly corrosive. No pass/fail.",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "13.6.1, Table 4"
+        },
+        {
+          "id": "PIT-ROD",
+          "test": "earth_electrode",
+          "parameter": "Standard limit - rod/pipe",
+          "rule": "R = (100*rho / (2*pi*l)) * ln(2*l/d), l and d in cm",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "14.2.2"
+        },
+        {
+          "id": "PIT-PLATE",
+          "test": "earth_electrode",
+          "parameter": "Standard limit - plate",
+          "rule": "R = (rho/4) * sqrt(pi/A), A = area of both sides in m2",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "14.2.1"
+        },
+        {
+          "id": "PIT-STRIP",
+          "test": "earth_electrode",
+          "parameter": "Standard limit - strip/conductor",
+          "rule": "R = (100*rho / (2*pi*l)) * ln(4*l/d), d = strip width or 2x conductor diameter, cm",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "14.2.3"
+        },
+        {
+          "id": "PIT-METHOD",
+          "test": "earth_electrode",
+          "parameter": "Measurement method",
+          "rule": "Fall of potential, potential probe at 61.8%; clamp-on, slope or 90/180 as alternatives",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "41, 41.1"
+        },
+        {
+          "id": "PIT-BAND",
+          "test": "earth_electrode",
+          "parameter": "Status bands",
+          "rule": "Healthy <= 0.9 x limit; Warning > 0.9 x limit and <= limit; >Permissible Limit > limit",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice",
+          "clause": "ET-D03 ESHA Standard 2.2"
+        },
+        {
+          "id": "PIT-PRIORITY",
+          "test": "earth_electrode",
+          "parameter": "Priority",
+          "rule": "P1: > limit, not measurable, or C1/C2/C4/C5. P2: warning band or C3/C6/C7/C8. P3: healthy, no code.",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice",
+          "clause": "ET-D03 ESHA Standard 2.2, Part 3"
+        },
+        {
+          "id": "PIT-CONN",
+          "test": "earth_electrode",
+          "parameter": "Two earth connections",
+          "rule": "Equipment 250-650 V and HV neutrals earthed by two separate and distinct connections (optional check C3)",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "4.2"
+        },
+        {
+          "id": "CONT-LIMIT",
+          "test": "earth_continuity",
+          "parameter": "Continuity resistance",
+          "rule": "< 1 ohm",
+          "value": 1.0,
+          "unit": "ohm",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice (from IS 3043:1987 Cl. 22.2.3, superseded)",
+          "clause": "-"
+        },
+        {
+          "id": "LOOP-LIMIT",
+          "test": "loop_impedance",
+          "parameter": "Earth fault loop impedance Zs",
+          "rule": "Zs <= limit for all three phases",
+          "value": 1.8,
+          "unit": "ohm",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice; actual device limit per IS/IEC 60364-4-41",
+          "clause": "IS 3043:2018 Cl. 42 (method)"
+        },
+        {
+          "id": "PFC-RULE",
+          "test": "pfc",
+          "parameter": "Prospective fault current",
+          "rule": "Device breaking capacity (kA) > the higher of PFC (L-PE) and PSC (L-N); Not Assessable if kA not recorded",
+          "basis": "standard",
+          "source": "IS/IEC 60364-4-43",
+          "clause": "434.5.1"
+        },
+        {
+          "id": "RISER-LIMIT",
+          "test": "riser_integrity",
+          "parameter": "Riser bonding resistance",
+          "rule": "Both towards-equipment and towards-grid <= limit",
+          "value": 1.0,
+          "unit": "ohm",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice. IEEE 81-2012 Cl. 10 sets no numeric limit (results are compared riser-to-riser; reference 1.5 V per 15 m for the high-current test, Cl. 10.2); test-lead resistance must be subtracted",
+          "clause": "-"
+        },
+        {
+          "id": "GND-LIMIT",
+          "test": "ground_resistance",
+          "parameter": "Ground resistance",
+          "rule": "<= calculated electrode limit of the associated pit, or client value",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "14.2"
+        },
+        {
+          "id": "ST-LIMIT",
+          "test": "step_touch",
+          "parameter": "Tolerable step/touch voltage",
+          "rule": "Measured voltage scaled by If/It before comparison (IEEE 81-2012 Cl. 9.3 g). Tolerable: E_step = (1000 + 6*Cs*rho_s)*k/sqrt(ts); E_touch = (1000 + 1.5*Cs*rho_s)*k/sqrt(ts); k = 0.116 (50 kg), 0.157 (70 kg). Client design-calculation limits override.",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "10.3 (IS 3043:2018); 9.3 (IEEE 81-2012)"
+        },
+        {
+          "id": "TOWER-ZSAT",
+          "test": "tower_footing",
+          "parameter": "Tower footing total impedance",
+          "rule": "Healthy <= Zsat; Marginal <= 1.2 x Zsat; else Not Acceptable",
+          "value": 10.0,
+          "unit": "ohm",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice; Zsat to be taken from utility/client specification",
+          "clause": "-"
+        },
+        {
+          "id": "OVERALL",
+          "test": "all",
+          "parameter": "Overall test status",
+          "rule": "0 unhealthy: Healthy; pass >= 90%: Healthy - Minor Actions; else >Attention Required",
+          "basis": "etpl_acceptance",
+          "source": "ETPL practice",
+          "clause": "ET-D03 ESHA Standard 2.10"
+        },
+        {
+          "id": "RETEST",
+          "test": "all",
+          "parameter": "Re-testing interval",
+          "rule": "Annual; never less than once in two years; records kept",
+          "basis": "standard",
+          "source": "IS 3043:2018",
+          "clause": "38.4.1, 38.4.2"
+        },
+        {
+          "id": "ST-METHOD",
+          "test": "step_touch",
+          "parameter": "Measurement method",
+          "rule": "Current injected from remote electrode (>= 5 x largest grid dimension); step probes 1 m apart; touch within 1 m of structure; probes ~150 mm deep; test current recorded per reading",
+          "basis": "standard",
+          "source": "IEEE 81-2012",
+          "clause": "9.2, 9.3, 9.5 j"
+        }
+      ]
+    },
+    "CLIENT-TEMPLATE": {
+      "description": "Copy for a client whose specification sets its own limits. List only the criteria that differ.",
+      "client_spec_document": "<client document number, revision, date>",
+      "criteria": [
+        {
+          "id": "LOOP-LIMIT",
+          "value": 0.8,
+          "unit": "ohm",
+          "basis": "client_spec",
+          "source": "<client spec no.>",
+          "clause": "<clause>"
+        },
+        {
+          "id": "TOWER-ZSAT",
+          "value": 10.0,
+          "unit": "ohm",
+          "basis": "client_spec",
+          "source": "<utility spec no.>",
+          "clause": "<clause>"
+        }
+      ]
+    }
+  },
+  "instruments": {
+    "soil_resistivity": [
+      "MI 3290 GX",
+      "Kyoritsu 4105A"
+    ],
+    "earth_electrode": [
+      "MI 3290 GX",
+      "Kyoritsu 4105A"
+    ],
+    "earth_continuity": [
+      "MI 3152",
+      "MI 3290 GX"
+    ],
+    "loop_impedance": [
+      "Kyoritsu 4118A",
+      "MI 3152"
+    ],
+    "pfc": [
+      "Kyoritsu 4118A",
+      "MI 3152"
+    ],
+    "riser_integrity": [
+      "MI 3290 GX",
+      "MI 3152"
+    ],
+    "ground_resistance": [
+      "MI 3290 GX",
+      "Kyoritsu 4105A"
+    ],
+    "step_touch": [
+      "MI 3295 (to confirm)",
+      "MI 3290 GX"
+    ],
+    "tower_footing": [
+      "MI 3290 GX with current clamps"
+    ]
+  }
+}
