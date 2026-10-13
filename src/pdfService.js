@@ -2751,7 +2751,7 @@ function renderLoopSection(doc, report, drawChrome) {
     report.loopImpedanceTest.map((row) => ({
       ...row,
       loopImpedance: safeText(row.loopImpedance || row.measuredZs, ''),
-      remarks: safeText(row.remarks, toReportBandLabel(deriveLoopImpedanceAssessment(row, report).status)),
+      remarks: safeText(row.remarks, deriveLoopImpedanceAssessment(row, report).comment),
       __cellStyles: {
         remarks: getStatusCellStyle(deriveLoopImpedanceAssessment(row, report).status.tone)
       },
@@ -2788,7 +2788,7 @@ function renderFaultCurrentSection(doc, report, drawChrome) {
     ],
     report.prospectiveFaultCurrent.map((row) => ({
       ...row,
-      remark: safeText(row.comment, toReportBandLabel(deriveFaultCurrentAssessment(row, report).status)),
+      remark: safeText(row.comment, deriveFaultCurrentAssessment(row, report).comment),
       __cellStyles: {
         remark: getStatusCellStyle(deriveFaultCurrentAssessment(row, report).status.tone)
       },

@@ -5,13 +5,13 @@ const LOCAL_TEST_LIBRARY = [
     id: 'soilResistivity',
     label: 'Soil Resistivity Test',
     shortLabel: 'Soil',
-    description: 'Direction-wise soil resistivity readings with automatic average and category.'
+    description: 'Direction-wise soil resistivity readings with automatic average and IS 3043 corrosivity class.'
   },
   {
     id: 'electrodeResistance',
     label: 'Earth Electrode Resistance Test',
     shortLabel: 'Electrode',
-    description: 'Pit-wise resistance against the 4.60 ohm permissible limit.'
+    description: 'Pit-wise resistance against the IS 3043:2018 Cl. 14.2 limit calculated from site soil resistivity.'
   },
   {
     id: 'continuityTest',
@@ -50,17 +50,6 @@ const LOCAL_TEST_LIBRARY = [
     description: 'Grouped tower footing impedance and current analysis with per-tower totals.'
   }
 ];
-
-const TEST_STANDARD_REFERENCES = {
-  soilResistivity: ['IEEE 81-2012', 'IS 3043:2018 Clause 9.2'],
-  electrodeResistance: ['IS 3043:2018', 'IS 3043:2018 Clause 8'],
-  continuityTest: ['IEC 60364-6', 'IS 732 continuity verification'],
-  loopImpedanceTest: ['IEC 60364-6', 'IS/IEC protective loop verification'],
-  prospectiveFaultCurrent: ['IEC 60909', 'IS/IEC fault level assessment'],
-  riserIntegrityTest: ['IS 3043:2018', 'IEC 60364 earth continuity guidance'],
-  earthContinuityTest: ['IS 3043:2018', 'IEC 60364 continuity verification'],
-  towerFootingResistance: ['Fixed Zsat 10 ohm', '4 fixed footing rows per tower location']
-};
 
 const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
 const TOWER_FOOT_POINTS = ['Foot-1', 'Foot-2', 'Foot-3', 'Foot-4'];
@@ -900,380 +889,149 @@ function average(values) {
   return filtered.reduce((sum, value) => sum + value, 0) / filtered.length;
 }
 
-function getSoilCategory(value) {
-  if (!Number.isFinite(value)) {
-    return { label: 'Insufficient Data', tone: 'neutral' };
-  }
-  if (value < 100) {
-    return { label: 'Low', tone: 'healthy' };
-  }
-  if (value <= 500) {
-    return { label: 'Medium', tone: 'warning' };
-  }
-  return { label: 'High', tone: 'critical' };
-}
+// ---- Assessments --------------------------------------------------------------
+// Every status, priority, limit, basis, remark and soil class shown in this file is
+// computed by the server (src/assessmentService.js, rules from the acceptance
+// register). The browser holds no rules: it sends the report or draft, caches what
+// comes back, and renders it. Until a result arrives rows read as Pending.
 
-function getElectrodeStatus(value) {
-  if (!Number.isFinite(value)) {
-    return { label: 'Pending', tone: 'neutral' };
-  }
-  if (value <= 4.6) {
-    return { label: 'Healthy', tone: 'healthy' };
-  }
-  return { label: 'Exceeds Permissible Limit', tone: 'critical' };
-}
+const ASSESSMENT_SECTIONS = [
+  'electrodeResistance',
+  'continuityTest',
+  'loopImpedanceTest',
+  'prospectiveFaultCurrent',
+  'riserIntegrityTest',
+  'earthContinuityTest',
+  'towerFootingResistance'
+];
 
-function getContinuityStatus(value) {
-  if (!Number.isFinite(value)) {
-    return { label: 'Pending', tone: 'neutral' };
-  }
-  if (value <= 0.5) {
-    return { label: 'Healthy', tone: 'healthy' };
-  }
-  if (value <= 1) {
-    return { label: 'Needs Attention', tone: 'warning' };
-  }
-  return { label: 'Critical', tone: 'critical' };
-}
+const PENDING_ROW_ASSESSMENT = Object.freeze({
+  status: Object.freeze({ label: 'Pending', tone: 'neutral' }),
+  standard: Object.freeze({ reference: '', limitLabel: '' }),
+  priority: null,
+  limit: null,
+  totalImpedanceZt: null,
+  totalCurrentItotal: null,
+  zsat: null,
+  comment: '',
+  remark: ''
+});
 
-function getLoopStatus(value) {
-  if (!Number.isFinite(value)) {
-    return { label: 'Pending', tone: 'neutral' };
-  }
-  if (value <= 1) {
-    return { label: 'Healthy', tone: 'healthy' };
-  }
-  if (value <= 1.5) {
-    return { label: 'Needs Attention', tone: 'warning' };
-  }
-  return { label: 'Critical', tone: 'critical' };
-}
+const EMPTY_ASSESSMENT = Object.freeze({
+  profile: null,
+  basis: { rho: null, rhoAssumed: false, rhoSource: '' },
+  soil: {
+    direction1Average: null,
+    direction2Average: null,
+    overallAverage: null,
+    category: { label: 'Insufficient Data', tone: 'neutral' },
+    locations: []
+  },
+  tests: {},
+  modules: [],
+  actions: { electrodeP1: 0, electrodeP2: 0, criticalTotal: 0, total: 0 },
+  measurementCoverage: { total: 0, completed: 0, score: 0 },
+  healthySignals: 0,
+  tone: 'neutral',
+  label: 'Calculating...',
+  banners: { electrode: '' },
+  references: {}
+});
 
-function getRiserStatus(equipment, grid) {
-  const values = [equipment, grid].filter((value) => Number.isFinite(value));
-  if (!values.length) {
-    return { label: 'Pending', tone: 'neutral' };
-  }
-  const highest = Math.max(...values);
-  if (highest <= 0.5) {
-    return { label: 'Healthy', tone: 'healthy' };
-  }
-  if (highest <= 1) {
-    return { label: 'Needs Attention', tone: 'warning' };
-  }
-  return { label: 'Critical', tone: 'critical' };
-}
-
-function getEarthContinuityStatus(value) {
-  const numeric = toNumber(value);
-  if (!Number.isFinite(numeric)) {
-    return { label: 'Pending', tone: 'neutral' };
-  }
-  if (numeric <= 0.5) {
-    return { label: 'Healthy', tone: 'healthy' };
-  }
-  if (numeric <= 1) {
-    return { label: 'Needs Attention', tone: 'warning' };
-  }
-  return { label: 'Critical', tone: 'critical' };
-}
-
-const STANDARD_GUIDANCE = {
-  electrodeResistance: {
-    reference: 'IS 3043',
-    limitLabel: '4.60 ohm project limit'
-  },
-  continuityTest: {
-    reference: 'Continuity guidance',
-    limitLabel: '0.50 ohm continuity reference'
-  },
-  loopImpedanceTest: {
-    reference: 'IEC 60364 / device-specific max Zs',
-    limitLabel: 'Circuit-specific maximum Zs'
-  },
-  prospectiveFaultCurrent: {
-    reference: 'IEC breaking-capacity check',
-    limitLabel: 'PFC must not exceed device breaking capacity'
-  },
-  riserIntegrityTest: {
-    reference: 'Continuity / bonding guidance',
-    limitLabel: '0.50 ohm continuity reference'
-  },
-  earthContinuityTest: {
-    reference: 'Earth continuity guidance',
-    limitLabel: '0.50 ohm continuity reference'
-  },
-  towerFootingResistance: {
-    reference: 'Project default tower footing limit',
-    limitLabel: '10.00 ohm Zsat default'
-  }
+const assessmentCache = {
+  byObject: new WeakMap(),
+  byKey: new Map(),
+  bySource: new WeakMap(),
+  draft: { signature: null, data: null, timer: null, requested: null }
 };
 
-function toReportBandLabel(status) {
-  if (status?.tone === 'healthy') {
-    return 'Healthy';
-  }
-  if (status?.tone === 'warning') {
-    return 'Warning';
-  }
-  if (status?.tone === 'critical') {
-    return '> Permissible Limit';
-  }
-  return 'Pending';
+function assessmentRowKey(section, row) {
+  const id = row && (row.rowId || row.groupId);
+  return id ? `${section}:${id}` : null;
 }
 
-function toRiserCommentLabel(status) {
-  if (status?.tone === 'healthy') {
-    return 'Healthy';
+// Bind a server result to the rows it describes (by object and by id, since detail
+// tables render copies of rows). A result whose row counts no longer match the
+// source is not bound at all: showing another row's status is worse than Pending.
+function registerAssessment(source, data) {
+  if (!source || !data || data.error) {
+    return;
   }
-  if (status?.tone === 'neutral') {
-    return 'Pending';
-  }
-  return 'Un-Healthy';
-}
-
-function deriveElectrodeAssessment(row) {
-  const measured = getElectrodeMeasuredValue(row);
-  const withoutGrid = toNumber(row?.resistanceWithoutGrid);
-  const withGrid = toNumber(row?.resistanceWithGrid) ?? toNumber(row?.measuredResistance);
-  const status = getElectrodeStatus(measured);
-  const standard = STANDARD_GUIDANCE.electrodeResistance;
-
-  let comment = `Enter the resistance value with grid to compare against the ${standard.limitLabel}.`;
-  if (status.tone === 'healthy') {
-    comment = `Resistance with grid is within the ${standard.limitLabel} under ${standard.reference}.`;
-  } else if (status.tone === 'critical') {
-    comment = `Resistance with grid exceeds the ${standard.limitLabel}; review earthing improvement as per ${standard.reference}.`;
-  }
-
-  if (Number.isFinite(withoutGrid) && Number.isFinite(withGrid)) {
-    if (withGrid > withoutGrid) {
-      comment += ' The with-grid value is higher than the without-grid value, so verify the test setup and bonding path.';
-    } else if (withGrid < withoutGrid) {
-      comment += ' The with-grid value improved after bonding to the grid, which is the expected trend.';
+  assessmentCache.bySource.set(source, data);
+  ASSESSMENT_SECTIONS.forEach((section) => {
+    const rows = Array.isArray(source[section]) ? source[section] : [];
+    const results = data.tests && data.tests[section] ? data.tests[section].rows : [];
+    if (rows.length !== results.length) {
+      return;
     }
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function deriveContinuityAssessment(row) {
-  const resistance = toNumber(row?.resistance);
-  const impedance = toNumber(row?.impedance);
-  const status = getContinuityStatus(resistance);
-  const standard = STANDARD_GUIDANCE.continuityTest;
-
-  let comment = `Enter a resistance reading to assess continuity against the ${standard.limitLabel}.`;
-  if (status.tone === 'healthy') {
-    comment = `Continuity resistance is within the ${standard.limitLabel}; bond/joint continuity is acceptable.`;
-  } else if (status.tone === 'warning') {
-    comment = `Continuity resistance is above the ${standard.limitLabel}; inspect joints, terminations, and bonding integrity.`;
-  } else if (status.tone === 'critical') {
-    comment = `Continuity resistance is well above the ${standard.limitLabel}; urgent investigation of the continuity path is recommended.`;
-  }
-
-  if (Number.isFinite(impedance)) {
-    comment += ` Recorded impedance: ${round(impedance, 2)} ohm.`;
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function deriveLoopAssessment(row) {
-  const measured = toNumber(row?.loopImpedance) ?? toNumber(row?.measuredZs);
-  const status = getLoopStatus(measured);
-  const standard = STANDARD_GUIDANCE.loopImpedanceTest;
-
-  let comment = `Enter measured Zs and verify it against the protective device's maximum permitted Zs under ${standard.reference}.`;
-  if (status.tone === 'healthy') {
-    comment = `Measured Zs is in the healthy range, but final compliance still depends on the circuit/device-specific maximum Zs under ${standard.reference}.`;
-  } else if (status.tone === 'warning') {
-    comment = `Measured Zs is elevated; compare it carefully against the circuit/device-specific maximum Zs and confirm disconnection performance.`;
-  } else if (status.tone === 'critical') {
-    comment = `Measured Zs is high and likely to challenge disconnection performance; verify immediately against the protective device's maximum Zs.`;
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function deriveFaultAssessment(row) {
-  const pfc = toNumber(row?.prospectiveFaultCurrent);
-  const breakingCapacity = toNumber(row?.breakingCapacity);
-  const standard = STANDARD_GUIDANCE.prospectiveFaultCurrent;
-  let status = { label: 'Pending', tone: 'neutral' };
-  let comment = `Enter both prospective fault current and device breaking capacity to verify that ${standard.limitLabel}.`;
-
-  if (Number.isFinite(pfc) && Number.isFinite(breakingCapacity)) {
-    if (pfc <= breakingCapacity * 0.9) {
-      status = { label: 'Healthy', tone: 'healthy' };
-      comment = 'Prospective fault current is comfortably within the device breaking capacity.';
-    } else if (pfc <= breakingCapacity) {
-      status = { label: 'Needs Attention', tone: 'warning' };
-      comment = 'Prospective fault current is within the device breaking capacity, but the safety margin is small.';
-    } else {
-      status = { label: 'Critical', tone: 'critical' };
-      comment = 'Prospective fault current exceeds the device breaking capacity; review protective device selection immediately.';
-    }
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function deriveRiserAssessment(row) {
-  const equipment = toNumber(row?.resistanceTowardsEquipment);
-  const grid = toNumber(row?.resistanceTowardsGrid);
-  const status = getRiserStatus(equipment, grid);
-  const standard = STANDARD_GUIDANCE.riserIntegrityTest;
-
-  let comment = `Enter both resistance readings to assess continuity against the ${standard.limitLabel}.`;
-  if (status.tone === 'healthy') {
-    comment = `Riser continuity readings are within the ${standard.limitLabel} toward equipment and grid.`;
-  } else if (status.tone === 'warning') {
-    comment = `One or both riser continuity readings are above the ${standard.limitLabel}; inspect joints, lugs, and bonding interfaces.`;
-  } else if (status.tone === 'critical') {
-    comment = `Riser continuity readings are high; investigate the riser path, bonding terminations, and earth grid connection urgently.`;
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function deriveEarthContinuityAssessment(row) {
-  const measured = toNumber(row?.measuredValue);
-  const status = getEarthContinuityStatus(measured);
-  const standard = STANDARD_GUIDANCE.earthContinuityTest;
-
-  let comment = `Enter a measured value to assess earth continuity against the ${standard.limitLabel}.`;
-  if (status.tone === 'healthy') {
-    comment = `Earth continuity is within the ${standard.limitLabel}; the earth path is acceptable for this point.`;
-  } else if (status.tone === 'warning') {
-    comment = `Earth continuity is above the ${standard.limitLabel}; inspect the earth path, joints, and terminations.`;
-  } else if (status.tone === 'critical') {
-    comment = `Earth continuity is well above the ${standard.limitLabel}; urgent investigation of the earth path is recommended.`;
-  }
-
-  return {
-    status,
-    standard,
-    comment
-  };
-}
-
-function buildTowerGroupKey(group) {
-  const groupId = safeText(group?.groupId, '');
-  const location = safeText(group?.mainLocationTower, '');
-  return groupId || location || `group:${safeText(group?.srNo, 'tower')}`;
-}
-
-function summarizeTowerGroups(groups) {
-  const summaries = new Map();
-
-  (Array.isArray(groups) ? groups : []).forEach((group) => {
-    const readings = Array.isArray(group?.readings) ? group.readings : [];
-    const impedanceValues = readings.map((reading) => toNumber(reading?.measuredImpedance)).filter((value) => Number.isFinite(value));
-    const currentValues = readings.map((reading) => toNumber(reading?.measuredCurrentMa)).filter((value) => Number.isFinite(value));
-    const key = buildTowerGroupKey(group);
-    const hasAnyInput = Boolean(safeText(group?.mainLocationTower, '')) || readings.some((reading) => {
-      return (
-        safeText(reading?.footToEarthingConnectionStatus, 'Given') !== 'Given' ||
-        safeText(reading?.measuredCurrentMa, '') ||
-        safeText(reading?.measuredImpedance, '') ||
-        rowHasObservationData(reading)
-      );
-    });
-
-    summaries.set(key, {
-      impedanceCount: impedanceValues.length,
-      currentCount: currentValues.length,
-      totalImpedanceZt: impedanceValues.length === TOWER_FOOT_POINTS.length ? round(impedanceValues.reduce((sum, value) => sum + value, 0), 2) : null,
-      totalCurrentItotal: currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0), 2) : null,
-      hasAnyInput
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== 'object') {
+        return;
+      }
+      assessmentCache.byObject.set(row, results[index]);
+      const key = assessmentRowKey(section, row);
+      if (key) {
+        assessmentCache.byKey.set(key, results[index]);
+      }
     });
   });
-
-  return summaries;
 }
 
-function deriveTowerFootingAssessment(group, groupSummary) {
-  const standard = STANDARD_GUIDANCE.towerFootingResistance;
-  const zsat = 10;
-  const totalImpedanceZt = groupSummary?.totalImpedanceZt ?? null;
-  const totalCurrentItotal = groupSummary?.totalCurrentItotal ?? null;
-  let status = { label: 'Pending', tone: 'neutral' };
-  let comment = '-';
-
-  if (Number.isFinite(totalImpedanceZt)) {
-    if (totalImpedanceZt <= zsat) {
-      status = { label: 'Healthy', tone: 'healthy' };
-      comment = 'Healthy';
-    } else if (totalImpedanceZt <= zsat * 1.2) {
-      status = { label: 'Marginal', tone: 'warning' };
-      comment = 'Marginal';
-    } else {
-      status = { label: 'Not Acceptable', tone: 'critical' };
-      comment = 'Not Acceptable';
-    }
-  } else if (groupSummary?.hasAnyInput) {
-    comment = '-';
+function rowAssessment(section, row) {
+  if (!row || typeof row !== 'object') {
+    return PENDING_ROW_ASSESSMENT;
   }
-
-  return {
-    status,
-    standard,
-    totalImpedanceZt,
-    totalCurrentItotal,
-    zsat: round(zsat, 2),
-    comment
-  };
+  const key = assessmentRowKey(section, row);
+  return assessmentCache.byObject.get(row) || (key && assessmentCache.byKey.get(key)) || PENDING_ROW_ASSESSMENT;
 }
 
-function calculateSoilSummary(source) {
-  const locations = getSoilLocations(source).map((location, index) => {
-    const direction1Average = average((location.direction1 || []).map((row) => toNumber(row.resistivity)));
-    const direction2Average = average((location.direction2 || []).map((row) => toNumber(row.resistivity)));
-    const overallAverage = average([direction1Average, direction2Average].filter((value) => Number.isFinite(value)));
-    return {
-      locationId: location.locationId || `soil-location-${index + 1}`,
-      name: safeText(location.name, `Location ${index + 1}`),
-      direction1Average: round(direction1Average, 2),
-      direction2Average: round(direction2Average, 2),
-      overallAverage: round(overallAverage, 2),
-      category: getSoilCategory(overallAverage),
-      drivenElectrodeDiameter: safeText(location.drivenElectrodeDiameter, ''),
-      drivenElectrodeLength: safeText(location.drivenElectrodeLength, ''),
-      notes: safeText(location.notes, '')
-    };
-  });
+function sourceAssessment(source) {
+  if (!source) {
+    return EMPTY_ASSESSMENT;
+  }
+  if (!assessmentCache.bySource.has(source) && source.assessment && !source.assessment.error) {
+    registerAssessment(source, source.assessment);
+  }
+  return assessmentCache.bySource.get(source) || EMPTY_ASSESSMENT;
+}
 
-  const direction1Average = average(locations.map((location) => location.direction1Average).filter((value) => Number.isFinite(value)));
-  const direction2Average = average(locations.map((location) => location.direction2Average).filter((value) => Number.isFinite(value)));
-  const overallAverage = average(locations.map((location) => location.overallAverage).filter((value) => Number.isFinite(value)));
-  return {
-    direction1Average: round(direction1Average, 2),
-    direction2Average: round(direction2Average, 2),
-    overallAverage: round(overallAverage, 2),
-    category: getSoilCategory(overallAverage),
-    locations
-  };
+// The request body for a draft: rule inputs only, no photos or OCR bookkeeping.
+function draftAssessmentBody(draft) {
+  return JSON.stringify(draft, (key, value) => (key === 'rowPhotos' || key === 'ocrImports' ? undefined : value));
+}
+
+// Called on every render of the builder. Rebinds the latest result to the current row
+// objects, and asks the server for a fresh one (debounced) when the draft has changed.
+function syncDraftAssessment() {
+  const slot = assessmentCache.draft;
+  const body = draftAssessmentBody(state.draft);
+  if (slot.data && slot.signature === body) {
+    registerAssessment(state.draft, slot.data);
+    return;
+  }
+  if (slot.data) {
+    registerAssessment(state.draft, slot.data);
+  }
+  if (slot.requested === body) {
+    return;
+  }
+  slot.requested = body;
+  window.clearTimeout(slot.timer);
+  slot.timer = window.setTimeout(async () => {
+    try {
+      const data = await api('/api/assessments', { method: 'POST', body });
+      if (slot.requested !== body) {
+        return;
+      }
+      slot.signature = body;
+      slot.data = data;
+      if (state.view === 'builder' && draftAssessmentBody(state.draft) === body) {
+        rerenderPreservingFocus();
+      }
+    } catch (error) {
+      slot.requested = null;
+    }
+  }, 200);
 }
 
 function selectedTests(source) {
@@ -1284,262 +1042,9 @@ function selectedTestCount(source) {
   return selectedTests(source).length;
 }
 
-function countActionRows(source) {
-  const towerSummaries = summarizeTowerGroups(source.towerFootingResistance || []);
-  const electrodeCritical = (source.electrodeResistance || []).filter((row) => getElectrodeStatus(getElectrodeMeasuredValue(row)).tone === 'critical').length;
-  const continuityAttention = (source.continuityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveContinuityAssessment(row).status.tone)).length;
-  const loopAttention = (source.loopImpedanceTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveLoopAssessment(row).status.tone)).length;
-  const faultAttention = (source.prospectiveFaultCurrent || []).filter((row) => deriveFaultAssessment(row).status.tone !== 'healthy' && deriveFaultAssessment(row).status.tone !== 'neutral').length;
-  const riserAttention = (source.riserIntegrityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveRiserAssessment(row).status.tone)).length;
-  const earthContinuityAttention = (source.earthContinuityTest || []).filter((row) => !['healthy', 'neutral'].includes(deriveEarthContinuityAssessment(row).status.tone)).length;
-  const towerGroups = Array.isArray(source.towerFootingResistance) ? source.towerFootingResistance : [];
-  const towerFootingAttention = towerGroups.filter((group) => {
-    return !['healthy', 'neutral'].includes(deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status.tone);
-  }).length;
-  const criticalTotal =
-    electrodeCritical +
-    (source.continuityTest || []).filter((row) => deriveContinuityAssessment(row).status.tone === 'critical').length +
-    (source.loopImpedanceTest || []).filter((row) => deriveLoopAssessment(row).status.tone === 'critical').length +
-    (source.prospectiveFaultCurrent || []).filter((row) => deriveFaultAssessment(row).status.tone === 'critical').length +
-    (source.riserIntegrityTest || []).filter((row) => deriveRiserAssessment(row).status.tone === 'critical').length +
-    (source.earthContinuityTest || []).filter((row) => deriveEarthContinuityAssessment(row).status.tone === 'critical').length +
-    towerGroups.filter((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))).status.tone === 'critical').length;
-
-  return {
-    electrodeCritical,
-    continuityAttention,
-    loopAttention,
-    faultAttention,
-    riserAttention,
-    earthContinuityAttention,
-    towerFootingAttention,
-    criticalTotal,
-    total:
-      electrodeCritical +
-      continuityAttention +
-      loopAttention +
-      faultAttention +
-      riserAttention +
-      earthContinuityAttention +
-      towerFootingAttention
-  };
-}
-
-function summarizeStatusRows(rows, deriveFn) {
-  const statuses = (Array.isArray(rows) ? rows : [])
-    .map((row) => deriveFn(row).status)
-    .filter((status) => status && status.tone !== 'neutral');
-
-  const healthy = statuses.filter((status) => status.tone === 'healthy').length;
-  const warning = statuses.filter((status) => status.tone === 'warning').length;
-  const critical = statuses.filter((status) => status.tone === 'critical').length;
-
-  return {
-    tested: statuses.length,
-    healthy,
-    warning,
-    critical,
-    attention: warning + critical
-  };
-}
-
-function toneFromSummary(summary) {
-  if (summary.critical > 0) {
-    return 'critical';
-  }
-  if (summary.attention > 0) {
-    return 'warning';
-  }
-  if (summary.healthy > 0) {
-    return 'healthy';
-  }
-  return 'neutral';
-}
-
-function buildModuleInsights(source, soilSummary = calculateSoilSummary(source)) {
-  const selected = selectedTests(source);
-  const towerGroups = Array.isArray(source.towerFootingResistance) ? source.towerFootingResistance : [];
-  const towerSummaries = summarizeTowerGroups(towerGroups);
-
-  return selected.map((test) => {
-    if (test.id === 'soilResistivity') {
-      const locationCount = soilSummary.locations.length;
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: soilSummary.category.tone,
-        badge: soilSummary.category.label,
-        detail:
-          soilSummary.overallAverage === null
-            ? `Awaiting numeric readings across ${locationCount} soil location${locationCount === 1 ? '' : 's'}.`
-            : `${soilSummary.overallAverage} ohm-m mean across ${locationCount} location${locationCount === 1 ? '' : 's'}.`,
-        complete: soilSummary.overallAverage !== null
-      };
-    }
-
-    if (test.id === 'electrodeResistance') {
-      const summary = summarizeStatusRows(source.electrodeResistance, (row) => deriveElectrodeAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.healthy}/${summary.tested} within limit • ${summary.attention} need review.` : 'Awaiting with-grid resistance values.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'continuityTest') {
-      const summary = summarizeStatusRows(source.continuityTest, (row) => deriveContinuityAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.tested} points checked • ${summary.attention} above reference.` : 'Awaiting continuity resistance readings.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'loopImpedanceTest') {
-      const summary = summarizeStatusRows(source.loopImpedanceTest, (row) => deriveLoopAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.tested} Zs points assessed • ${summary.attention} elevated.` : 'Awaiting Zs entries for protective loop review.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'prospectiveFaultCurrent') {
-      const summary = summarizeStatusRows(source.prospectiveFaultCurrent, (row) => deriveFaultAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.tested} fault levels compared • ${summary.attention} near or above breaking capacity.` : 'Awaiting PFC and breaking-capacity entries.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'riserIntegrityTest') {
-      const summary = summarizeStatusRows(source.riserIntegrityTest, (row) => deriveRiserAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.tested} riser paths assessed • ${summary.attention} need follow-up.` : 'Awaiting riser resistance inputs.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'earthContinuityTest') {
-      const summary = summarizeStatusRows(source.earthContinuityTest, (row) => deriveEarthContinuityAssessment(row));
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: toneFromSummary(summary),
-        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
-        detail: summary.tested ? `${summary.tested} earth points checked • ${summary.attention} above threshold.` : 'Awaiting earth continuity values.',
-        complete: summary.tested > 0
-      };
-    }
-
-    if (test.id === 'towerFootingResistance') {
-      const assessments = towerGroups.map((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))));
-      const completeGroups = assessments.filter((assessment) => Number.isFinite(assessment.totalImpedanceZt) && Number.isFinite(assessment.totalCurrentItotal)).length;
-      const healthy = assessments.filter((assessment) => assessment.status.tone === 'healthy').length;
-      const warning = assessments.filter((assessment) => assessment.status.tone === 'warning').length;
-      const critical = assessments.filter((assessment) => assessment.status.tone === 'critical').length;
-
-      return {
-        id: test.id,
-        label: test.label,
-        shortLabel: test.shortLabel || test.label,
-        tone: critical ? 'critical' : warning ? 'warning' : healthy ? 'healthy' : 'neutral',
-        badge: critical ? `${critical} critical` : warning ? `${warning} marginal` : healthy ? `${healthy} healthy` : 'Pending',
-        detail: towerGroups.length ? `${completeGroups}/${towerGroups.length} tower groups calculated.` : 'Awaiting tower location measurements.',
-        complete: completeGroups > 0,
-        groupCount: towerGroups.length,
-        completeGroups
-      };
-    }
-
-    return {
-      id: test.id,
-      label: test.label,
-      shortLabel: test.shortLabel || test.label,
-      tone: 'neutral',
-      badge: 'Pending',
-      detail: 'Awaiting measurement values.',
-      complete: false
-    };
-  });
-}
-
-function measurementCoverageFromModules(modules) {
-  const total = Array.isArray(modules) ? modules.length : 0;
-  const completed = (Array.isArray(modules) ? modules : []).filter((module) => module.complete).length;
-  return {
-    total,
-    completed,
-    score: total ? Math.round((completed / total) * 100) : 0
-  };
-}
-
-function buildAssessmentSummary(source) {
-  const soil = calculateSoilSummary(source);
-  const actions = countActionRows(source);
-  const selected = selectedTests(source);
-  const modules = buildModuleInsights(source, soil);
-  const measurementCoverage = measurementCoverageFromModules(modules);
-  const criticalSignals = actions.criticalTotal + (soil.category.tone === 'critical' ? 1 : 0);
-  const warningSignals = actions.total - actions.criticalTotal + (soil.category.tone === 'warning' ? 1 : 0);
-  const healthySignals = [
-    source.tests.soilResistivity && soil.category.tone === 'healthy' ? 1 : 0,
-    source.tests.electrodeResistance && actions.electrodeCritical === 0 && source.electrodeResistance.length ? 1 : 0,
-    source.tests.continuityTest && actions.continuityAttention === 0 && source.continuityTest.length ? 1 : 0,
-    source.tests.loopImpedanceTest && actions.loopAttention === 0 && source.loopImpedanceTest.length ? 1 : 0,
-    source.tests.prospectiveFaultCurrent && actions.faultAttention === 0 && source.prospectiveFaultCurrent.length ? 1 : 0,
-    source.tests.riserIntegrityTest && actions.riserAttention === 0 && source.riserIntegrityTest.length ? 1 : 0,
-    source.tests.earthContinuityTest && actions.earthContinuityAttention === 0 && source.earthContinuityTest.length ? 1 : 0,
-    source.tests.towerFootingResistance && actions.towerFootingAttention === 0 && source.towerFootingResistance.length ? 1 : 0
-  ].reduce((sum, value) => sum + value, 0);
-
-  let tone = 'healthy';
-  let label = 'Healthy Snapshot';
-  if (criticalSignals > 0) {
-    tone = 'critical';
-    label = 'Action Required';
-  } else if (warningSignals > 0 || soil.category.tone === 'warning') {
-    tone = 'warning';
-    label = 'Review Needed';
-  } else if (!selected.length) {
-    tone = 'neutral';
-    label = 'Awaiting Selection';
-  }
-
-  return {
-    soil,
-    actions,
-    selected,
-    modules,
-    measurementCoverage,
-    healthySignals,
-    tone,
-    label
-  };
+// Summary for the dashboard, builder and detail views, computed by the server.
+function assessmentSummary(source) {
+  return { ...sourceAssessment(source), selected: selectedTests(source) };
 }
 
 function formatDisplayDate(value) {
@@ -1623,7 +1128,7 @@ function getProjectStageMeta(value) {
   return { label, tone: 'neutral' };
 }
 
-function builderReadiness(assessment = buildAssessmentSummary(state.draft)) {
+function builderReadiness(assessment = assessmentSummary(state.draft)) {
   const project = state.draft.project;
   const projectComplete = ['projectNo', 'clientName', 'siteLocation', 'workOrder', 'reportDate', 'engineerName'].filter((field) => safeText(project[field], '')).length;
   const projectScore = Math.round((projectComplete / 6) * 100);
@@ -1645,14 +1150,14 @@ function stepGuidance(stepId) {
   const map = {
     project: 'Capture the core job references first so the saved report and PDF stay traceable in the field.',
     selection: 'Select only the sections actually tested on site. The rest will stay out of the report.',
-    soilResistivity: 'Enter measured resistivity values only. The app calculates direction averages and the final category.',
-    electrodeResistance: 'Each electrode status updates from the 4.60 ohm limit automatically.',
+    soilResistivity: 'Enter measured resistivity values only. The app calculates direction averages and the IS 3043 corrosivity class.',
+    electrodeResistance: 'Each electrode status is calculated from the site soil resistivity and the electrode dimensions.',
     continuityTest: 'Use this for point-to-point resistance and impedance checks.',
     loopImpedanceTest: 'Record Zs values for protection verification at the tested points.',
     prospectiveFaultCurrent: 'Capture breaker and feeder context with the measured fault current values.',
     riserIntegrityTest: 'Use this for resistance checks towards equipment and towards the grid.',
     earthContinuityTest: 'Record tagged earth continuity points with distance and measured value.',
-    towerFootingResistance: 'Each tower location keeps 4 fixed footing rows with grouped totals and a fixed Zsat 10 standard.'
+    towerFootingResistance: 'Each tower location keeps 4 fixed footing rows with grouped totals; Zsat comes from the project acceptance profile.'
   };
   return map[stepId] || 'Continue entering the field measurements for the selected scope.';
 }
@@ -1661,8 +1166,8 @@ function currentStepNote(stepId) {
   const map = {
     project: 'Keep the project references complete so saved reports and PDFs stay traceable.',
     selection: 'Choose only the measurement sheets actually executed on site.',
-    soilResistivity: 'Complete both directions so the soil mean and category can calculate.',
-    electrodeResistance: 'Focus on the with-grid value because that drives the health result.',
+    soilResistivity: 'Complete both directions so the soil mean and corrosivity class can calculate.',
+    electrodeResistance: 'Enter the without-grid (isolated electrode) reading; it is compared with the calculated limit.',
     continuityTest: 'Resistance is the main decision field; impedance is supporting context.',
     loopImpedanceTest: 'Use measured Zs to flag circuits that need protection review.',
     prospectiveFaultCurrent: 'Breaking capacity and PFC must both be filled for a real check.',
@@ -1691,11 +1196,11 @@ function renderStandardsSummary(source) {
     <div class="standards-list">
       ${selected
         .map((test) => {
-          const references = TEST_STANDARD_REFERENCES[test.id] || [];
+          const references = sourceAssessment(source).references[test.id] || [];
           return `
             <article class="standard-entry">
               <strong>${escapeHtml(test.shortLabel || test.label)}</strong>
-              <span>${escapeHtml(references.join(' • ') || 'Reference standard to be confirmed')}</span>
+              <span>${escapeHtml(references.join(' • ') || 'Reference loads with the assessment')}</span>
             </article>
           `;
         })
@@ -2341,7 +1846,7 @@ function brandHeader() {
 
 function dashboardView() {
   const uniqueClients = new Set(state.reports.map((report) => report.project.clientName)).size;
-  const reportsNeedingAction = state.reports.filter((report) => buildAssessmentSummary(report).tone !== 'healthy').length;
+  const reportsNeedingAction = state.reports.filter((report) => assessmentSummary(report).tone !== 'healthy').length;
   const zohoCount = state.zoho.projects.length;
 
   return `
@@ -2410,7 +1915,7 @@ function dashboardView() {
           ? `<section class="card-grid">
               ${state.reports
                 .map((report) => {
-                  const summary = buildAssessmentSummary(report);
+                  const summary = assessmentSummary(report);
                   return `
                     <article class="report-card report-card-${summary.tone}">
                       <div class="report-card-head">
@@ -2442,7 +1947,7 @@ function dashboardView() {
                         </div>
                       </div>
                       <div class="report-card-alerts">
-                        <span>Critical electrodes: <strong>${summary.actions.electrodeCritical}</strong></span>
+                        <span>P1 electrodes: <strong>${summary.actions.electrodeP1}</strong></span>
                         <span>Total action points: <strong>${summary.actions.total}</strong></span>
                       </div>
                       <div class="card-actions">
@@ -3554,7 +3059,7 @@ function renderTowerOcrAssist() {
 }
 
 function renderSoilStep() {
-  const summary = calculateSoilSummary(state.draft);
+  const summary = assessmentSummary(state.draft).soil;
   const locations = getSoilLocations(state.draft);
   return sectionCard(
     'Soil Resistivity Test',
@@ -3660,7 +3165,7 @@ function renderSoilStep() {
 }
 
 function electrodeRowHtml(row, index) {
-  const assessment = deriveElectrodeAssessment(row);
+  const assessment = rowAssessment('electrodeResistance', row);
   const status = assessment.status;
   return `
     <tr>
@@ -3680,9 +3185,9 @@ function electrodeRowHtml(row, index) {
       <td><input class="table-input" value="${escapeHtml(row.diameter)}" data-section="electrodeResistance" data-index="${index}" data-field="diameter" /></td>
       <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithoutGrid, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithoutGrid" /></td>
       <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithGrid || row.measuredResistance, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithGrid" /></td>
-      <td>${standardCell(assessment.standard.reference, assessment.standard.limitLabel)}</td>
-      <td>${pill(status.tone, status.label)}</td>
-      <td>${autoTextCell(assessment.comment)}</td>
+      <td>${standardCell(assessment.standard.reference, assessment.limit === null ? assessment.standard.limitLabel : `${assessment.limit.toFixed(2)} ohm`)}</td>
+      <td>${pill(status.tone, status.label)}${assessment.priority ? ` <span class="soft-chip">${escapeHtml(assessment.priority)}</span>` : ''}</td>
+      <td>${autoTextCell(assessment.remark)}</td>
       ${actionButtonsCell('electrodeResistance', index, row)}
     </tr>
   `;
@@ -3694,10 +3199,10 @@ function renderElectrodeStep() {
     'Measurement Sheet',
     `
       ${renderElectrodeOcrAssist()}
-      <div class="limit-banner">Permissible limit: 4.60 ohm as per IS 3043</div>
+      <div class="limit-banner">${escapeHtml(assessmentSummary(state.draft).banners.electrode)}</div>
       ${tableSurface(
         'Electrode Measurements',
-        'Status is calculated automatically from the resistance value with grid.',
+        'Status and priority are calculated from the without-grid reading against the limit for each pit.',
         '<tr><th>Pit Tag</th><th>Location</th><th>Electrode Type</th><th>Material</th><th>Length (m)</th><th>Dia (mm)</th><th>Resistance Value Without Grid (ohm)</th><th>Resistance Value With Grid (ohm)</th><th>Standard</th><th>Status</th><th>Comment / Observation</th><th>Action</th></tr>',
         state.draft.electrodeResistance.map((row, index) => electrodeRowHtml(row, index)).join(''),
         '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="electrodeResistance">Add Electrode</button></div>'
@@ -3728,8 +3233,8 @@ function towerReadingActionCell(groupIndex, readingIndex, reading, rowSpan = 1) 
   `;
 }
 
-function towerGroupRowsHtml(group, groupIndex, summaries) {
-  const assessment = deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group)));
+function towerGroupRowsHtml(group, groupIndex) {
+  const assessment = rowAssessment('towerFootingResistance', group);
   const readings = Array.isArray(group.readings) ? group.readings : [];
 
   return readings
@@ -3767,7 +3272,7 @@ function towerGroupRowsHtml(group, groupIndex, summaries) {
           ? `
               <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt))}</td>
               <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal))}</td>
-              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell('10')}</td>
+              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.zsat === null ? '-' : String(assessment.zsat))}</td>
             `
           : '';
 
@@ -3775,7 +3280,7 @@ function towerGroupRowsHtml(group, groupIndex, summaries) {
         readingIndex === 0
           ? `
               <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">
-                ${autoTextCell(assessment.comment)}
+                ${autoTextCell(assessment.remark)}
               </td>
             `
           : '';
@@ -3809,7 +3314,6 @@ function towerGroupRowsHtml(group, groupIndex, summaries) {
 }
 
 function renderTowerFootingStep() {
-  const summaries = summarizeTowerGroups(state.draft.towerFootingResistance);
   return sectionCard(
     'Tower Footing Resistance Measurement & Analysis',
     'Measurement Sheet',
@@ -3819,7 +3323,7 @@ function renderTowerFootingStep() {
         'Tower Footing Resistance Measurement & Analysis',
         'Each tower location contains 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
         '<tr><th>Sr. No.</th><th>Main Location – Tower</th><th>Measurement Point Location</th><th>Foot to Earthing Connection Status</th><th>Measured Current I (mA)</th><th>Measured Impedance (ohm)</th><th>Total Impedance Zt (ohm)</th><th>Total Current | Total (A)</th><th>Standard Tolerable Impedance Value Zsat</th><th>Remarks</th><th>Action</th></tr>',
-        state.draft.towerFootingResistance.map((group, groupIndex) => towerGroupRowsHtml(group, groupIndex, summaries)).join(''),
+        state.draft.towerFootingResistance.map((group, groupIndex) => towerGroupRowsHtml(group, groupIndex)).join(''),
         '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="towerFootingResistance">Add New Tower Location</button></div>'
       )}
     `
@@ -3845,7 +3349,7 @@ function renderLoopGroupRows(groupRows, groupIndex) {
   return groupRows
     .map((row, offset) => {
       const index = baseIndex + offset;
-      const assessment = deriveLoopAssessment(row);
+      const assessment = rowAssessment('loopImpedanceTest', row);
       return `
         <tr>
           <td>${escapeHtml(row.srNo)}</td>
@@ -3863,7 +3367,7 @@ function renderLoopGroupRows(groupRows, groupIndex) {
           <td class="table-input-static">${escapeHtml(row.measuredPoints)}</td>
           <td><input class="table-input" value="${escapeHtml(row.loopImpedance)}" data-section="loopImpedanceTest" data-index="${index}" data-field="loopImpedance" /></td>
           <td><input class="table-input" value="${escapeHtml(row.voltage)}" data-section="loopImpedanceTest" data-index="${index}" data-field="voltage" /></td>
-          <td>${autoTextCell(assessment.comment)}</td>
+          <td>${autoTextCell(assessment.remark)}</td>
           ${actionButtonsCell('loopImpedanceTest', index, row)}
         </tr>
       `;
@@ -3915,7 +3419,7 @@ function renderFaultGroupRows(groupRows, groupIndex) {
   return groupRows
     .map((row, offset) => {
       const index = baseIndex + offset;
-      const assessment = deriveFaultAssessment(row);
+      const assessment = rowAssessment('prospectiveFaultCurrent', row);
       return `
         <tr>
           <td>${escapeHtml(row.srNo)}</td>
@@ -3934,7 +3438,7 @@ function renderFaultGroupRows(groupRows, groupIndex) {
           <td><input class="table-input" value="${escapeHtml(row.loopImpedance)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="loopImpedance" /></td>
           <td><input class="table-input" value="${escapeHtml(row.prospectiveFaultCurrent)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="prospectiveFaultCurrent" /></td>
           <td><input class="table-input" value="${escapeHtml(row.voltage)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="voltage" /></td>
-          <td>${autoTextCell(assessment.comment)}</td>
+          <td>${autoTextCell(assessment.remark)}</td>
           ${actionButtonsCell('prospectiveFaultCurrent', index, row)}
         </tr>
       `;
@@ -4000,8 +3504,8 @@ function renderContinuityStep() {
                 <td><input class="table-input" value="${escapeHtml(row.measurementPoint)}" data-section="continuityTest" data-index="${index}" data-field="measurementPoint" /></td>
                 <td><input class="table-input" value="${escapeHtml(row.resistance)}" data-section="continuityTest" data-index="${index}" data-field="resistance" /></td>
                 <td><input class="table-input" value="${escapeHtml(row.impedance)}" data-section="continuityTest" data-index="${index}" data-field="impedance" /></td>
-                <td>${pill(deriveContinuityAssessment(row).status.tone, deriveContinuityAssessment(row).status.label)}</td>
-                <td>${autoTextCell(deriveContinuityAssessment(row).comment)}</td>
+                <td>${pill(rowAssessment('continuityTest', row).status.tone, rowAssessment('continuityTest', row).status.label)}</td>
+                <td>${autoTextCell(rowAssessment('continuityTest', row).remark)}</td>
                 ${actionButtonsCell('continuityTest', index, row)}
               </tr>
             `;
@@ -4089,14 +3593,14 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const assessment = deriveRiserAssessment(row);
+          const assessment = rowAssessment('riserIntegrityTest', row);
           return pill(assessment.status.tone, assessment.status.label);
         }
       },
       {
         key: 'comment',
         label: 'Comment',
-        render: (row) => autoTextCell(deriveRiserAssessment(row).comment)
+        render: (row) => autoTextCell(rowAssessment('riserIntegrityTest', row).remark)
       }
     ], null, renderRiserOcrAssist());
   }
@@ -4111,14 +3615,14 @@ function renderBuilderStep() {
         key: 'status',
         label: 'Status',
         render: (row) => {
-          const assessment = deriveEarthContinuityAssessment(row);
+          const assessment = rowAssessment('earthContinuityTest', row);
           return pill(assessment.status.tone, assessment.status.label);
         }
       },
       {
         key: 'remark',
         label: 'Remark',
-        render: (row) => autoTextCell(deriveEarthContinuityAssessment(row).comment)
+        render: (row) => autoTextCell(rowAssessment('earthContinuityTest', row).remark)
       }
     ], null, renderEarthContinuityOcrAssist());
   }
@@ -4130,7 +3634,7 @@ function renderBuilderStep() {
 
 function builderView() {
   const steps = getSteps();
-  const assessment = buildAssessmentSummary(state.draft);
+  const assessment = assessmentSummary(state.draft);
   const readiness = builderReadiness(assessment);
   const currentStep = currentStepId();
   return `
@@ -4254,7 +3758,6 @@ function simpleDetailTable(columns, rows, options = {}) {
 }
 
 function towerFootingDetailTable(groups) {
-  const summaries = summarizeTowerGroups(groups);
   return `
     <div class="table-wrap">
       <table class="data-table tower-data-table">
@@ -4276,7 +3779,7 @@ function towerFootingDetailTable(groups) {
         <tbody>
           ${(Array.isArray(groups) ? groups : [])
             .map((group) => {
-              const assessment = deriveTowerFootingAssessment(group, summaries.get(buildTowerGroupKey(group)));
+              const assessment = rowAssessment('towerFootingResistance', group);
               const readings = Array.isArray(group.readings) ? group.readings : [];
               return readings
                 .map((reading, readingIndex) => {
@@ -4300,12 +3803,12 @@ function towerFootingDetailTable(groups) {
                              <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
                                assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)
                              )}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">10</td>`
+                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(assessment.zsat === null ? '-' : String(assessment.zsat))}</td>`
                           : ''
                       }
                       ${
                         readingIndex === 0
-                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.comment)}</td>`
+                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.remark)}</td>`
                           : ''
                       }
                       <td>${renderObservationCard(reading, safeText(reading.measurementPointLocation, 'Foot')) || '-'}</td>
@@ -4401,7 +3904,7 @@ function renderAiNarrativeSection(report) {
 
 function detailView() {
   const report = state.activeReport;
-  const assessment = buildAssessmentSummary(report);
+  const assessment = assessmentSummary(report);
   const soil = assessment.soil;
 
   return `
@@ -4540,18 +4043,21 @@ function detailView() {
                 { label: 'Resistance With Grid (ohm)', key: 'resistanceWithGrid' },
                 {
                   label: 'Standard',
-                  render: () => standardCell(STANDARD_GUIDANCE.electrodeResistance.reference, STANDARD_GUIDANCE.electrodeResistance.limitLabel)
+                  render: (row) => {
+                    const assessment = rowAssessment('electrodeResistance', row);
+                    return standardCell(assessment.standard.reference, assessment.limit === null ? assessment.standard.limitLabel : `${assessment.limit.toFixed(2)} ohm`);
+                  }
                 },
                 {
                   label: 'Comment',
                   render: (row) => {
-                    const assessment = deriveElectrodeAssessment(row);
-                    return autoTextCell(toReportBandLabel(assessment.status));
+                    const assessment = rowAssessment('electrodeResistance', row);
+                    return autoTextCell(assessment.status.label);
                   }
                 },
                 { label: 'Observation', render: () => autoTextCell('') },
                 { label: 'Recommendation', render: () => autoTextCell('') },
-                { label: 'Priority of Action', render: () => autoTextCell('') }
+                { label: 'Priority of Action', render: (row) => autoTextCell(rowAssessment('electrodeResistance', row).priority || '') }
               ],
               report.electrodeResistance.map((row) => ({
                 ...row,
@@ -4578,13 +4084,13 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const assessment = deriveContinuityAssessment(row);
+                    const assessment = rowAssessment('continuityTest', row);
                     return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
                 {
                   label: 'Comment',
-                  render: (row) => autoTextCell(safeText(row.comment, deriveContinuityAssessment(row).comment))
+                  render: (row) => autoTextCell(rowAssessment('continuityTest', row).remark)
                 }
               ],
               report.continuityTest,
@@ -4611,7 +4117,7 @@ function detailView() {
                 { label: 'Voltage (V)', key: 'voltage' },
                 {
                   label: 'Remark',
-                  render: (row) => autoTextCell(safeText(row.remarks, toReportBandLabel(deriveLoopAssessment(row).status)))
+                  render: (row) => autoTextCell(rowAssessment('loopImpedanceTest', row).remark)
                 }
               ],
               report.loopImpedanceTest,
@@ -4639,7 +4145,7 @@ function detailView() {
                 { label: 'Voltage', key: 'voltage' },
                 {
                   label: 'Remark',
-                  render: (row) => autoTextCell(safeText(row.comment, toReportBandLabel(deriveFaultAssessment(row).status)))
+                  render: (row) => autoTextCell(rowAssessment('prospectiveFaultCurrent', row).remark)
                 }
               ],
               report.prospectiveFaultCurrent,
@@ -4662,7 +4168,7 @@ function detailView() {
                 { label: 'Towards Grid', key: 'resistanceTowardsGrid' },
                 {
                   label: 'Comment',
-                  render: (row) => autoTextCell(toRiserCommentLabel(deriveRiserAssessment(row).status))
+                  render: (row) => autoTextCell(rowAssessment('riserIntegrityTest', row).remark)
                 },
                 { label: 'Observation', render: () => autoTextCell('') },
                 { label: 'Recommendation', render: () => autoTextCell('') }
@@ -4688,13 +4194,13 @@ function detailView() {
                 {
                   label: 'Status',
                   render: (row) => {
-                    const assessment = deriveEarthContinuityAssessment(row);
+                    const assessment = rowAssessment('earthContinuityTest', row);
                     return pill(assessment.status.tone, assessment.status.label);
                   }
                 },
                 {
                   label: 'Remark',
-                  render: (row) => autoTextCell(safeText(row.remark, deriveEarthContinuityAssessment(row).comment))
+                  render: (row) => autoTextCell(rowAssessment('earthContinuityTest', row).remark)
                 }
               ],
               report.earthContinuityTest,
@@ -4753,6 +4259,9 @@ function bindMotionEffects() {
 }
 
 function render() {
+  if (state.view === 'builder') {
+    syncDraftAssessment();
+  }
   app.innerHTML = `
     ${brandHeader()}
     <main class="app-shell">

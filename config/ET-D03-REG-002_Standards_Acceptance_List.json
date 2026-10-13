@@ -1,7 +1,7 @@
 {
   "document": "ET-D03-REG-002",
   "title": "ESHA Standards Acceptance List",
-  "revision": "R0 (draft 2)",
+  "revision": "R1 (draft)",
   "rules_for_use": [
     "Every limit, formula and classification used in an ESHA report must come from the project's active profile in this list.",
     "A project uses ETPL-DEFAULT unless a client profile exists. A client profile overrides only the criteria it lists; all others fall back to ETPL-DEFAULT.",
@@ -29,7 +29,41 @@
           "rule": "Corrosivity: <25 severely; 25-50 moderately; 50-100 mildly; >100 very mildly corrosive. No pass/fail.",
           "basis": "standard",
           "source": "IS 3043:2018",
-          "clause": "13.6.1, Table 4"
+          "clause": "13.6.1, Table 4",
+          "params": {
+            "bands": [
+              {
+                "max": 25,
+                "class": "Severely corrosive"
+              },
+              {
+                "max": 50,
+                "class": "Moderately corrosive"
+              },
+              {
+                "max": 100,
+                "class": "Mildly corrosive"
+              },
+              {
+                "max": null,
+                "class": "Very mildly corrosive"
+              }
+            ],
+            "corrosion_allowance": [
+              {
+                "max": 25,
+                "steel_pct": 30
+              },
+              {
+                "max": 100,
+                "steel_pct": 15
+              },
+              {
+                "max": null,
+                "steel_pct": 0
+              }
+            ]
+          }
         },
         {
           "id": "PIT-ROD",
@@ -74,7 +108,10 @@
           "rule": "Healthy <= 0.9 x limit; Warning > 0.9 x limit and <= limit; >Permissible Limit > limit",
           "basis": "etpl_acceptance",
           "source": "ETPL practice",
-          "clause": "ET-D03 ESHA Standard 2.2"
+          "clause": "ET-D03 ESHA Standard 2.2",
+          "params": {
+            "warning_factor": 0.9
+          }
         },
         {
           "id": "PIT-PRIORITY",
@@ -152,7 +189,15 @@
           "rule": "Measured voltage scaled by If/It before comparison (IEEE 81-2012 Cl. 9.3 g). Tolerable: E_step = (1000 + 6*Cs*rho_s)*k/sqrt(ts); E_touch = (1000 + 1.5*Cs*rho_s)*k/sqrt(ts); k = 0.116 (50 kg), 0.157 (70 kg). Client design-calculation limits override.",
           "basis": "standard",
           "source": "IS 3043:2018",
-          "clause": "10.3 (IS 3043:2018); 9.3 (IEEE 81-2012)"
+          "clause": "10.3 (IS 3043:2018); 9.3 (IEEE 81-2012)",
+          "params": {
+            "k_50kg": 0.116,
+            "k_70kg": 0.157,
+            "client_override_fields": [
+              "stepLimitV",
+              "touchLimitV"
+            ]
+          }
         },
         {
           "id": "TOWER-ZSAT",
@@ -163,7 +208,10 @@
           "unit": "ohm",
           "basis": "etpl_acceptance",
           "source": "ETPL practice; Zsat to be taken from utility/client specification",
-          "clause": "-"
+          "clause": "-",
+          "params": {
+            "marginal_factor": 1.2
+          }
         },
         {
           "id": "OVERALL",
@@ -172,7 +220,15 @@
           "rule": "0 unhealthy: Healthy; pass >= 90%: Healthy - Minor Actions; else >Attention Required",
           "basis": "etpl_acceptance",
           "source": "ETPL practice",
-          "clause": "ET-D03 ESHA Standard 2.10"
+          "clause": "ET-D03 ESHA Standard 2.10",
+          "params": {
+            "minor_actions_min_pass": 0.9,
+            "labels": {
+              "healthy": "Healthy",
+              "minor": "Healthy - Minor Actions",
+              "attention": ">Attention Required"
+            }
+          }
         },
         {
           "id": "RETEST",
@@ -253,5 +309,15 @@
     "tower_footing": [
       "MI 3290 GX with current clamps"
     ]
-  }
+  },
+  "revision_history": [
+    {
+      "rev": "R0",
+      "note": "Initial register"
+    },
+    {
+      "rev": "R1",
+      "note": "Machine-readable factors and bands added (PIT-BAND, TOWER-ZSAT, OVERALL, SOIL-CLASS); no value changed"
+    }
+  ]
 }

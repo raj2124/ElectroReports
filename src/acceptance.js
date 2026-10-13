@@ -99,6 +99,15 @@ function resolveProfile(profileId, options = {}) {
       }
       return criterion;
     },
+    // Machine-readable parameters of a criterion (register R1+): factors, bands, labels.
+    // A missing params block is a register error, never a silent default.
+    params(id) {
+      const criterion = this.get(id);
+      if (!criterion.params || typeof criterion.params !== 'object') {
+        throw new Error(`Acceptance criterion ${id} in profile ${requested} has no params.`);
+      }
+      return criterion.params;
+    },
     // Numeric value of a limit-type criterion (CONT-LIMIT, LOOP-LIMIT, ...).
     value(id) {
       const criterion = this.get(id);

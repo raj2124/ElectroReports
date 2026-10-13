@@ -1,14 +1,9 @@
-// All limits, formulas and classifications come from the project's acceptance
-// profile (ET-D03-REG-002, see ./acceptance.js). The only numbers left in this
-// file are ones the register states as prose, not as a value: the 0.9 band edge
-// (PIT-BAND), the 1.2 marginal factor (TOWER-ZSAT), the 90% pass rate (OVERALL) and
-// the Table 4 corrosivity bands (SOIL-CLASS). Making those machine-readable needs a
-// controlled revision of ET-D03-REG-002.
+// All limits, formulas, factors and classifications come from the project's acceptance
+// profile (ET-D03-REG-002 R1+, see ./acceptance.js): values on the criterion, factors,
+// bands and labels in its `params`. The only literals left here are the condition-code
+// sets and the formulas themselves, which are fixed by the standard's text.
 const { resolveProfile, BASIS_LABELS, DEFAULT_PROFILE_ID } = require('./acceptance');
-
-const PIT_BAND_FACTOR = 0.9;
-const TOWER_MARGINAL_FACTOR = 1.2;
-const OVERALL_PASS_THRESHOLD = 0.9;
+const { engineerRemark } = require('./remarks');
 
 const CONDITION_CODES = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'OTH'];
 const PRIORITY_P1_CODES = new Set(['C1', 'C2', 'C4', 'C5']);
@@ -405,13 +400,22 @@ function getStandardGuidance(profile = resolveProfile()) {
 
 // ---- Soil -------------------------------------------------------------------
 // IS 3043:2018 Cl. 13.6.1, Table 4 (SOIL-CLASS). Corrosivity only: no pass/fail.
-function getSoilCategory(value) {
+function getSoilCategory(value, profile = resolveProfile()) {
   if (!Number.isFinite(value)) {
     return { label: 'Insufficient Data', tone: 'neutral' };
   }
-  const label =
-    value < 25 ? 'Severely corrosive' : value < 50 ? 'Moderately corrosive' : value < 100 ? 'Mildly corrosive' : 'Very mildly corrosive';
-  return { label, tone: 'neutral', reference: 'IS 3043:2018 Cl. 13.6.1, Table 4' };
+  const criterion = profile.get('SOIL-CLASS');
+  const band = criterion.params.bands.find((entry) => entry.max === null || value < entry.max);
+  return { label: band.class, tone: 'neutral', reference: `${criterion.source}, Cl. ${criterion.clause}` };
+}
+
+// Steel corrosion allowance (IS 3043:2018 Table 5) for a soil resistivity, in percent.
+function getCorrosionAllowancePct(value, profile = resolveProfile()) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const entry = profile.get('SOIL-CLASS').params.corrosion_allowance.find((band) => band.max === null || value < band.max);
+  return entry ? entry.steel_pct : null;
 }
 
 // ---- Earth electrode (pit) --------------------------------------------------
@@ -456,6 +460,7 @@ function calculateDrivenElectrodeResistance(soilAverage, electrodeLengthMeters, 
 // neutral (neither pass nor fail) and is excluded from the overall-status pass rate.
 // `options.limit` is the calculated limit in ohm. Without one the row cannot be judged.
 function getElectrodeStatus(value, options = {}) {
+  const profile = (options && options.profile) || resolveProfile();
   if (options && options.notMeasurable) {
     return { label: 'Not Measurable', tone: 'neutral' };
   }
@@ -466,7 +471,7 @@ function getElectrodeStatus(value, options = {}) {
   if (value > limit) {
     return overLimitStatus();
   }
-  if (value > PIT_BAND_FACTOR * limit) {
+  if (value > profile.params('PIT-BAND').warning_factor * limit) {
     // Within the limit, so it counts as a pass; the warning band only raises priority.
     return { label: 'Warning', tone: 'warning', withinLimit: true };
   }
@@ -524,7 +529,7 @@ function deriveElectrodeAssessment(row, contextOrReport) {
     context.profile
   );
   const limit = limitResult ? limitResult.limit : null;
-  const status = getElectrodeStatus(reading.value, { notMeasurable, limit });
+  const status = getElectrodeStatus(reading.value, { notMeasurable, limit, profile: context.profile });
   const priority = deriveElectrodePriority(status, codes);
 
   const withoutGrid = asLooseNumber(row?.resistanceWithoutGrid);
@@ -780,7 +785,7 @@ function deriveTowerFootingAssessment(group, groupSummary, contextOrReport) {
     if (totalImpedanceZt <= zsat) {
       status = healthyStatus();
       comment = 'Healthy';
-    } else if (totalImpedanceZt <= zsat * TOWER_MARGINAL_FACTOR) {
+    } else if (totalImpedanceZt <= zsat * context.profile.params('TOWER-ZSAT').marginal_factor) {
       status = { label: 'Marginal', tone: 'warning' };
       comment = 'Marginal';
     } else {
@@ -801,12 +806,10 @@ function deriveTowerFootingAssessment(group, groupSummary, contextOrReport) {
 
 // ---- Step & touch (IS 3043:2018 Cl. 10.3, IEEE 81-2012 Cl. 9.3 g) -------------
 // Pure calculations only: step & touch is not yet a selectable test in the app.
-const STEP_TOUCH_K = { 50: 0.116, 70: 0.157 };
-
 // Tolerable voltages for a 50 kg or 70 kg body. Cs = 1 and rho_s = rho when there is
 // no surface layer. Returns null until rho_s and ts are known.
-function calculateTolerableStepTouch({ surfaceResistivity, surfaceFactor = 1, faultClearingTime, bodyWeightKg = 70 }) {
-  const k = STEP_TOUCH_K[bodyWeightKg];
+function calculateTolerableStepTouch({ surfaceResistivity, surfaceFactor = 1, faultClearingTime, bodyWeightKg = 70 }, profile = resolveProfile()) {
+  const k = profile.params('ST-LIMIT')[`k_${bodyWeightKg}kg`];
   if (!k || !Number.isFinite(surfaceResistivity) || surfaceResistivity <= 0 || !Number.isFinite(faultClearingTime) || faultClearingTime <= 0) {
     return null;
   }
@@ -820,11 +823,13 @@ function calculateTolerableStepTouch({ surfaceResistivity, surfaceFactor = 1, fa
 }
 
 // The measured voltage is scaled by If/It before comparison. A client profile may
-// carry design-calculation limits on ST-LIMIT (stepLimitV / touchLimitV); they win.
+// carry design-calculation limits on ST-LIMIT, in the fields named by its
+// params.client_override_fields (step first, then touch); they win.
 function assessStepTouchReading({ kind, measuredVolts, testCurrent, faultCurrent, tolerable }, contextOrReport) {
   const context = resolveContext(contextOrReport);
   const criterion = context.profile.get('ST-LIMIT');
-  const clientLimit = kind === 'step' ? criterion.stepLimitV : criterion.touchLimitV;
+  const [stepField, touchField] = context.profile.params('ST-LIMIT').client_override_fields;
+  const clientLimit = criterion[kind === 'step' ? stepField : touchField];
   const hasClientLimit = Number.isFinite(clientLimit);
   const limit = hasClientLimit ? clientLimit : tolerable ? tolerable[kind] : null;
   const valid = [measuredVolts, testCurrent, faultCurrent].every((value) => Number.isFinite(value)) && testCurrent > 0 && faultCurrent > 0;
@@ -1040,7 +1045,7 @@ function normalizeTowerFootingGroups(inputGroups) {
   return Array.from(grouped.values());
 }
 
-function normalizeLoopRows(inputRows, context) {
+function normalizeLoopRows(inputRows) {
   return (Array.isArray(inputRows) ? inputRows : [])
     .filter(rowHasAnyValue)
     .map((row, index) => {
@@ -1061,11 +1066,11 @@ function normalizeLoopRows(inputRows, context) {
       ...row,
       srNo: String(index + 1),
       measuredPoints: PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length],
-      remarks: asTrimmedString(row.remarks) || deriveLoopImpedanceAssessment(row, context).comment
+      remarks: engineerRemark(row.remarks)
     }));
 }
 
-function normalizeFaultRows(inputRows, context) {
+function normalizeFaultRows(inputRows) {
   return (Array.isArray(inputRows) ? inputRows : [])
     .filter(rowHasAnyValue)
     .map((row, index) => {
@@ -1088,7 +1093,7 @@ function normalizeFaultRows(inputRows, context) {
       ...row,
       srNo: String(index + 1),
       measuredPoints: PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length],
-      comment: asTrimmedString(row.comment) || deriveFaultCurrentAssessment(row, context).comment
+      comment: engineerRemark(row.comment)
     }));
 }
 
@@ -1208,10 +1213,10 @@ function normalizeReportInput(payload) {
       'continuity'
     ).map((row) => ({
       ...row,
-      comment: deriveContinuityAssessment(row, context).comment
+      comment: engineerRemark(row.comment)
     })),
-    loopImpedanceTest: normalizeLoopRows(input?.loopImpedanceTest, context),
-    prospectiveFaultCurrent: normalizeFaultRows(input?.prospectiveFaultCurrent, context),
+    loopImpedanceTest: normalizeLoopRows(input?.loopImpedanceTest),
+    prospectiveFaultCurrent: normalizeFaultRows(input?.prospectiveFaultCurrent),
     riserIntegrityTest: normalizeRows(
       input?.riserIntegrityTest,
       [
@@ -1227,7 +1232,7 @@ function normalizeReportInput(payload) {
       ['conditionCodes']
     ).map((row) => ({
       ...row,
-      comment: deriveRiserAssessment(row, context).comment
+      comment: engineerRemark(row.comment)
     })),
     earthContinuityTest: normalizeRows(
       input?.earthContinuityTest,
@@ -1243,7 +1248,7 @@ function normalizeReportInput(payload) {
       'earth'
     ).map((row) => ({
       ...row,
-      remark: deriveEarthContinuityAssessment(row, context).comment
+      remark: engineerRemark(row.remark)
     })),
     towerFootingResistance: normalizedTowerFootingGroups.map((group) => {
       const summary = towerGroupSummaries.get(buildTowerGroupKey(group));
@@ -1253,7 +1258,7 @@ function normalizeReportInput(payload) {
         totalImpedanceZt: assessment.totalImpedanceZt === null ? '' : String(assessment.totalImpedanceZt),
         totalCurrentItotal: assessment.totalCurrentItotal === null ? '' : String(assessment.totalCurrentItotal),
         standardTolerableImpedanceZsat: String(assessment.zsat),
-        remarks: assessment.comment
+        remarks: engineerRemark(group.remarks)
       };
     }),
     ocrImports: normalizeOcrImports(input?.ocrImports)
@@ -1332,6 +1337,7 @@ function calculateSoilSummary(report) {
 
   // Site averages are taken from the unrounded location averages, so the printed
   // site rho (and every limit derived from it) does not pick up rounding error.
+  const soilProfile = resolveProfile(report?.project?.acceptanceProfile);
   const exact = [];
   const locationSummaries = rawLocations.map((location, index) => {
     const inputUnit = asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : 'ohm-m';
@@ -1345,7 +1351,7 @@ function calculateSoilSummary(report) {
     const direction1Average = average(direction1Values);
     const direction2Average = average(direction2Values);
     const overallAverage = average([direction1Average, direction2Average].filter((value) => Number.isFinite(value)));
-    const category = getSoilCategory(overallAverage);
+    const category = getSoilCategory(overallAverage, soilProfile);
     exact.push({ direction1Average, direction2Average, overallAverage });
 
     return {
@@ -1365,7 +1371,7 @@ function calculateSoilSummary(report) {
   const direction1Average = average(exact.map((location) => location.direction1Average).filter((value) => Number.isFinite(value)));
   const direction2Average = average(exact.map((location) => location.direction2Average).filter((value) => Number.isFinite(value)));
   const overallAverage = average(exact.map((location) => location.overallAverage).filter((value) => Number.isFinite(value)));
-  const category = getSoilCategory(overallAverage);
+  const category = getSoilCategory(overallAverage, soilProfile);
 
   return {
     direction1Average: round(direction1Average, 2),
@@ -1414,7 +1420,8 @@ function summarizePanels(rows, deriveAssessment, contextOrReport) {
 //   0 unhealthy            -> "Healthy"
 //   pass rate >= 90%       -> "Healthy - Minor Actions"
 //   otherwise              -> ">Attention Required"
-function summarizeOverallStatus(units) {
+function summarizeOverallStatus(units, profile = resolveProfile()) {
+  const { minor_actions_min_pass: minorActionsMinPass, labels } = profile.params('OVERALL');
   const all = Array.isArray(units) ? units : [];
   const measured = all.filter((unit) => {
     return unit && ['healthy', 'warning', 'critical'].includes(unit.tone);
@@ -1427,13 +1434,13 @@ function summarizeOverallStatus(units) {
   let tone = 'neutral';
   if (measured.length) {
     if (unhealthy === 0) {
-      label = 'Healthy';
+      label = labels.healthy;
       tone = 'healthy';
-    } else if (passRate >= OVERALL_PASS_THRESHOLD) {
-      label = 'Healthy - Minor Actions';
+    } else if (passRate >= minorActionsMinPass) {
+      label = labels.minor;
       tone = 'warning';
     } else {
-      label = '>Attention Required';
+      label = labels.attention;
       tone = 'critical';
     }
   }
@@ -1450,9 +1457,8 @@ function summarizeOverallStatus(units) {
 
 // Pass/fail units per selected test. A loop or PFC unit is a panel (3 phases); soil has
 // none because it carries no pass/fail.
-function collectTestUnits(report) {
+function collectTestUnits(report, context = buildAssessmentContext(report)) {
   const units = {};
-  const context = buildAssessmentContext(report);
   const collect = (id, rows, derive) => {
     if (report?.tests?.[id]) {
       units[id] = (Array.isArray(rows) ? rows : []).map((row) => derive(row, context).status);
@@ -1479,16 +1485,16 @@ function collectTestUnits(report) {
 }
 
 // Overall status of each selected test (standard 2.10), keyed by test id.
-function buildTestSummaries(report) {
+function buildTestSummaries(report, context = buildAssessmentContext(report)) {
   const summaries = {};
-  Object.entries(collectTestUnits(report)).forEach(([id, units]) => {
-    summaries[id] = summarizeOverallStatus(units);
+  Object.entries(collectTestUnits(report, context)).forEach(([id, units]) => {
+    summaries[id] = summarizeOverallStatus(units, context.profile);
   });
   return summaries;
 }
 
-function buildOverallStatus(report) {
-  return summarizeOverallStatus(Object.values(collectTestUnits(report)).flat());
+function buildOverallStatus(report, context = buildAssessmentContext(report)) {
+  return summarizeOverallStatus(Object.values(collectTestUnits(report, context)).flat(), context.profile);
 }
 
 function buildExecutiveSnapshot(report) {
@@ -1559,6 +1565,7 @@ module.exports = {
   calculateSoilSummary,
   calculateDrivenElectrodeResistance,
   getSoilCategory,
+  getCorrosionAllowancePct,
   getElectrodeStatus,
   getContinuityStatus,
   getLoopImpedanceStatus,

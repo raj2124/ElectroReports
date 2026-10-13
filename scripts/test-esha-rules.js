@@ -20,7 +20,8 @@ const {
   deriveTowerFootingAssessment,
   calculateTolerableStepTouch,
   assessStepTouchReading,
-  summarizeOverallStatus
+  summarizeOverallStatus,
+  getCorrosionAllowancePct
 } = require('../src/reportModel');
 
 let passed = 0;
@@ -187,7 +188,9 @@ check('PFC: device kA must exceed max(PFC L-PE, PSC L-N); missing kA is Not Asse
     tests: { prospectiveFaultCurrent: true },
     prospectiveFaultCurrent: [{ breakingCapacity: '25', prospectiveFaultCurrent: '20' }]
   });
-  assert.ok(normalized.prospectiveFaultCurrent[0].comment.includes('PSC not recorded')); // reaches the saved row / PDF
+  // generated text is no longer saved on the row; the live remark carries the PSC note
+  assert.strictEqual(normalized.prospectiveFaultCurrent[0].comment, '');
+  assert.ok(deriveFaultCurrentAssessment(normalized.prospectiveFaultCurrent[0], normalized).comment.includes('PSC not recorded'));
 });
 
 check('tower: Zt vs Zsat from the profile, Marginal <= 1.2 x Zsat, Marginal is not within limit', () => {
@@ -219,6 +222,62 @@ check('overall: 0 unhealthy Healthy; >= 90% Minor Actions; else >Attention Requi
   assert.strictEqual(summarizeOverallStatus([unit('healthy'), unit('warning', true)]).label, 'Healthy');
   assert.strictEqual(summarizeOverallStatus([unit('warning')]).label, '>Attention Required'); // warning NOT within limit counts against
   assert.strictEqual(summarizeOverallStatus([...Array(9).fill(unit('healthy')), unit('critical')]).label, 'Healthy - Minor Actions');
+});
+
+check('register params drive the rules: factors, bands, labels, k-factors and override field names', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'esha-params-')), 'register.json');
+  const register = JSON.parse(JSON.stringify(loadRegister()));
+  register.profiles['CLIENT-P'] = {
+    description: 'Params test client',
+    client_spec_document: 'P-SPEC-1',
+    criteria: [
+      { id: 'PIT-BAND', params: { warning_factor: 0.5 }, basis: 'client_spec', source: 'P-SPEC-1', clause: '1' },
+      { id: 'TOWER-ZSAT', params: { marginal_factor: 1.5 }, value: 10, unit: 'ohm', basis: 'client_spec', source: 'P-SPEC-1', clause: '2' },
+      { id: 'OVERALL', params: { minor_actions_min_pass: 0.5, labels: { healthy: 'OK', minor: 'OK-ish', attention: 'BAD' } }, basis: 'client_spec', source: 'P-SPEC-1', clause: '3' },
+      {
+        id: 'SOIL-CLASS',
+        params: { bands: [{ max: 10, class: 'Low band' }, { max: null, class: 'High band' }], corrosion_allowance: [{ max: 10, steel_pct: 50 }, { max: null, steel_pct: 0 }] },
+        basis: 'client_spec', source: 'P-SPEC-1', clause: '4'
+      },
+      { id: 'ST-LIMIT', params: { k_50kg: 0.2, k_70kg: 0.3, client_override_fields: ['stepV', 'touchV'] }, stepV: 111, touchV: 222, basis: 'client_spec', source: 'P-SPEC-1', clause: '5' }
+    ]
+  };
+  fs.writeFileSync(file, JSON.stringify(register));
+  const client = resolveProfile('CLIENT-P', { registerPath: file });
+  const clientCtx = { profile: client, rho: 25.68, rhoAssumed: false, rhoSource: '' };
+  const limit = calculateElectrodeLimit({ type: 'Rod', lengthM: 3, diameterMm: 40, rho: 25.68 }).limit;
+  const rod = (r, c) => deriveElectrodeAssessment({ electrodeType: 'Rod', length: '3', diameter: '40', resistanceWithoutGrid: String(r) }, c).status.label;
+  // 0.6 x limit: Healthy by default (<= 0.9), Warning when the band is 0.5
+  assert.strictEqual(rod(0.6 * limit, ctx), 'Healthy');
+  assert.strictEqual(rod(0.6 * limit, clientCtx), 'Warning');
+  // tower Zt 14: Marginal at 1.2 x Zsat would be <= 12 only, so default is Not Acceptable; 1.5 makes it Marginal
+  assert.strictEqual(deriveTowerFootingAssessment({}, { totalImpedanceZt: 14 }, ctx).status.label, 'Not Acceptable');
+  assert.strictEqual(deriveTowerFootingAssessment({}, { totalImpedanceZt: 14 }, clientCtx).status.label, 'Marginal');
+  // overall: 1 of 2 passing is >Attention Required by default, minor actions at a 0.5 threshold; labels come from params
+  const units = [{ tone: 'healthy' }, { tone: 'critical' }];
+  assert.strictEqual(summarizeOverallStatus(units, def).label, '>Attention Required');
+  assert.strictEqual(summarizeOverallStatus(units, client).label, 'OK-ish');
+  assert.strictEqual(summarizeOverallStatus([{ tone: 'healthy' }], client).label, 'OK');
+  assert.strictEqual(summarizeOverallStatus([{ tone: 'critical' }], client).label, 'BAD');
+  // soil bands and corrosion allowance
+  assert.strictEqual(getSoilCategory(30, def).label, 'Moderately corrosive');
+  assert.strictEqual(getSoilCategory(30, client).label, 'High band');
+  assert.strictEqual(getCorrosionAllowancePct(20, def), 30);
+  assert.strictEqual(getCorrosionAllowancePct(5, client), 50);
+  assert.strictEqual(getCorrosionAllowancePct(30, def), 15);
+  assert.strictEqual(getCorrosionAllowancePct(200, def), 0);
+  // step & touch: k-factors and the override field names both come from ST-LIMIT params
+  near(calculateTolerableStepTouch({ surfaceResistivity: 100, faultClearingTime: 1, bodyWeightKg: 70 }, client).step, (1000 + 600) * 0.3, 1e-9);
+  near(calculateTolerableStepTouch({ surfaceResistivity: 100, faultClearingTime: 1, bodyWeightKg: 50 }, client).touch, (1000 + 150) * 0.2, 1e-9);
+  assert.strictEqual(calculateTolerableStepTouch({ surfaceResistivity: 100, faultClearingTime: 1, bodyWeightKg: 60 }, def), null);
+  assert.strictEqual(assessStepTouchReading({ kind: 'step', measuredVolts: 1, testCurrent: 1, faultCurrent: 100, tolerable: { step: 999 } }, { profile: client }).limit, 111);
+  assert.strictEqual(assessStepTouchReading({ kind: 'touch', measuredVolts: 1, testCurrent: 1, faultCurrent: 100, tolerable: { touch: 999 } }, { profile: client }).limit, 222);
+  // a profile without params fails loudly instead of defaulting silently
+  const broken = JSON.parse(JSON.stringify(register));
+  delete broken.profiles['ETPL-DEFAULT'].criteria.find((criterion) => criterion.id === 'PIT-BAND').params;
+  const brokenFile = path.join(path.dirname(file), 'broken.json');
+  fs.writeFileSync(brokenFile, JSON.stringify(broken));
+  assert.throws(() => resolveProfile('', { registerPath: brokenFile }).params('PIT-BAND'), /has no params/);
 });
 
 console.log(`\n${passed} ESHA rule checks passed.`);
