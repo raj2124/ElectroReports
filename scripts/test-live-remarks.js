@@ -84,7 +84,7 @@ check('normalizing no longer saves generated text; typed text survives', () => {
     riserIntegrityTest: [{ resistanceTowardsEquipment: '0.3', resistanceTowardsGrid: '0.3' }],
     earthContinuityTest: [{ measuredValue: '0.3', remark: LEGACY_EARTH_ENTER }],
     towerFootingResistance: [{ mainLocationTower: 'T1', readings: [1, 2, 3, 4].map(() => ({ measuredCurrentMa: '10', measuredImpedance: '1' })), remarks: 'Marginal' }]
-  });
+  }, { allowRetired: true });
   assert.strictEqual(report.continuityTest[0].comment, '');
   assert.strictEqual(report.continuityTest[1].comment, 'Re-tested after cleaning.');
   assert.deepStrictEqual(report.loopImpedanceTest.map((row) => row.remarks), ['', '', 'Long cable run.']);

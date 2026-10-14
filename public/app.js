@@ -2,63 +2,80 @@ const app = document.getElementById('app');
 
 const LOCAL_TEST_LIBRARY = [
   {
-    id: 'soilResistivity',
-    label: 'Soil Resistivity Test',
-    shortLabel: 'Soil',
-    description: 'Direction-wise soil resistivity readings with automatic average and IS 3043 corrosivity class.'
+    id: "soilResistivity",
+    sheetCode: "MS-01",
+    label: "Soil Resistivity Test",
+    shortLabel: "Soil",
+    description: "Direction-wise soil resistivity readings with automatic average and IS 3043 corrosivity class."
   },
   {
-    id: 'electrodeResistance',
-    label: 'Earth Electrode Resistance Test',
-    shortLabel: 'Electrode',
-    description: 'Pit-wise resistance against the IS 3043:2018 Cl. 14.2 limit calculated from site soil resistivity.'
+    id: "electrodeResistance",
+    sheetCode: "MS-02",
+    label: "Earth Electrode Resistance Test",
+    shortLabel: "Electrode",
+    description: "Pit-wise resistance against the IS 3043:2018 Cl. 14.2 limit calculated from site soil resistivity."
   },
   {
-    id: 'continuityTest',
-    label: 'Continuity Test',
-    shortLabel: 'Continuity',
-    description: 'Point-to-point resistance and impedance verification.'
+    id: "continuityTest",
+    sheetCode: "MS-03",
+    label: "Earth Continuity & Bonding Test",
+    shortLabel: "Continuity",
+    description: "Point-to-point bonding resistance with test-lead resistance subtracted."
   },
   {
-    id: 'loopImpedanceTest',
-    label: 'Loop Impedance Test',
-    shortLabel: 'Loop',
-    description: 'Measured Zs values for protection loop verification.'
+    id: "loopImpedanceTest",
+    sheetCode: "MS-04",
+    label: "Loop Impedance Test",
+    shortLabel: "Loop",
+    description: "Measured Zs values for protection loop verification."
   },
   {
-    id: 'prospectiveFaultCurrent',
-    label: 'Prospective Fault Current',
-    shortLabel: 'PFC',
-    description: 'Feeder details with loop impedance and fault current.'
+    id: "prospectiveFaultCurrent",
+    sheetCode: "MS-05",
+    label: "Prospective Fault Current",
+    shortLabel: "PFC",
+    description: "PFC (L-PE) and PSC (L-N) against the device breaking capacity."
   },
   {
-    id: 'riserIntegrityTest',
-    label: 'Riser / Grid Integrity Test',
-    shortLabel: 'Riser',
-    description: 'Resistance verification towards equipment and earth grid.'
+    id: "riserIntegrityTest",
+    sheetCode: "MS-06",
+    label: "Riser / Grid Integrity Test",
+    shortLabel: "Riser",
+    description: "Resistance verification towards equipment and earth grid."
   },
   {
-    id: 'earthContinuityTest',
-    label: 'Earth Continuity Test',
-    shortLabel: 'Earth Continuity',
-    description: 'Earth path continuity by tag, location, and measured value.'
+    id: "groundResistance",
+    sheetCode: "MS-07",
+    label: "Ground (Grid) Resistance Test",
+    shortLabel: "Ground",
+    description: "In-service grid resistance against the limit of the associated pit."
   },
   {
-    id: 'towerFootingResistance',
-    label: 'Tower Footing Resistance Measurement & Analysis',
-    shortLabel: 'Tower Footing',
-    description: 'Grouped tower footing impedance and current analysis with per-tower totals.'
+    id: "stepTouchVoltage",
+    sheetCode: "MS-08",
+    label: "Step & Touch Voltage Test",
+    shortLabel: "Step & Touch",
+    description: "Injected-current step and touch voltages scaled by If/It against the tolerable limits."
+  },
+  {
+    id: "towerFootingResistance",
+    sheetCode: "MS-09",
+    label: "Tower Footing Resistance Measurement & Analysis",
+    shortLabel: "Tower Footing",
+    description: "Grouped tower footing impedance and current analysis with per-tower totals."
+  },
+  {
+    id: "earthContinuityTest",
+    sheetCode: "legacy",
+    retired: true,
+    label: "Earth Continuity Test",
+    shortLabel: "Earth Continuity",
+    description: "Retired: folded into Earth Continuity & Bonding (MS-03). Kept so older reports still open."
   }
 ];
 
-const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
 const TOWER_FOOT_POINTS = ['Foot-1', 'Foot-2', 'Foot-3', 'Foot-4'];
 const PHASE_MEASURED_POINTS = ['R-E', 'Y-E', 'B-E'];
-const EQUIPMENT_LIBRARY = [
-  { id: 'mi3152', label: 'MI 3152 EurotestXC' },
-  { id: 'mi3290', label: 'MI 3290 GF Earth Analyser' },
-  { id: 'kyoritsu4118a', label: 'Kyoritsu Digital PSC Loop Tester 4118A' }
-];
 const DRAFT_STORAGE_KEY = 'electroreports-builder-draft-v1';
 const DRAFT_AUTOSAVE_DELAY_MS = 450;
 
@@ -66,207 +83,6 @@ function buildRowId(prefix = 'row') {
   const timestamp = Date.now().toString(36);
   const suffix = Math.random().toString(36).slice(2, 8);
   return `${prefix}-${timestamp}-${suffix}`;
-}
-
-function defaultSoilRow(spacing = '') {
-  return {
-    rowId: buildRowId('soil'),
-    spacing,
-    resistivity: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultSoilLocation(name = 'Location 1') {
-  return {
-    locationId: buildRowId('soil-location'),
-    name,
-    direction1: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => defaultSoilRow(spacing)),
-    direction2: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => defaultSoilRow(spacing)),
-    drivenElectrodeDiameter: '',
-    drivenElectrodeLength: '',
-    notes: ''
-  };
-}
-
-function defaultElectrodeRow() {
-  return {
-    rowId: buildRowId('electrode'),
-    tag: '',
-    location: '',
-    electrodeType: 'Rod',
-    materialType: 'Copper',
-    length: '',
-    diameter: '',
-    resistanceWithoutGrid: '',
-    resistanceWithGrid: '',
-    observation: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultContinuityRow(srNo = '') {
-  return {
-    rowId: buildRowId('continuity'),
-    srNo,
-    mainLocation: '',
-    measurementPoint: '',
-    resistance: '',
-    impedance: '',
-    comment: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultLoopRow(srNo = '') {
-  return {
-    rowId: buildRowId('loop'),
-    srNo,
-    location: '',
-    feederTag: '',
-    deviceType: 'MCB',
-    deviceRating: '',
-    breakingCapacity: '',
-    measuredPoints: 'R-E',
-    loopImpedance: '',
-    voltage: '230',
-    remarks: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultFaultRow(srNo = '') {
-  return {
-    rowId: buildRowId('fault'),
-    srNo,
-    location: '',
-    feederTag: '',
-    deviceType: 'MCB',
-    deviceRating: '',
-    breakingCapacity: '',
-    measuredPoints: 'R-E',
-    loopImpedance: '',
-    prospectiveFaultCurrent: '',
-    voltage: '230',
-    comment: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultLoopGroup(startIndex = 1) {
-  return PHASE_MEASURED_POINTS.map((point, index) => ({
-    ...defaultLoopRow(String(startIndex + index)),
-    measuredPoints: point
-  }));
-}
-
-function defaultFaultGroup(startIndex = 1) {
-  return PHASE_MEASURED_POINTS.map((point, index) => ({
-    ...defaultFaultRow(String(startIndex + index)),
-    measuredPoints: point
-  }));
-}
-
-function defaultRiserRow(srNo = '') {
-  return {
-    rowId: buildRowId('riser'),
-    srNo,
-    mainLocation: '',
-    measurementPoint: '',
-    resistanceTowardsEquipment: '',
-    resistanceTowardsGrid: '',
-    comment: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultEarthContinuityRow(srNo = '') {
-  return {
-    rowId: buildRowId('earth'),
-    srNo,
-    tag: '',
-    locationBuildingName: '',
-    distance: '',
-    measuredValue: '',
-    remark: '',
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultTowerFootingReading(foot) {
-  return {
-    measurementPointLocation: '',
-    footLabel: foot,
-    footToEarthingConnectionStatus: 'Given',
-    measuredCurrentMa: '',
-    measuredImpedance: '',
-    rowId: buildRowId('tower'),
-    rowObservation: '',
-    rowPhotos: []
-  };
-}
-
-function defaultTowerFootingGroup(srNo = '') {
-  return {
-    groupId: buildRowId('tower-group'),
-    srNo,
-    mainLocationTower: '',
-    readings: TOWER_FOOT_POINTS.map((foot) => {
-      const reading = defaultTowerFootingReading(foot);
-      reading.measurementPointLocation = foot;
-      return reading;
-    }),
-    totalImpedanceZt: '',
-    totalCurrentItotal: '',
-    standardTolerableImpedanceZsat: '10',
-    remarks: ''
-  };
-}
-
-function createDraft() {
-  return {
-    project: {
-      projectNo: '',
-      clientName: '',
-      siteLocation: '',
-      workOrder: '',
-      reportDate: new Date().toISOString().slice(0, 10),
-      engineerName: '',
-      equipmentSelections: EQUIPMENT_LIBRARY.map((equipment) => equipment.id),
-      zohoProjectId: '',
-      zohoProjectName: '',
-      zohoProjectOwner: '',
-      zohoProjectStage: ''
-    },
-    tests: {
-      soilResistivity: true,
-      electrodeResistance: true,
-      continuityTest: false,
-      loopImpedanceTest: false,
-      prospectiveFaultCurrent: false,
-      riserIntegrityTest: false,
-      earthContinuityTest: false,
-      towerFootingResistance: false
-    },
-    soilResistivity: {
-      locations: [defaultSoilLocation('Location 1')]
-    },
-    electrodeResistance: [defaultElectrodeRow()],
-    continuityTest: [defaultContinuityRow('1')],
-    loopImpedanceTest: defaultLoopGroup(1),
-    prospectiveFaultCurrent: defaultFaultGroup(1),
-    riserIntegrityTest: [defaultRiserRow('1')],
-    earthContinuityTest: [defaultEarthContinuityRow('1')],
-    towerFootingResistance: [defaultTowerFootingGroup('1')],
-    ocrImports: {}
-  };
 }
 
 function createOcrSheetState() {
@@ -322,6 +138,7 @@ const state = {
     loadingClientUsers: false
   },
   draft: createDraft(),
+  soilPage: 0,
   stepIndex: 0,
   activeReport: null,
   saving: false,
@@ -374,40 +191,6 @@ function normalizeRestoredOcrImports(input) {
   return normalized;
 }
 
-function restoreDraftShape(payload) {
-  const draft = createDraft();
-  const source = payload && typeof payload === 'object' ? payload : {};
-
-  if (source.project && typeof source.project === 'object') {
-    draft.project = { ...draft.project, ...cloneSerializable(source.project) };
-  }
-
-  if (source.tests && typeof source.tests === 'object') {
-    draft.tests = { ...draft.tests, ...cloneSerializable(source.tests) };
-  }
-
-  if (source.soilResistivity && typeof source.soilResistivity === 'object') {
-    draft.soilResistivity = cloneSerializable(source.soilResistivity);
-  }
-
-  [
-    'electrodeResistance',
-    'continuityTest',
-    'loopImpedanceTest',
-    'prospectiveFaultCurrent',
-    'riserIntegrityTest',
-    'earthContinuityTest',
-    'towerFootingResistance'
-  ].forEach((section) => {
-    if (Array.isArray(source[section])) {
-      draft[section] = cloneSerializable(source[section]);
-    }
-  });
-
-  draft.ocrImports = normalizeRestoredOcrImports(source.ocrImports);
-  return draft;
-}
-
 function projectHasMeaningfulData(source) {
   const project = source?.project || {};
   return Boolean(
@@ -416,6 +199,9 @@ function projectHasMeaningfulData(source) {
       safeText(project.siteLocation, '') ||
       safeText(project.workOrder, '') ||
       safeText(project.engineerName, '') ||
+      safeText(project.clientRepresentative, '') ||
+      safeText(project.groundCondition, '') ||
+      safeText(project.assumedSoilResistivity, '') ||
       safeText(project.zohoProjectId, '') ||
       safeText(project.zohoProjectName, '') ||
       safeText(project.zohoProjectOwner, '') ||
@@ -439,6 +225,9 @@ function draftHasMeaningfulProgress(source) {
       draftHasMeaningfulFaultData(source) ||
       draftHasMeaningfulRiserData(source) ||
       draftHasMeaningfulEarthContinuityData(source) ||
+      draftHasMeaningfulGroundData(source) ||
+      draftHasMeaningfulStepTouchData(source) ||
+      draftHasMeaningfulSheetHeaders(source) ||
       draftHasMeaningfulTowerData(source) ||
       Object.keys(normalizeRestoredOcrImports(source?.ocrImports)).length
   );
@@ -580,8 +369,7 @@ function soilLocationHasData(location) {
       safeText(location.drivenElectrodeDiameter, '') ||
       safeText(location.drivenElectrodeLength, '') ||
       safeText(location.notes, '') ||
-      (Array.isArray(location.direction1) && location.direction1.some(rowHasData)) ||
-      (Array.isArray(location.direction2) && location.direction2.some(rowHasData))
+      SOIL_DIRECTION_KEYS.some((key) => Array.isArray(location[key]) && location[key].some(rowHasData))
   );
 }
 
@@ -661,117 +449,6 @@ function buildOcrImportRecord(sheetId, sheetState) {
   };
 }
 
-function draftHasMeaningfulElectrodeData(source) {
-  return (Array.isArray(source?.electrodeResistance) ? source.electrodeResistance : []).some((row) => {
-    return Boolean(
-      safeText(row?.tag, '') ||
-        safeText(row?.location, '') ||
-        safeText(row?.electrodeType, '') !== 'Rod' ||
-        safeText(row?.materialType, '') !== 'Copper' ||
-        safeText(row?.length, '') ||
-        safeText(row?.diameter, '') ||
-        safeText(row?.resistanceWithoutGrid, '') ||
-        safeText(row?.resistanceWithGrid, '') ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function draftHasMeaningfulContinuityData(source) {
-  return (Array.isArray(source?.continuityTest) ? source.continuityTest : []).some((row, index) => {
-    return Boolean(
-      (safeText(row?.srNo, '') && safeText(row?.srNo, '') !== String(index + 1)) ||
-        safeText(row?.mainLocation, '') ||
-        safeText(row?.measurementPoint, '') ||
-        safeText(row?.resistance, '') ||
-        safeText(row?.impedance, '') ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function draftHasMeaningfulLoopData(source) {
-  return (Array.isArray(source?.loopImpedanceTest) ? source.loopImpedanceTest : []).some((row, index) => {
-    return Boolean(
-      (safeText(row?.srNo, '') && safeText(row?.srNo, '') !== String(index + 1)) ||
-        safeText(row?.location, '') ||
-        safeText(row?.feederTag, '') ||
-        safeText(row?.deviceType, '') !== 'MCB' ||
-        safeText(row?.deviceRating, '') ||
-        safeText(row?.breakingCapacity, '') ||
-        safeText(row?.loopImpedance, '') ||
-        safeText(row?.voltage, '') !== '230' ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function draftHasMeaningfulFaultData(source) {
-  return (Array.isArray(source?.prospectiveFaultCurrent) ? source.prospectiveFaultCurrent : []).some((row, index) => {
-    return Boolean(
-      (safeText(row?.srNo, '') && safeText(row?.srNo, '') !== String(index + 1)) ||
-        safeText(row?.location, '') ||
-        safeText(row?.feederTag, '') ||
-        safeText(row?.deviceType, '') !== 'MCB' ||
-        safeText(row?.deviceRating, '') ||
-        safeText(row?.breakingCapacity, '') ||
-        safeText(row?.loopImpedance, '') ||
-        safeText(row?.prospectiveFaultCurrent, '') ||
-        safeText(row?.voltage, '') !== '230' ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function draftHasMeaningfulRiserData(source) {
-  return (Array.isArray(source?.riserIntegrityTest) ? source.riserIntegrityTest : []).some((row, index) => {
-    return Boolean(
-      (safeText(row?.srNo, '') && safeText(row?.srNo, '') !== String(index + 1)) ||
-        safeText(row?.mainLocation, '') ||
-        safeText(row?.measurementPoint, '') ||
-        safeText(row?.resistanceTowardsEquipment, '') ||
-        safeText(row?.resistanceTowardsGrid, '') ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function draftHasMeaningfulEarthContinuityData(source) {
-  return (Array.isArray(source?.earthContinuityTest) ? source.earthContinuityTest : []).some((row, index) => {
-    return Boolean(
-      (safeText(row?.srNo, '') && safeText(row?.srNo, '') !== String(index + 1)) ||
-        safeText(row?.tag, '') ||
-        safeText(row?.locationBuildingName, '') ||
-        safeText(row?.distance, '') ||
-        safeText(row?.measuredValue, '') ||
-        rowHasObservationData(row)
-    );
-  });
-}
-
-function towerGroupHasMeaningfulData(group, index) {
-  return Boolean(
-    (safeText(group?.srNo, '') && safeText(group?.srNo, '') !== String(index + 1)) ||
-      safeText(group?.mainLocationTower, '') ||
-      (Array.isArray(group?.readings) &&
-        group.readings.some((reading, readingIndex) => {
-          return Boolean(
-            safeText(reading?.measurementPointLocation, '') !== TOWER_FOOT_POINTS[readingIndex] ||
-              safeText(reading?.footToEarthingConnectionStatus, '') !== 'Given' ||
-              safeText(reading?.measuredCurrentMa, '') ||
-              safeText(reading?.measuredImpedance, '') ||
-              rowHasObservationData(reading)
-          );
-        }))
-  );
-}
-
-function draftHasMeaningfulTowerData(source) {
-  return (Array.isArray(source?.towerFootingResistance) ? source.towerFootingResistance : []).some((group, index) =>
-    towerGroupHasMeaningfulData(group, index)
-  );
-}
-
 function getSectionRow(source, section, index, direction, groupIndex = null, locationIndex = null) {
   if (section === 'towerFootingResistance' && Number.isInteger(groupIndex)) {
     return source.towerFootingResistance?.[groupIndex]?.readings?.[index] || null;
@@ -808,7 +485,7 @@ function getRowObservationTitle(section, index, direction, groupIndex = null, lo
   if (section === 'soilResistivity' && Number.isInteger(locationIndex)) {
     const location = getSoilLocations(state.draft)?.[locationIndex];
     const locationName = safeText(location?.name, `Location ${locationIndex + 1}`);
-    return `${getTestLabel(section)} | ${locationName} | Row ${index + 1} | ${direction === 'direction2' ? 'Direction 2' : 'Direction 1'}`;
+    return `${getTestLabel(section)} | ${locationName} | Row ${index + 1} | ${String(direction || 'direction1').replace('direction', 'Direction ')}`;
   }
   if (section === 'loopImpedanceTest') {
     const row = state.draft.loopImpedanceTest?.[index];
@@ -901,6 +578,8 @@ const ASSESSMENT_SECTIONS = [
   'loopImpedanceTest',
   'prospectiveFaultCurrent',
   'riserIntegrityTest',
+  'groundResistance',
+  'stepTouchVoltage',
   'earthContinuityTest',
   'towerFootingResistance'
 ];
@@ -935,6 +614,8 @@ const EMPTY_ASSESSMENT = Object.freeze({
   tone: 'neutral',
   label: 'Calculating...',
   banners: { electrode: '' },
+  validation: { errors: [], warnings: [] },
+  reviewItems: [],
   references: {}
 });
 
@@ -1150,13 +831,15 @@ function stepGuidance(stepId) {
   const map = {
     project: 'Capture the core job references first so the saved report and PDF stay traceable in the field.',
     selection: 'Select only the sections actually tested on site. The rest will stay out of the report.',
-    soilResistivity: 'Enter measured resistivity values only. The app calculates direction averages and the IS 3043 corrosivity class.',
+    soilResistivity: 'Tick the reading unit (R or rho), record each direction at each spacing, and the app calculates rho, the direction means and the IS 3043 corrosivity class.',
     electrodeResistance: 'Each electrode status is calculated from the site soil resistivity and the electrode dimensions.',
-    continuityTest: 'Use this for point-to-point resistance and impedance checks.',
+    continuityTest: 'Record the test-lead resistance once in the header; it is subtracted from every reading.',
     loopImpedanceTest: 'Record Zs values for protection verification at the tested points.',
-    prospectiveFaultCurrent: 'Capture breaker and feeder context with the measured fault current values.',
+    prospectiveFaultCurrent: 'Record the breaking capacity from the nameplate, and both PFC (L-PE) and PSC (L-N) for each phase.',
+    groundResistance: 'Read at 50%, 61.8% and 70%; each reading is compared with the limit of the pit sharing its tag.',
+    stepTouchVoltage: 'Record If, ts and the surface layer in the header; each voltage is scaled by If/It before comparison.',
     riserIntegrityTest: 'Use this for resistance checks towards equipment and towards the grid.',
-    earthContinuityTest: 'Record tagged earth continuity points with distance and measured value.',
+    earthContinuityTest: 'Retired sheet: record these points on Earth Continuity & Bonding (MS-03).',
     towerFootingResistance: 'Each tower location keeps 4 fixed footing rows with grouped totals; Zsat comes from the project acceptance profile.'
   };
   return map[stepId] || 'Continue entering the field measurements for the selected scope.';
@@ -1168,9 +851,11 @@ function currentStepNote(stepId) {
     selection: 'Choose only the measurement sheets actually executed on site.',
     soilResistivity: 'Complete both directions so the soil mean and corrosivity class can calculate.',
     electrodeResistance: 'Enter the without-grid (isolated electrode) reading; it is compared with the calculated limit.',
-    continuityTest: 'Resistance is the main decision field; impedance is supporting context.',
+    continuityTest: 'Measured R is the decision field; distance and test current are context.',
     loopImpedanceTest: 'Use measured Zs to flag circuits that need protection review.',
-    prospectiveFaultCurrent: 'Breaking capacity and PFC must both be filled for a real check.',
+    prospectiveFaultCurrent: 'Without a recorded breaking capacity the result is Not Assessable.',
+    groundResistance: 'Use the same tag as the pit so its calculated limit can be applied.',
+    stepTouchVoltage: 'Test current It is needed on every row for the If/It scaling.',
     riserIntegrityTest: 'Capture both equipment-side and grid-side resistance for each point.',
     earthContinuityTest: 'Use measured value to identify earth path continuity issues quickly.',
     towerFootingResistance: 'Each tower location needs all 4 footing rows to complete grouped totals.'
@@ -1348,7 +1033,9 @@ async function api(path, options = {}) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: 'Request failed.' }));
-    throw new Error(data.message || 'Request failed.');
+    const failure = new Error(data.message || 'Request failed.');
+    failure.errors = data.errors;
+    throw failure;
   }
 
   if (response.status === 204) {
@@ -1366,7 +1053,9 @@ async function apiFormData(path, formData) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: 'Request failed.' }));
-    throw new Error(data.message || 'Request failed.');
+    const failure = new Error(data.message || 'Request failed.');
+    failure.errors = data.errors;
+    throw failure;
   }
 
   return response.json();
@@ -1548,7 +1237,7 @@ function applySheetOcrPreview(sheetId) {
         return;
       }
     }
-    state.draft.electrodeResistance = rows;
+    state.draft.electrodeResistance = rows.map((row) => upgradeRow('electrodeResistance', row));
   } else if (sheetId === 'continuityTest') {
     const rows = sheetState.draftPatch?.rows;
     if (!Array.isArray(rows) || !rows.length) {
@@ -2153,21 +1842,22 @@ function renderProjectStep() {
         ${renderField('Client Name', state.draft.project.clientName, 'project.clientName', 'text', 'Client Name')}
         ${renderField('Site Location', state.draft.project.siteLocation, 'project.siteLocation', 'text', 'Main Plant, Surat')}
         ${renderField('Work Order / Ref', state.draft.project.workOrder, 'project.workOrder', 'text', 'WO-628')}
-        ${renderField('Date of Testing', state.draft.project.reportDate, 'project.reportDate', 'date')}
+        ${renderField('Work date', state.draft.project.reportDate, 'project.reportDate', 'date')}
         ${renderField('Testing Engineer', state.draft.project.engineerName, 'project.engineerName', 'text', 'Engineer Name')}
       </div>
+      ${renderJobHeaderFields()}
     `
   );
 }
 
 function renderSelectionStep() {
-  const selectedEquipment = Array.isArray(state.draft.project.equipmentSelections) ? state.draft.project.equipmentSelections : [];
   return sectionCard(
     'Select Measurement Sections',
     'Step 2',
     `
       <div class="selection-grid">
         ${state.catalog
+          .filter((test) => !test.retired || state.draft.tests[test.id])
           .map((test) => {
             const active = state.draft.tests[test.id];
             return `
@@ -2176,8 +1866,10 @@ function renderSelectionStep() {
                 type="button"
                 data-action="toggle-test"
                 data-test="${test.id}"
+                aria-pressed="${active ? 'true' : 'false'}"
               >
                 <div>
+                  ${test.sheetCode && test.sheetCode !== 'legacy' ? `<span class="soft-chip">${escapeHtml(test.sheetCode)}</span>` : ''}
                   <strong>${escapeHtml(test.label)}</strong>
                   <p>${escapeHtml(test.description)}</p>
                 </div>
@@ -2195,14 +1887,8 @@ function renderSelectionStep() {
         </article>
         <article class="glass-note-card">
           <p class="section-kicker">Testing Equipment</p>
-          <h4>Select Instruments Used On Site</h4>
-          <p>These selections will flow into the Equipment Required section of the final PDF methodology chapter.</p>
-          <div class="tag-cloud">
-            ${EQUIPMENT_LIBRARY.map((equipment) => {
-              const active = selectedEquipment.includes(equipment.id);
-              return `<button class="soft-chip soft-chip-button${active ? ' soft-chip-button-active' : ''}" type="button" data-action="toggle-equipment" data-equipment-id="${equipment.id}">${escapeHtml(equipment.label)}</button>`;
-            }).join('')}
-          </div>
+          <h4>Instruments are recorded on each sheet</h4>
+          <p>Tick the instrument, serial number and calibration due date in the header of each measurement sheet, as on the printed sheets.</p>
         </article>
       </div>
     `
@@ -2369,16 +2055,6 @@ function standardCell(reference, limitLabel) {
       <strong>${escapeHtml(limitLabel)}</strong>
       <span>${escapeHtml(reference)}</span>
     </div>
-  `;
-}
-
-function soilRowHtml(direction, row, index, locationIndex) {
-  return `
-    <tr>
-      <td><input class="table-input" value="${escapeHtml(row.spacing)}" data-section="soilResistivity" data-location-index="${locationIndex}" data-direction="${direction}" data-index="${index}" data-field="spacing" /></td>
-      <td><input class="table-input" value="${escapeHtml(row.resistivity)}" data-section="soilResistivity" data-location-index="${locationIndex}" data-direction="${direction}" data-index="${index}" data-field="resistivity" /></td>
-      ${actionButtonsCell('soilResistivity', index, row, direction, `data-location-index="${locationIndex}"`)}
-    </tr>
   `;
 }
 
@@ -3058,507 +2734,6 @@ function renderTowerOcrAssist() {
   });
 }
 
-function renderSoilStep() {
-  const summary = assessmentSummary(state.draft).soil;
-  const locations = getSoilLocations(state.draft);
-  return sectionCard(
-    'Soil Resistivity Test',
-    'Measurement Sheet',
-    `
-      ${renderSoilOcrAssist()}
-      <div class="metric-strip">
-        <article class="metric-box">
-          <span>Direction 1 Average</span>
-          <strong>${summary.direction1Average === null ? '-' : `${summary.direction1Average} ohm-m`}</strong>
-        </article>
-        <article class="metric-box">
-          <span>Direction 2 Average</span>
-          <strong>${summary.direction2Average === null ? '-' : `${summary.direction2Average} ohm-m`}</strong>
-        </article>
-        <article class="metric-box">
-          <span>Mean Soil Resistivity</span>
-          <strong>${summary.overallAverage === null ? '-' : `${summary.overallAverage} ohm-m`}</strong>
-          ${pill(summary.category.tone, summary.category.label)}
-        </article>
-      </div>
-      <div class="stack-grid">
-        ${locations
-          .map((location, locationIndex) => {
-            const locationSummary = summary.locations[locationIndex] || {};
-            return `
-              <section class="mini-surface mini-surface-location">
-                <div class="mini-surface-head mini-surface-head-location">
-                  <div>
-                    <h4>${escapeHtml(safeText(location.name, `Location ${locationIndex + 1}`))}</h4>
-                    <p>Record both directions separately for this soil test location.</p>
-                  </div>
-                  <div class="mini-surface-head-actions">
-                    ${pill(locationSummary.category?.tone || 'neutral', locationSummary.category?.label || 'Insufficient Data')}
-                    ${
-                      locations.length > 1
-                        ? `<button class="button button-ghost" type="button" data-action="remove-soil-location" data-location-index="${locationIndex}">Remove Location</button>`
-                        : ''
-                    }
-                  </div>
-                </div>
-                <div class="field-grid">
-                  ${renderField('Location Name', location.name, `soilResistivity.locations.${locationIndex}.name`, 'text', `Location ${locationIndex + 1}`)}
-                  ${renderField(
-                    'Driven Earth Electrode - Diameter (mm)',
-                    location.drivenElectrodeDiameter,
-                    `soilResistivity.locations.${locationIndex}.drivenElectrodeDiameter`,
-                    'number',
-                    '40'
-                  )}
-                  ${renderField(
-                    'Driven Earth Electrode - Length (m)',
-                    location.drivenElectrodeLength,
-                    `soilResistivity.locations.${locationIndex}.drivenElectrodeLength`,
-                    'number',
-                    '3'
-                  )}
-                </div>
-                <div class="metric-strip">
-                  <article class="metric-box">
-                    <span>Direction 1 Average</span>
-                    <strong>${locationSummary.direction1Average === null || locationSummary.direction1Average === undefined ? '-' : `${locationSummary.direction1Average} ohm-m`}</strong>
-                  </article>
-                  <article class="metric-box">
-                    <span>Direction 2 Average</span>
-                    <strong>${locationSummary.direction2Average === null || locationSummary.direction2Average === undefined ? '-' : `${locationSummary.direction2Average} ohm-m`}</strong>
-                  </article>
-                  <article class="metric-box">
-                    <span>Location Mean</span>
-                    <strong>${locationSummary.overallAverage === null || locationSummary.overallAverage === undefined ? '-' : `${locationSummary.overallAverage} ohm-m`}</strong>
-                  </article>
-                </div>
-                <div class="split-grid">
-                  ${tableSurface(
-                    'Direction 1',
-                    'Keep the measured columns exactly as per the sheet.',
-                    '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th>Action</th></tr>',
-                    location.direction1.map((row, index) => soilRowHtml('direction1', row, index, locationIndex)).join(''),
-                    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="soilResistivity" data-location-index="${locationIndex}" data-direction="direction1">Add Measurement Row</button></div>`
-                  )}
-                  ${tableSurface(
-                    'Direction 2',
-                    'Second direction for the mean calculation.',
-                    '<tr><th>Spacing of Probes (m)</th><th>Resistivity rho (ohm-m)</th><th>Action</th></tr>',
-                    location.direction2.map((row, index) => soilRowHtml('direction2', row, index, locationIndex)).join(''),
-                    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="soilResistivity" data-location-index="${locationIndex}" data-direction="direction2">Add Measurement Row</button></div>`
-                  )}
-                </div>
-                <label class="field">
-                  <span>Site Notes</span>
-                  <textarea class="text-area" rows="3" data-bind="soilResistivity.locations.${locationIndex}.notes" placeholder="Ground condition, nearby structures, or observations">${escapeHtml(location.notes)}</textarea>
-                </label>
-              </section>
-            `;
-          })
-          .join('')}
-      </div>
-      <div class="mini-surface-foot">
-        <button class="button button-secondary" type="button" data-action="add-soil-location">Add Another Location</button>
-      </div>
-    `
-  );
-}
-
-function electrodeRowHtml(row, index) {
-  const assessment = rowAssessment('electrodeResistance', row);
-  const status = assessment.status;
-  return `
-    <tr>
-      <td><input class="table-input" value="${escapeHtml(row.tag)}" data-section="electrodeResistance" data-index="${index}" data-field="tag" /></td>
-      <td><input class="table-input" value="${escapeHtml(row.location)}" data-section="electrodeResistance" data-index="${index}" data-field="location" /></td>
-      <td>
-        <select class="table-input" data-section="electrodeResistance" data-index="${index}" data-field="electrodeType">
-          ${['Rod', 'Pipe', 'Plate', 'Strip'].map((option) => `<option ${row.electrodeType === option ? 'selected' : ''}>${option}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <select class="table-input" data-section="electrodeResistance" data-index="${index}" data-field="materialType">
-          ${['Copper', 'GI', 'Copper Bonded'].map((option) => `<option ${row.materialType === option ? 'selected' : ''}>${option}</option>`).join('')}
-        </select>
-      </td>
-      <td><input class="table-input" value="${escapeHtml(row.length)}" data-section="electrodeResistance" data-index="${index}" data-field="length" /></td>
-      <td><input class="table-input" value="${escapeHtml(row.diameter)}" data-section="electrodeResistance" data-index="${index}" data-field="diameter" /></td>
-      <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithoutGrid, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithoutGrid" /></td>
-      <td><input class="table-input" value="${escapeHtml(safeText(row.resistanceWithGrid || row.measuredResistance, ''))}" data-section="electrodeResistance" data-index="${index}" data-field="resistanceWithGrid" /></td>
-      <td>${standardCell(assessment.standard.reference, assessment.limit === null ? assessment.standard.limitLabel : `${assessment.limit.toFixed(2)} ohm`)}</td>
-      <td>${pill(status.tone, status.label)}${assessment.priority ? ` <span class="soft-chip">${escapeHtml(assessment.priority)}</span>` : ''}</td>
-      <td>${autoTextCell(assessment.remark)}</td>
-      ${actionButtonsCell('electrodeResistance', index, row)}
-    </tr>
-  `;
-}
-
-function renderElectrodeStep() {
-  return sectionCard(
-    'Earth Electrode Resistance Test',
-    'Measurement Sheet',
-    `
-      ${renderElectrodeOcrAssist()}
-      <div class="limit-banner">${escapeHtml(assessmentSummary(state.draft).banners.electrode)}</div>
-      ${tableSurface(
-        'Electrode Measurements',
-        'Status and priority are calculated from the without-grid reading against the limit for each pit.',
-        '<tr><th>Pit Tag</th><th>Location</th><th>Electrode Type</th><th>Material</th><th>Length (m)</th><th>Dia (mm)</th><th>Resistance Value Without Grid (ohm)</th><th>Resistance Value With Grid (ohm)</th><th>Standard</th><th>Status</th><th>Comment / Observation</th><th>Action</th></tr>',
-        state.draft.electrodeResistance.map((row, index) => electrodeRowHtml(row, index)).join(''),
-        '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="electrodeResistance">Add Electrode</button></div>'
-      )}
-    `
-  );
-}
-
-function towerReadingActionCell(groupIndex, readingIndex, reading, rowSpan = 1) {
-  const hasObservation = rowHasObservationData(reading);
-  return `
-    <td class="table-action-cell tower-group-action-cell" ${rowSpan > 1 ? `rowspan="${rowSpan}"` : ''}>
-      <div class="table-action-buttons">
-        <button
-          class="icon-button icon-button-observation ${hasObservation ? 'icon-button-observation-active' : ''}"
-          type="button"
-          data-action="open-row-observation"
-          data-section="towerFootingResistance"
-          data-index="${readingIndex}"
-          data-group-index="${groupIndex}"
-          aria-label="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
-          title="${hasObservation ? 'Edit row observation' : 'Add row observation'}"
-        >
-          <span class="icon-button-symbol">+</span>
-        </button>
-      </div>
-    </td>
-  `;
-}
-
-function towerGroupRowsHtml(group, groupIndex) {
-  const assessment = rowAssessment('towerFootingResistance', group);
-  const readings = Array.isArray(group.readings) ? group.readings : [];
-
-  return readings
-    .map((reading, readingIndex) => {
-      const rowClass = [
-        readingIndex === 0 ? 'tower-group-row-start' : '',
-        readingIndex === readings.length - 1 ? 'tower-group-row-end' : ''
-      ]
-        .filter(Boolean)
-        .join(' ');
-
-      const sharedCells =
-        readingIndex === 0
-          ? `
-              <td class="tower-group-cell tower-group-number" rowspan="${readings.length}">${escapeHtml(group.srNo)}</td>
-              <td class="tower-group-cell tower-group-main" rowspan="${readings.length}">
-                <input
-                  class="table-input"
-                  value="${escapeHtml(group.mainLocationTower)}"
-                  data-section="towerFootingResistance"
-                  data-index="${groupIndex}"
-                  data-field="mainLocationTower"
-                />
-                ${
-                  state.draft.towerFootingResistance.length > 1
-                    ? `<button class="button button-ghost tower-group-remove" type="button" data-action="remove-tower-group" data-group-index="${groupIndex}">Remove Tower</button>`
-                    : ''
-                }
-              </td>
-            `
-          : '';
-
-      const sharedSummaryCells =
-        readingIndex === 0
-          ? `
-              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt))}</td>
-              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal))}</td>
-              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.zsat === null ? '-' : String(assessment.zsat))}</td>
-            `
-          : '';
-
-      const sharedRemarkCell =
-        readingIndex === 0
-          ? `
-              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">
-                ${autoTextCell(assessment.remark)}
-              </td>
-            `
-          : '';
-
-      return `
-        <tr class="${rowClass}">
-          ${sharedCells}
-          <td class="tower-foot-label">${escapeHtml(reading.measurementPointLocation || TOWER_FOOT_POINTS[readingIndex])}</td>
-          <td>
-            <select
-              class="table-input"
-              data-section="towerFootingResistance"
-              data-index="${groupIndex}"
-              data-reading-index="${readingIndex}"
-              data-field="footToEarthingConnectionStatus"
-            >
-              ${['Given', 'Not Given']
-                .map((option) => `<option ${safeText(reading.footToEarthingConnectionStatus, 'Given') === option ? 'selected' : ''}>${option}</option>`)
-                .join('')}
-            </select>
-          </td>
-          <td><input class="table-input" value="${escapeHtml(reading.measuredCurrentMa)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredCurrentMa" /></td>
-          <td><input class="table-input" value="${escapeHtml(reading.measuredImpedance)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredImpedance" /></td>
-          ${sharedSummaryCells}
-          ${sharedRemarkCell}
-          ${towerReadingActionCell(groupIndex, readingIndex, reading)}
-        </tr>
-      `;
-    })
-    .join('');
-}
-
-function renderTowerFootingStep() {
-  return sectionCard(
-    'Tower Footing Resistance Measurement & Analysis',
-    'Measurement Sheet',
-    `
-      ${renderTowerOcrAssist()}
-      ${tableSurface(
-        'Tower Footing Resistance Measurement & Analysis',
-        'Each tower location contains 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
-        '<tr><th>Sr. No.</th><th>Main Location – Tower</th><th>Measurement Point Location</th><th>Foot to Earthing Connection Status</th><th>Measured Current I (mA)</th><th>Measured Impedance (ohm)</th><th>Total Impedance Zt (ohm)</th><th>Total Current | Total (A)</th><th>Standard Tolerable Impedance Value Zsat</th><th>Remarks</th><th>Action</th></tr>',
-        state.draft.towerFootingResistance.map((group, groupIndex) => towerGroupRowsHtml(group, groupIndex)).join(''),
-        '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="towerFootingResistance">Add New Tower Location</button></div>'
-      )}
-    `
-  );
-}
-
-function phaseGroupInputCell(section, index, field, value, rowSpan = 3, type = 'text', options = []) {
-  if (type === 'select') {
-    return `
-      <td class="phase-group-cell" rowspan="${rowSpan}">
-        <select class="table-input" data-section="${section}" data-index="${index}" data-field="${field}" data-group-sync="true">
-          ${options.map((option) => `<option ${value === option ? 'selected' : ''}>${option}</option>`).join('')}
-        </select>
-      </td>
-    `;
-  }
-  return `<td class="phase-group-cell" rowspan="${rowSpan}"><input class="table-input" value="${escapeHtml(value)}" data-section="${section}" data-index="${index}" data-field="${field}" data-group-sync="true" /></td>`;
-}
-
-function renderLoopGroupRows(groupRows, groupIndex) {
-  const baseIndex = groupIndex * PHASE_MEASURED_POINTS.length;
-  const first = groupRows[0];
-  return groupRows
-    .map((row, offset) => {
-      const index = baseIndex + offset;
-      const assessment = rowAssessment('loopImpedanceTest', row);
-      return `
-        <tr>
-          <td>${escapeHtml(row.srNo)}</td>
-          ${
-            offset === 0
-              ? `
-                ${phaseGroupInputCell('loopImpedanceTest', index, 'location', first.location)}
-                ${phaseGroupInputCell('loopImpedanceTest', index, 'feederTag', first.feederTag)}
-                ${phaseGroupInputCell('loopImpedanceTest', index, 'deviceType', first.deviceType, 3, 'select', ['ACB', 'MCCB', 'MCB', 'SFU'])}
-                ${phaseGroupInputCell('loopImpedanceTest', index, 'deviceRating', first.deviceRating)}
-                ${phaseGroupInputCell('loopImpedanceTest', index, 'breakingCapacity', first.breakingCapacity)}
-              `
-              : ''
-          }
-          <td class="table-input-static">${escapeHtml(row.measuredPoints)}</td>
-          <td><input class="table-input" value="${escapeHtml(row.loopImpedance)}" data-section="loopImpedanceTest" data-index="${index}" data-field="loopImpedance" /></td>
-          <td><input class="table-input" value="${escapeHtml(row.voltage)}" data-section="loopImpedanceTest" data-index="${index}" data-field="voltage" /></td>
-          <td>${autoTextCell(assessment.remark)}</td>
-          ${actionButtonsCell('loopImpedanceTest', index, row)}
-        </tr>
-      `;
-    })
-    .join('');
-}
-
-function renderLoopStep() {
-  const groups = [];
-  for (let index = 0; index < state.draft.loopImpedanceTest.length; index += PHASE_MEASURED_POINTS.length) {
-    groups.push(state.draft.loopImpedanceTest.slice(index, index + PHASE_MEASURED_POINTS.length));
-  }
-  return sectionCard(
-    'Loop Impedance Test',
-    'Measurement Sheet',
-    `
-      ${renderLoopOcrAssist()}
-      ${tableSurface(
-        'Loop Impedance Test',
-        'Add feeder groups as needed for the executed field scope.',
-        `
-          <tr>
-            <th rowspan="2">Sr. No.</th>
-            <th rowspan="2">Location of Panel / Equipment</th>
-            <th rowspan="2">Name of Feeder & Tag No.</th>
-            <th colspan="3">Protective Device Details</th>
-            <th rowspan="2">Measured Points</th>
-            <th rowspan="2">Loop Impedance (Z)</th>
-            <th rowspan="2">Voltage</th>
-            <th rowspan="2">Comment</th>
-            <th rowspan="2">Action</th>
-          </tr>
-          <tr>
-            <th>Type (ACB / MCCB / MCB / SFU)</th>
-            <th>Rating (A)</th>
-            <th>Breaking (kA)</th>
-          </tr>
-        `,
-        groups.map((groupRows, groupIndex) => renderLoopGroupRows(groupRows, groupIndex)).join(''),
-        '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="loopImpedanceTest">Add Feeder Group</button></div>'
-      )}
-    `
-  );
-}
-
-function renderFaultGroupRows(groupRows, groupIndex) {
-  const baseIndex = groupIndex * PHASE_MEASURED_POINTS.length;
-  const first = groupRows[0];
-  return groupRows
-    .map((row, offset) => {
-      const index = baseIndex + offset;
-      const assessment = rowAssessment('prospectiveFaultCurrent', row);
-      return `
-        <tr>
-          <td>${escapeHtml(row.srNo)}</td>
-          ${
-            offset === 0
-              ? `
-                ${phaseGroupInputCell('prospectiveFaultCurrent', index, 'location', first.location)}
-                ${phaseGroupInputCell('prospectiveFaultCurrent', index, 'feederTag', first.feederTag)}
-                ${phaseGroupInputCell('prospectiveFaultCurrent', index, 'deviceType', first.deviceType, 3, 'select', ['ACB', 'MCCB', 'MCB', 'SFU'])}
-                ${phaseGroupInputCell('prospectiveFaultCurrent', index, 'deviceRating', first.deviceRating)}
-                ${phaseGroupInputCell('prospectiveFaultCurrent', index, 'breakingCapacity', first.breakingCapacity)}
-              `
-              : ''
-          }
-          <td class="table-input-static">${escapeHtml(row.measuredPoints)}</td>
-          <td><input class="table-input" value="${escapeHtml(row.loopImpedance)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="loopImpedance" /></td>
-          <td><input class="table-input" value="${escapeHtml(row.prospectiveFaultCurrent)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="prospectiveFaultCurrent" /></td>
-          <td><input class="table-input" value="${escapeHtml(row.voltage)}" data-section="prospectiveFaultCurrent" data-index="${index}" data-field="voltage" /></td>
-          <td>${autoTextCell(assessment.remark)}</td>
-          ${actionButtonsCell('prospectiveFaultCurrent', index, row)}
-        </tr>
-      `;
-    })
-    .join('');
-}
-
-function renderFaultStep() {
-  const groups = [];
-  for (let index = 0; index < state.draft.prospectiveFaultCurrent.length; index += PHASE_MEASURED_POINTS.length) {
-    groups.push(state.draft.prospectiveFaultCurrent.slice(index, index + PHASE_MEASURED_POINTS.length));
-  }
-  return sectionCard(
-    'Prospective Fault Current',
-    'Measurement Sheet',
-    `
-      ${renderFaultOcrAssist()}
-      ${tableSurface(
-        'Prospective Fault Current',
-        'Add feeder groups as needed for the executed field scope.',
-        `
-          <tr>
-            <th rowspan="2">Sr. No.</th>
-            <th rowspan="2">Location of Panel / Equipment</th>
-            <th rowspan="2">Name of Feeder & Tag No.</th>
-            <th colspan="3">Protective Device Details</th>
-            <th rowspan="2">Measured Points</th>
-            <th rowspan="2">Loop Impedance (Z)</th>
-            <th rowspan="2">Prospective Fault Current</th>
-            <th rowspan="2">Voltage</th>
-            <th rowspan="2">Comment</th>
-            <th rowspan="2">Action</th>
-          </tr>
-          <tr>
-            <th>Type (ACB / MCCB / MCB / SFU)</th>
-            <th>Rating (A)</th>
-            <th>Breaking (kA)</th>
-          </tr>
-        `,
-        groups.map((groupRows, groupIndex) => renderFaultGroupRows(groupRows, groupIndex)).join(''),
-        '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="prospectiveFaultCurrent">Add Feeder Group</button></div>'
-      )}
-    `
-  );
-}
-
-function renderContinuityStep() {
-  return sectionCard(
-    'Continuity Test',
-    'Measurement Sheet',
-    `
-      ${renderContinuityOcrAssist()}
-      ${tableSurface(
-        'Continuity Test',
-        'Add rows as needed for the executed field scope.',
-        `<tr><th>Sr. No.</th><th>Main Location</th><th>Measurement Point</th><th>Resistance (ohm)</th><th>Impedance (ohm)</th><th>Status</th><th>Comment</th><th>Action</th></tr>`,
-        state.draft.continuityTest
-          .map((row, index) => {
-            return `
-              <tr>
-                <td><input class="table-input" value="${escapeHtml(row.srNo)}" data-section="continuityTest" data-index="${index}" data-field="srNo" /></td>
-                <td><input class="table-input" value="${escapeHtml(row.mainLocation)}" data-section="continuityTest" data-index="${index}" data-field="mainLocation" /></td>
-                <td><input class="table-input" value="${escapeHtml(row.measurementPoint)}" data-section="continuityTest" data-index="${index}" data-field="measurementPoint" /></td>
-                <td><input class="table-input" value="${escapeHtml(row.resistance)}" data-section="continuityTest" data-index="${index}" data-field="resistance" /></td>
-                <td><input class="table-input" value="${escapeHtml(row.impedance)}" data-section="continuityTest" data-index="${index}" data-field="impedance" /></td>
-                <td>${pill(rowAssessment('continuityTest', row).status.tone, rowAssessment('continuityTest', row).status.label)}</td>
-                <td>${autoTextCell(rowAssessment('continuityTest', row).remark)}</td>
-                ${actionButtonsCell('continuityTest', index, row)}
-              </tr>
-            `;
-          })
-          .join(''),
-        `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="continuityTest">Add Row</button></div>`
-      )}
-    `
-  );
-}
-
-function genericStep(title, subtitle, section, columns, statusRenderer, prefix = '') {
-  return sectionCard(
-    title,
-    subtitle,
-    `
-      ${prefix}
-      ${tableSurface(
-        title,
-        'Add rows as needed for the executed field scope.',
-        `<tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('')}<th>Action</th></tr>`,
-        state.draft[section]
-          .map((row, index) => {
-            return `
-              <tr>
-                ${columns
-                  .map((column) => {
-                    if (column.type === 'select') {
-                      return `
-                        <td>
-                          <select class="table-input" data-section="${section}" data-index="${index}" data-field="${column.key}">
-                            ${column.options.map((option) => `<option ${row[column.key] === option ? 'selected' : ''}>${option}</option>`).join('')}
-                          </select>
-                        </td>
-                      `;
-                    }
-                    if (column.render) {
-                      return `<td>${column.render(row, index)}</td>`;
-                    }
-                    return `<td><input class="table-input" value="${escapeHtml(row[column.key])}" data-section="${section}" data-index="${index}" data-field="${column.key}" /></td>`;
-                  })
-                  .join('')}
-                ${actionButtonsCell(section, index, row)}
-              </tr>
-            `;
-          })
-          .join(''),
-        `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${section}">Add Row</button></div>`
-      )}
-    `
-  );
-}
-
 function renderBuilderStep() {
   const step = currentStepId();
   if (step === 'project') {
@@ -3567,69 +2742,7 @@ function renderBuilderStep() {
   if (step === 'selection') {
     return renderSelectionStep();
   }
-  if (step === 'soilResistivity') {
-    return renderSoilStep();
-  }
-  if (step === 'electrodeResistance') {
-    return renderElectrodeStep();
-  }
-  if (step === 'continuityTest') {
-    return renderContinuityStep();
-  }
-  if (step === 'loopImpedanceTest') {
-    return renderLoopStep();
-  }
-  if (step === 'prospectiveFaultCurrent') {
-    return renderFaultStep();
-  }
-  if (step === 'riserIntegrityTest') {
-    return genericStep('Riser / Grid Integrity Test', 'Measurement Sheet', 'riserIntegrityTest', [
-      { key: 'srNo', label: 'Sr. No.' },
-      { key: 'mainLocation', label: 'Main Location' },
-      { key: 'measurementPoint', label: 'Measurement Point' },
-      { key: 'resistanceTowardsEquipment', label: 'Towards Equipment' },
-      { key: 'resistanceTowardsGrid', label: 'Towards Grid' },
-      {
-        key: 'status',
-        label: 'Status',
-        render: (row) => {
-          const assessment = rowAssessment('riserIntegrityTest', row);
-          return pill(assessment.status.tone, assessment.status.label);
-        }
-      },
-      {
-        key: 'comment',
-        label: 'Comment',
-        render: (row) => autoTextCell(rowAssessment('riserIntegrityTest', row).remark)
-      }
-    ], null, renderRiserOcrAssist());
-  }
-  if (step === 'earthContinuityTest') {
-    return genericStep('Earth Continuity Test', 'Measurement Sheet', 'earthContinuityTest', [
-      { key: 'srNo', label: 'Sr. No.' },
-      { key: 'tag', label: 'Tag' },
-      { key: 'locationBuildingName', label: 'Location / Building' },
-      { key: 'distance', label: 'Distance' },
-      { key: 'measuredValue', label: 'Measured Value' },
-      {
-        key: 'status',
-        label: 'Status',
-        render: (row) => {
-          const assessment = rowAssessment('earthContinuityTest', row);
-          return pill(assessment.status.tone, assessment.status.label);
-        }
-      },
-      {
-        key: 'remark',
-        label: 'Remark',
-        render: (row) => autoTextCell(rowAssessment('earthContinuityTest', row).remark)
-      }
-    ], null, renderEarthContinuityOcrAssist());
-  }
-  if (step === 'towerFootingResistance') {
-    return renderTowerFootingStep();
-  }
-  return '';
+  return renderSheetStep(step);
 }
 
 function builderView() {
@@ -3757,73 +2870,6 @@ function simpleDetailTable(columns, rows, options = {}) {
   `;
 }
 
-function towerFootingDetailTable(groups) {
-  return `
-    <div class="table-wrap">
-      <table class="data-table tower-data-table">
-        <thead>
-          <tr>
-            <th>Sr. No.</th>
-            <th>Main Location – Tower</th>
-            <th>Measurement Point Location</th>
-            <th>Foot to Earthing Connection Status</th>
-            <th>Measured Current I (mA)</th>
-            <th>Measured Impedance (ohm)</th>
-            <th>Total Impedance Zt (ohm)</th>
-            <th>Total Current | Total (A)</th>
-            <th>Standard Tolerable Impedance Value Zsat</th>
-            <th>Remarks</th>
-            <th>Observation</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(Array.isArray(groups) ? groups : [])
-            .map((group) => {
-              const assessment = rowAssessment('towerFootingResistance', group);
-              const readings = Array.isArray(group.readings) ? group.readings : [];
-              return readings
-                .map((reading, readingIndex) => {
-                  return `
-                    <tr class="${readingIndex === 0 ? 'tower-group-row-start' : ''} ${readingIndex === readings.length - 1 ? 'tower-group-row-end' : ''}">
-                      ${
-                        readingIndex === 0
-                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(group.srNo)}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(group.mainLocationTower)}</td>`
-                          : ''
-                      }
-                      <td class="tower-foot-label">${escapeHtml(reading.measurementPointLocation)}</td>
-                      <td>${escapeHtml(safeText(reading.footToEarthingConnectionStatus, 'Given'))}</td>
-                      <td>${escapeHtml(safeText(reading.measuredCurrentMa, ''))}</td>
-                      <td>${escapeHtml(safeText(reading.measuredImpedance, ''))}</td>
-                      ${
-                        readingIndex === 0
-                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
-                              assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt)
-                            )}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
-                               assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)
-                             )}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(assessment.zsat === null ? '-' : String(assessment.zsat))}</td>`
-                          : ''
-                      }
-                      ${
-                        readingIndex === 0
-                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.remark)}</td>`
-                          : ''
-                      }
-                      <td>${renderObservationCard(reading, safeText(reading.measurementPointLocation, 'Foot')) || '-'}</td>
-                    </tr>
-                  `;
-                })
-                .join('');
-            })
-            .join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 function renderAiNarrativeSection(report) {
   const narrative = report?.aiNarrative;
   if (!narrative) {
@@ -3926,6 +2972,7 @@ function detailView() {
             state.ai.generating ? 'Generating AI Summary...' : report.aiNarrative ? 'Refresh AI Summary' : 'Generate AI Summary'
           }</button>
           <button class="button button-success" data-action="export-pdf" data-id="${report.id}" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Generating PDF...' : 'Export PDF'}</button>
+          ${renderExportNote(report)}
         </div>
         ${renderFloatingShapes(16, 'hero-shapes hero-shapes-subtle')}
       </div>
@@ -3950,6 +2997,8 @@ function detailView() {
         </article>
       </div>
 
+      ${renderReviewChecklist(report)}
+
       ${reportSectionBlock(
         'Project Details',
         `
@@ -3958,8 +3007,12 @@ function detailView() {
             <div><span>Client Name</span><strong>${escapeHtml(report.project.clientName)}</strong></div>
             <div><span>Site Location</span><strong>${escapeHtml(report.project.siteLocation)}</strong></div>
             <div><span>Work Order / Ref</span><strong>${escapeHtml(report.project.workOrder)}</strong></div>
-            <div><span>Date of Testing</span><strong>${escapeHtml(report.project.reportDate)}</strong></div>
+            <div><span>Work date</span><strong>${escapeHtml(report.project.reportDate)}</strong></div>
             <div><span>Testing Engineer</span><strong>${escapeHtml(report.project.engineerName)}</strong></div>
+            ${report.project.clientRepresentative ? `<div><span>Client representative</span><strong>${escapeHtml(report.project.clientRepresentative)}</strong></div>` : ''}
+            ${report.project.groundCondition ? `<div><span>Ground condition</span><strong>${escapeHtml(report.project.groundCondition)}</strong></div>` : ''}
+            <div><span>Acceptance profile</span><strong>${escapeHtml((sourceAssessment(report).profile && sourceAssessment(report).profile.id) || report.project.acceptanceProfile || 'ETPL-DEFAULT')}</strong></div>
+            ${report.project.assumedSoilResistivity ? `<div><span>Assumed soil resistivity</span><strong>${escapeHtml(report.project.assumedSoilResistivity)} ohm-m (${escapeHtml(report.project.assumedSoilResistivitySource || 'source not stated')})</strong></div>` : ''}
             ${report.project.zohoProjectName ? `<div><span>Zoho Project</span><strong>${escapeHtml(report.project.zohoProjectName)}</strong></div>` : ''}
             ${report.project.zohoProjectStage ? `<div><span>Zoho Stage</span><strong>${escapeHtml(report.project.zohoProjectStage)}</strong></div>` : ''}
           </div>
@@ -3968,255 +3021,12 @@ function detailView() {
 
       ${renderAiNarrativeSection(report)}
 
-      ${report.tests.soilResistivity
-        ? reportSectionBlock(
-            'Soil Resistivity Test',
-            `
-              <div class="metric-strip">
-                <article class="metric-box"><span>Direction 1 Average</span><strong>${soil.direction1Average === null ? '-' : `${soil.direction1Average} ohm-m`}</strong></article>
-                <article class="metric-box"><span>Direction 2 Average</span><strong>${soil.direction2Average === null ? '-' : `${soil.direction2Average} ohm-m`}</strong></article>
-                <article class="metric-box"><span>Classification</span><strong>${escapeHtml(soil.category.label)}</strong>${pill(soil.category.tone, soil.category.label)}</article>
-              </div>
-              ${soil.locations
-                .map((location, locationIndex) => {
-                  const sourceLocation = getSoilLocations(report)[locationIndex];
-                  return `
-                    <div class="detail-subsection">
-                      <div class="detail-subsection-head">
-                        <h4>${escapeHtml(location.name)}</h4>
-                        ${pill(location.category.tone, location.category.label)}
-                      </div>
-                      <div class="detail-grid">
-                        <div><span>Direction 1 Average</span><strong>${location.direction1Average === null ? '-' : `${location.direction1Average} ohm-m`}</strong></div>
-                        <div><span>Direction 2 Average</span><strong>${location.direction2Average === null ? '-' : `${location.direction2Average} ohm-m`}</strong></div>
-                        <div><span>Location Mean</span><strong>${location.overallAverage === null ? '-' : `${location.overallAverage} ohm-m`}</strong></div>
-                        <div><span>Driven Electrode Diameter</span><strong>${escapeHtml(location.drivenElectrodeDiameter || '-')}</strong></div>
-                        <div><span>Driven Electrode Length</span><strong>${escapeHtml(location.drivenElectrodeLength || '-')}</strong></div>
-                      </div>
-                      ${simpleDetailTable(
-                        [
-                          { label: 'Spacing of Probes (m)', key: 'spacing' },
-                          { label: 'Direction 1 Resistivity (ohm-m)', key: 'direction1' },
-                          { label: 'Direction 2 Resistivity (ohm-m)', key: 'direction2' }
-                        ],
-                        (sourceLocation?.direction1 || []).map((row, index) => ({
-                          spacing: row.spacing,
-                          direction1: row.resistivity,
-                          direction2: sourceLocation?.direction2[index] ? sourceLocation.direction2[index].resistivity : '-'
-                        })),
-                        {
-                          observationRenderer: (_row, index) => {
-                            return [
-                              renderObservationCard(sourceLocation?.direction1[index], `${location.name} | Direction 1 Observation`),
-                              renderObservationCard(sourceLocation?.direction2[index], `${location.name} | Direction 2 Observation`)
-                            ]
-                              .filter(Boolean)
-                              .join('');
-                          }
-                        }
-                      )}
-                      ${
-                        sourceLocation?.notes
-                          ? `<p class="detail-note"><strong>Site Notes:</strong> ${escapeHtml(sourceLocation.notes)}</p>`
-                          : ''
-                      }
-                    </div>
-                  `;
-                })
-                .join('')}
-            `
-          )
-        : ''}
+      ${report.tests.soilResistivity ? reportSectionBlock('MS-01 Soil Resistivity', renderSoilDetail(report)) : ''}
 
-      ${report.tests.electrodeResistance
-        ? reportSectionBlock(
-            'Earth Electrode Resistance Test',
-            simpleDetailTable(
-              [
-                { label: 'Pit Tag', key: 'tag' },
-                { label: 'Location', key: 'location' },
-                { label: 'Type', key: 'electrodeType' },
-                { label: 'Material', key: 'materialType' },
-                { label: 'Length (m)', key: 'length' },
-                { label: 'Dia (mm)', key: 'diameter' },
-                { label: 'Resistance Without Grid (ohm)', key: 'resistanceWithoutGrid' },
-                { label: 'Resistance With Grid (ohm)', key: 'resistanceWithGrid' },
-                {
-                  label: 'Standard',
-                  render: (row) => {
-                    const assessment = rowAssessment('electrodeResistance', row);
-                    return standardCell(assessment.standard.reference, assessment.limit === null ? assessment.standard.limitLabel : `${assessment.limit.toFixed(2)} ohm`);
-                  }
-                },
-                {
-                  label: 'Comment',
-                  render: (row) => {
-                    const assessment = rowAssessment('electrodeResistance', row);
-                    return autoTextCell(assessment.status.label);
-                  }
-                },
-                { label: 'Observation', render: () => autoTextCell('') },
-                { label: 'Recommendation', render: () => autoTextCell('') },
-                { label: 'Priority of Action', render: (row) => autoTextCell(rowAssessment('electrodeResistance', row).priority || '') }
-              ],
-              report.electrodeResistance.map((row) => ({
-                ...row,
-                resistanceWithoutGrid: safeText(row.resistanceWithoutGrid, ''),
-                resistanceWithGrid: safeText(row.resistanceWithGrid || row.measuredResistance, '')
-              })),
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.continuityTest
-        ? reportSectionBlock(
-            'Continuity Test',
-            simpleDetailTable(
-              [
-                { label: 'Sr. No.', key: 'srNo' },
-                { label: 'Main Location', key: 'mainLocation' },
-                { label: 'Measurement Point', key: 'measurementPoint' },
-                { label: 'Resistance (ohm)', key: 'resistance' },
-                { label: 'Impedance (ohm)', key: 'impedance' },
-                {
-                  label: 'Status',
-                  render: (row) => {
-                    const assessment = rowAssessment('continuityTest', row);
-                    return pill(assessment.status.tone, assessment.status.label);
-                  }
-                },
-                {
-                  label: 'Comment',
-                  render: (row) => autoTextCell(rowAssessment('continuityTest', row).remark)
-                }
-              ],
-              report.continuityTest,
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.loopImpedanceTest
-        ? reportSectionBlock(
-            'Loop Impedance Test',
-            simpleDetailTable(
-              [
-                { label: 'Sr. No.', key: 'srNo' },
-                { label: 'Location of Panel / Equipment', key: 'location' },
-                { label: 'Name of Feeder & Tag No.', key: 'feederTag' },
-                { label: 'Type', key: 'deviceType' },
-                { label: 'Rating (A)', key: 'deviceRating' },
-                { label: 'Breaking (kA)', key: 'breakingCapacity' },
-                { label: 'Measured Points', key: 'measuredPoints' },
-                { label: 'Loop Impedance (ohm)', key: 'loopImpedance' },
-                { label: 'Voltage (V)', key: 'voltage' },
-                {
-                  label: 'Remark',
-                  render: (row) => autoTextCell(rowAssessment('loopImpedanceTest', row).remark)
-                }
-              ],
-              report.loopImpedanceTest,
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.prospectiveFaultCurrent
-        ? reportSectionBlock(
-            'Prospective Fault Current',
-            simpleDetailTable(
-              [
-                { label: 'Sr. No.', key: 'srNo' },
-                { label: 'Location of Panel / Equipment', key: 'location' },
-                { label: 'Name of Feeder & Tag No.', key: 'feederTag' },
-                { label: 'Device', key: 'deviceType' },
-                { label: 'Rating (A)', key: 'deviceRating' },
-                { label: 'Breaking (kA)', key: 'breakingCapacity' },
-                { label: 'Measured Points', key: 'measuredPoints' },
-                { label: 'Loop Z (ohm)', key: 'loopImpedance' },
-                { label: 'PFC', key: 'prospectiveFaultCurrent' },
-                { label: 'Voltage', key: 'voltage' },
-                {
-                  label: 'Remark',
-                  render: (row) => autoTextCell(rowAssessment('prospectiveFaultCurrent', row).remark)
-                }
-              ],
-              report.prospectiveFaultCurrent,
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.riserIntegrityTest
-        ? reportSectionBlock(
-            'Riser / Grid Integrity Test',
-            simpleDetailTable(
-              [
-                { label: 'Sr. No.', key: 'srNo' },
-                { label: 'Main Location', key: 'mainLocation' },
-                { label: 'Measurement Point', key: 'measurementPoint' },
-                { label: 'Towards Equipment', key: 'resistanceTowardsEquipment' },
-                { label: 'Towards Grid', key: 'resistanceTowardsGrid' },
-                {
-                  label: 'Comment',
-                  render: (row) => autoTextCell(rowAssessment('riserIntegrityTest', row).remark)
-                },
-                { label: 'Observation', render: () => autoTextCell('') },
-                { label: 'Recommendation', render: () => autoTextCell('') }
-              ],
-              report.riserIntegrityTest,
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.earthContinuityTest
-        ? reportSectionBlock(
-            'Earth Continuity Test',
-            simpleDetailTable(
-              [
-                { label: 'Sr. No.', key: 'srNo' },
-                { label: 'Tag', key: 'tag' },
-                { label: 'Location / Building', key: 'locationBuildingName' },
-                { label: 'Distance', key: 'distance' },
-                { label: 'Measured Value', key: 'measuredValue' },
-                {
-                  label: 'Status',
-                  render: (row) => {
-                    const assessment = rowAssessment('earthContinuityTest', row);
-                    return pill(assessment.status.tone, assessment.status.label);
-                  }
-                },
-                {
-                  label: 'Remark',
-                  render: (row) => autoTextCell(rowAssessment('earthContinuityTest', row).remark)
-                }
-              ],
-              report.earthContinuityTest,
-              {
-                observationRenderer: (row) => renderObservationCard(row)
-              }
-            )
-          )
-        : ''}
-
-      ${report.tests.towerFootingResistance
-        ? reportSectionBlock(
-            'Tower Footing Resistance Measurement & Analysis',
-            towerFootingDetailTable(report.towerFootingResistance)
-          )
-        : ''}
+      ${allSheets()
+        .filter((sheet) => sheet.id !== 'soilResistivity' && report.tests && report.tests[sheet.id])
+        .map((sheet) => reportSectionBlock(sheet.code === 'legacy' ? sheet.title : `${sheet.code} ${sheet.title}`, renderSheetDetail(report, sheet)))
+        .join('')}
     </section>
   `;
 }
@@ -4445,146 +3255,6 @@ function validateCurrentStep() {
   return true;
 }
 
-function renumberSection(section) {
-  const rows = state.draft[section];
-  if (!Array.isArray(rows)) {
-    return;
-  }
-  rows.forEach((row, index) => {
-    if (Object.prototype.hasOwnProperty.call(row, 'srNo')) {
-      row.srNo = String(index + 1);
-    }
-    if ((section === 'loopImpedanceTest' || section === 'prospectiveFaultCurrent') && Object.prototype.hasOwnProperty.call(row, 'measuredPoints')) {
-      row.measuredPoints = PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
-    }
-  });
-}
-
-function syncPhaseGroupField(section, index, field, value) {
-  const rows = state.draft[section];
-  if (!Array.isArray(rows)) {
-    return false;
-  }
-  const groupStart = Math.floor(index / PHASE_MEASURED_POINTS.length) * PHASE_MEASURED_POINTS.length;
-  for (let offset = 0; offset < PHASE_MEASURED_POINTS.length; offset += 1) {
-    if (rows[groupStart + offset]) {
-      rows[groupStart + offset][field] = value;
-    }
-  }
-  return true;
-}
-
-function addRow(section, direction) {
-  if (section === 'soilResistivity') {
-    return;
-  }
-  if (section === 'soilResistivity-location') {
-    state.draft.soilResistivity.locations.push(defaultSoilLocation(`Location ${state.draft.soilResistivity.locations.length + 1}`));
-    return;
-  }
-  if (section === 'electrodeResistance') {
-    state.draft.electrodeResistance.push(defaultElectrodeRow());
-    return;
-  }
-  if (section === 'continuityTest') {
-    state.draft.continuityTest.push(defaultContinuityRow(String(state.draft.continuityTest.length + 1)));
-    return;
-  }
-  if (section === 'loopImpedanceTest') {
-    state.draft.loopImpedanceTest.push(...defaultLoopGroup(state.draft.loopImpedanceTest.length + 1));
-    return;
-  }
-  if (section === 'prospectiveFaultCurrent') {
-    state.draft.prospectiveFaultCurrent.push(...defaultFaultGroup(state.draft.prospectiveFaultCurrent.length + 1));
-    return;
-  }
-  if (section === 'riserIntegrityTest') {
-    state.draft.riserIntegrityTest.push(defaultRiserRow(String(state.draft.riserIntegrityTest.length + 1)));
-    return;
-  }
-  if (section === 'earthContinuityTest') {
-    state.draft.earthContinuityTest.push(defaultEarthContinuityRow(String(state.draft.earthContinuityTest.length + 1)));
-    return;
-  }
-  if (section === 'towerFootingResistance') {
-    state.draft.towerFootingResistance.push(defaultTowerFootingGroup(String(state.draft.towerFootingResistance.length + 1)));
-    return;
-  }
-}
-
-function removeRow(section, index, direction, locationIndex = null) {
-  if (
-    state.observationEditor &&
-    state.observationEditor.section === section &&
-    safeText(state.observationEditor.direction, '') === safeText(direction, '') &&
-    (section !== 'soilResistivity' || state.observationEditor.locationIndex === locationIndex)
-  ) {
-    closeObservationEditor();
-  }
-  if (section === 'soilResistivity') {
-    const location = state.draft.soilResistivity.locations?.[locationIndex];
-    if (!location) {
-      return;
-    }
-    if (location[direction].length === 1) {
-      showToast('Keep at least one row in each soil direction.', 'warning');
-      return;
-    }
-    location[direction].splice(index, 1);
-    return;
-  }
-  if (section === 'loopImpedanceTest' || section === 'prospectiveFaultCurrent') {
-    if (state.draft[section].length <= PHASE_MEASURED_POINTS.length) {
-      showToast('Keep at least one 3-point feeder group in the selected section.', 'warning');
-      return;
-    }
-    const groupStart = Math.floor(index / PHASE_MEASURED_POINTS.length) * PHASE_MEASURED_POINTS.length;
-    state.draft[section].splice(groupStart, PHASE_MEASURED_POINTS.length);
-    renumberSection(section);
-    return;
-  }
-  if (state.draft[section].length === 1) {
-    showToast('Keep at least one row in the selected section.', 'warning');
-    return;
-  }
-  state.draft[section].splice(index, 1);
-  renumberSection(section);
-}
-
-function addSoilLocation() {
-  state.draft.soilResistivity.locations.push(defaultSoilLocation(`Location ${state.draft.soilResistivity.locations.length + 1}`));
-}
-
-function removeSoilLocation(locationIndex) {
-  if (state.observationEditor && state.observationEditor.section === 'soilResistivity' && state.observationEditor.locationIndex === locationIndex) {
-    closeObservationEditor();
-  }
-  if (state.draft.soilResistivity.locations.length === 1) {
-    showToast('Keep at least one soil location in the report.', 'warning');
-    return;
-  }
-  state.draft.soilResistivity.locations.splice(locationIndex, 1);
-  state.draft.soilResistivity.locations.forEach((location, index) => {
-    if (!safeText(location.name, '')) {
-      location.name = `Location ${index + 1}`;
-    }
-  });
-}
-
-function removeTowerGroup(groupIndex) {
-  if (state.observationEditor && state.observationEditor.section === 'towerFootingResistance' && state.observationEditor.groupIndex === groupIndex) {
-    closeObservationEditor();
-  }
-  if (state.draft.towerFootingResistance.length === 1) {
-    showToast('Keep at least one tower location group in the selected section.', 'warning');
-    return;
-  }
-  state.draft.towerFootingResistance.splice(groupIndex, 1);
-  state.draft.towerFootingResistance.forEach((group, index) => {
-    group.srNo = String(index + 1);
-  });
-}
-
 async function saveReport() {
   state.saving = true;
   closeObservationEditor();
@@ -4600,10 +3270,12 @@ async function saveReport() {
     state.draft = createDraft();
     state.stepIndex = 0;
     clearDraftSnapshot();
-    showToast('Report saved successfully.', 'healthy');
+    const warnings = ((created.assessment && created.assessment.validation && created.assessment.validation.warnings) || []).length;
+    showToast(warnings ? `Report saved with ${warnings} warning${warnings === 1 ? '' : 's'} to check.` : 'Report saved successfully.', warnings ? 'warning' : 'healthy');
     await loadReports();
   } catch (error) {
-    showToast(error.message, 'critical');
+    const extra = Array.isArray(error.errors) && error.errors.length > 1 ? ` (${error.errors.length} problems; see the sheets)` : '';
+    showToast(`${error.message}${extra}`, 'critical');
   } finally {
     state.saving = false;
     render();
@@ -4728,6 +3400,11 @@ document.addEventListener('click', async (event) => {
 
   const action = button.dataset.action;
 
+  if (handleSheetAction(action, button)) {
+    render();
+    return;
+  }
+
   if (action === 'new-report') {
     closeObservationEditor();
     state.draft = createDraft();
@@ -4797,19 +3474,6 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
-  if (action === 'toggle-equipment') {
-    const equipmentId = button.dataset.equipmentId;
-    const selections = new Set(Array.isArray(state.draft.project.equipmentSelections) ? state.draft.project.equipmentSelections : []);
-    if (selections.has(equipmentId)) {
-      selections.delete(equipmentId);
-    } else {
-      selections.add(equipmentId);
-    }
-    state.draft.project.equipmentSelections = EQUIPMENT_LIBRARY.filter((equipment) => selections.has(equipment.id)).map((equipment) => equipment.id);
-    render();
-    return;
-  }
-
   if (action === 'step-next') {
     if (!validateCurrentStep()) {
       return;
@@ -4831,45 +3495,6 @@ document.addEventListener('click', async (event) => {
       return;
     }
     state.stepIndex = nextIndex;
-    render();
-    return;
-  }
-
-  if (action === 'add-row') {
-    if (button.dataset.section === 'soilResistivity') {
-      const locationIndex = Number(button.dataset.locationIndex);
-      const location = state.draft.soilResistivity.locations?.[locationIndex];
-      if (location) {
-        const nextSpacing = SOIL_SPACING_PRESETS[location[button.dataset.direction].length] || '';
-        location[button.dataset.direction].push(defaultSoilRow(nextSpacing));
-      }
-    } else {
-      addRow(button.dataset.section, button.dataset.direction);
-    }
-    render();
-    return;
-  }
-
-  if (action === 'add-soil-location') {
-    addSoilLocation();
-    render();
-    return;
-  }
-
-  if (action === 'remove-row') {
-    removeRow(button.dataset.section, Number(button.dataset.index), button.dataset.direction, button.dataset.locationIndex === undefined ? null : Number(button.dataset.locationIndex));
-    render();
-    return;
-  }
-
-  if (action === 'remove-soil-location') {
-    removeSoilLocation(Number(button.dataset.locationIndex));
-    render();
-    return;
-  }
-
-  if (action === 'remove-tower-group') {
-    removeTowerGroup(Number(button.dataset.groupIndex));
     render();
     return;
   }
@@ -4957,9 +3582,17 @@ document.addEventListener('click', async (event) => {
 document.addEventListener('input', (event) => {
   const target = event.target;
 
+  // Ticks are handled on `change` (one event per tap); typing and selects are handled here.
+  if (target.type === 'checkbox' || target.type === 'radio') {
+    return;
+  }
+
   if (target.matches('[data-bind]')) {
     setByPath(state.draft, target.dataset.bind, target.value);
     scheduleDraftAutosave();
+    if (state.view === 'builder') {
+      syncDraftAssessment();
+    }
     return;
   }
 
@@ -4979,29 +3612,12 @@ document.addEventListener('input', (event) => {
     return;
   }
 
-  if (target.matches('[data-section]')) {
-    const section = target.dataset.section;
-    const index = Number(target.dataset.index);
-    const readingIndex = target.dataset.readingIndex === undefined ? null : Number(target.dataset.readingIndex);
-    const locationIndex = target.dataset.locationIndex === undefined ? null : Number(target.dataset.locationIndex);
-    const field = target.dataset.field;
-    const direction = target.dataset.direction;
-
-    if (section === 'soilResistivity') {
-      state.draft.soilResistivity.locations[locationIndex][direction][index][field] = target.value;
-    } else if (section === 'towerFootingResistance') {
-      if (Number.isInteger(readingIndex)) {
-        state.draft.towerFootingResistance[index].readings[readingIndex][field] = target.value;
-      } else {
-        state.draft.towerFootingResistance[index][field] = target.value;
-      }
-    } else if ((section === 'loopImpedanceTest' || section === 'prospectiveFaultCurrent') && target.dataset.groupSync === 'true') {
-      syncPhaseGroupField(section, index, field, target.value);
-    } else {
-      state.draft[section][index][field] = target.value;
+  if (target.matches('[data-section], [data-soil-cell], [data-soil-location], [data-header-sheet]')) {
+    if (applyFieldInput(target)) {
+      scheduleDraftAutosave();
+      rerenderPreservingFocus();
     }
-    scheduleDraftAutosave();
-    rerenderPreservingFocus();
+    return;
   }
 });
 
@@ -5049,28 +3665,24 @@ document.addEventListener('change', async (event) => {
     target.value = '';
     return;
   }
-  if (target.matches('[data-section]')) {
-    const section = target.dataset.section;
-    const index = Number(target.dataset.index);
-    const readingIndex = target.dataset.readingIndex === undefined ? null : Number(target.dataset.readingIndex);
-    const locationIndex = target.dataset.locationIndex === undefined ? null : Number(target.dataset.locationIndex);
-    const field = target.dataset.field;
-    const direction = target.dataset.direction;
-    if (section === 'soilResistivity') {
-      state.draft.soilResistivity.locations[locationIndex][direction][index][field] = target.value;
-    } else if (section === 'towerFootingResistance') {
-      if (Number.isInteger(readingIndex)) {
-        state.draft.towerFootingResistance[index].readings[readingIndex][field] = target.value;
-      } else {
-        state.draft.towerFootingResistance[index][field] = target.value;
-      }
-    } else if ((section === 'loopImpedanceTest' || section === 'prospectiveFaultCurrent') && target.dataset.groupSync === 'true') {
-      syncPhaseGroupField(section, index, field, target.value);
-    } else {
-      state.draft[section][index][field] = target.value;
-    }
+  if (target.dataset.bind === 'project.soilSpacingPreset') {
+    applySoilPreset();
     scheduleDraftAutosave();
-    rerenderPreservingFocus();
+    render();
+    return;
+  }
+  if (target.dataset.bind && (target.type === 'radio' || target.type === 'checkbox')) {
+    setByPath(state.draft, target.dataset.bind, target.value);
+    scheduleDraftAutosave();
+    render();
+    return;
+  }
+  if (target.matches('[data-section], [data-soil-cell], [data-soil-location], [data-header-sheet]')) {
+    if (applyFieldInput(target)) {
+      scheduleDraftAutosave();
+      rerenderPreservingFocus();
+    }
+    return;
   }
 });
 
@@ -5081,8 +3693,23 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+// The sheet definitions (what each entry screen contains) and the acceptance profiles come
+// from the server; the draft cannot be built or restored without them.
+async function loadSheetDefinitions() {
+  try {
+    const [definitions, profiles] = await Promise.all([api('/api/sheets'), api('/api/acceptance/profiles')]);
+    setSheetDefinitions(definitions);
+    setAcceptanceProfiles(profiles);
+  } catch (error) {
+    showToast(`Could not load the measurement sheets: ${error.message}`, 'critical');
+  }
+}
+
 async function init() {
-  restoreDraftSnapshot();
+  await loadSheetDefinitions();
+  if (!restoreDraftSnapshot()) {
+    state.draft = createDraft();
+  }
   render();
   if (state.restoredDraftNoticePending) {
     state.restoredDraftNoticePending = false;

@@ -5,7 +5,9 @@ const multer = require('multer');
 
 const config = require('./config');
 const { createReportStore } = require('./reportStore');
-const { normalizeReportInput, TEST_LIBRARY } = require('./reportModel');
+const { normalizeReportInput, TEST_LIBRARY, ReportValidationError } = require('./reportModel');
+const { publicDefinitions } = require('./sheetDefinitions');
+const { listProfiles } = require('./acceptance');
 const { generateElectroReportPdf } = require('./pdfService');
 const { assessReport } = require('./assessmentService');
 const { scrubGeneratedRemarks } = require('./remarks');
@@ -74,6 +76,17 @@ app.get('/api/health', (_req, res) => {
     service: 'electroreports',
     date: new Date().toISOString()
   });
+});
+
+// The approved measurement sheets (MS-01..MS-09) as data: header fields and row columns
+// in printed order. The browser renders every entry screen from these.
+app.get('/api/sheets', (_req, res) => {
+  res.json(publicDefinitions());
+});
+
+// Acceptance profiles a project can pick (from the register; templates excluded).
+app.get('/api/acceptance/profiles', (_req, res) => {
+  res.json(listProfiles());
 });
 
 app.get('/api/catalog', (_req, res) => {
@@ -246,7 +259,8 @@ app.post('/api/reports', (req, res) => {
     return res.status(201).json(presentReport(created));
   } catch (error) {
     return res.status(400).json({
-      message: error instanceof Error ? error.message : 'Invalid report payload.'
+      message: error instanceof Error ? error.message : 'Invalid report payload.',
+      errors: error instanceof ReportValidationError ? error.errors : undefined
     });
   }
 });

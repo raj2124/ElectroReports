@@ -8,7 +8,7 @@
     "dev": "node src/server.js",
     "test:electroreports": "node scripts/electroreports-verify.js",
     "test:multiday": "node scripts/test-multiday.js && node scripts/test-report-collection.js",
-    "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js",
+    "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js && node scripts/test-sheet-definitions.js && node scripts/test-sheet-rules.js",
     "generate:ai-reference": "node scripts/generate-electroreports-ai-reference.js"
   },
   "dependencies": {

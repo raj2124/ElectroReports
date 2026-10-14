@@ -197,9 +197,51 @@ const POINT_KEYS = {
   earthContinuityTest: (row) => [norm(row.tag), norm(row.locationBuildingName)].filter(Boolean).join('|'),
   // groupId is random per day, so identify a tower by its location.
   towerFootingResistance: (row) => norm(row.mainLocationTower),
+  groundResistance: (row) => norm(row.tag) || norm(row.location),
+  stepTouchVoltage: (row) => [norm(row.location), norm(row.measurementType), norm(row.surface), norm(row.distanceM)].filter(Boolean).join('|'),
   soilResistivity: (location) => norm(location.name)
 };
 const ROW_SHEETS = Object.keys(POINT_KEYS).filter((sheet) => sheet !== 'soilResistivity');
+
+// A stitched row keeps the header values it was measured under, so a final report never
+// applies one day's test-lead resistance or fault current to another day's readings.
+function snapshotDayHeader(sheet, row, report) {
+  const header = report && report.sheetHeaders && report.sheetHeaders[sheet];
+  if (!header || !row || typeof row !== 'object') {
+    return row;
+  }
+  if (sheet === 'continuityTest' || sheet === 'riserIntegrityTest') {
+    return asTrimmedString(row.testLeadResistance) || !asTrimmedString(header.testLeadResistance) ? row : { ...row, testLeadResistance: header.testLeadResistance };
+  }
+  if (sheet === 'stepTouchVoltage') {
+    return row.dayHeader ? row : { ...row, dayHeader: { ...header } };
+  }
+  return row;
+}
+
+// Instrument calibration as recorded on each day's sheets, for the reviewer.
+function collectCalibrationRecords(reports) {
+  const records = [];
+  reports.forEach((report) => {
+    const headers = (report && report.sheetHeaders) || {};
+    Object.keys(headers).forEach((sheet) => {
+      const header = headers[sheet] || {};
+      if (!asTrimmedString(header.instrument) && !asTrimmedString(header.calibrationDue)) {
+        return;
+      }
+      records.push({
+        reportId: asTrimmedString(report.id),
+        collectionDate: getCollectionDate(report),
+        workDate: asTrimmedString(report.project && report.project.reportDate) || getCollectionDate(report),
+        sheet,
+        instrument: asTrimmedString(header.instrument),
+        serialNo: asTrimmedString(header.serialNo),
+        calibrationDue: asTrimmedString(header.calibrationDue)
+      });
+    });
+  });
+  return records;
+}
 
 function overrideKey(sheet, pointKey) {
   return `${sheet}::${pointKey}`;
@@ -249,7 +291,7 @@ function stitchSheet(sheet, reports, overrides, overriddenBy, provenance) {
         overriddenBy: resolution === 'engineer_override' ? overriddenBy || '' : ''
       });
     });
-    return chosen.row;
+    return snapshotDayHeader(sheet, chosen.row, chosen.report);
   });
 }
 
@@ -305,6 +347,7 @@ function assembleFinalReport(dailyReports, options = {}) {
     tests: testsUnion,
     ...sheets,
     collectionManifest: manifest,
+    calibrationRecords: collectCalibrationRecords(reports),
     constituentReportIds: manifest.entries.map((entry) => entry.reportId).filter(Boolean),
     assemblyProvenance
   };

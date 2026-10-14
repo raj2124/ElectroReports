@@ -4,6 +4,8 @@
 // sets and the formulas themselves, which are fixed by the standard's text.
 const { resolveProfile, BASIS_LABELS, DEFAULT_PROFILE_ID } = require('./acceptance');
 const { engineerRemark } = require('./remarks');
+const { validateReport } = require('./sheetValidation');
+const { SOIL_SPACING_PRESETS: SOIL_PRESETS, DEFAULT_SOIL_PRESET, SHEETS, INSTRUMENTS, GROUND_CONDITIONS } = require('./sheetDefinitions');
 
 const CONDITION_CODES = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'OTH'];
 const PRIORITY_P1_CODES = new Set(['C1', 'C2', 'C4', 'C5']);
@@ -12,55 +14,78 @@ const PRIORITY_P2_CODES = new Set(['C3', 'C6', 'C7', 'C8']);
 const TEST_LIBRARY = [
   {
     id: 'soilResistivity',
+    sheetCode: 'MS-01',
     label: 'Soil Resistivity Test',
     shortLabel: 'Soil',
     description: 'Direction-wise soil resistivity readings with automatic average and IS 3043 corrosivity class.'
   },
   {
     id: 'electrodeResistance',
+    sheetCode: 'MS-02',
     label: 'Earth Electrode Resistance Test',
     shortLabel: 'Electrode',
     description: 'Pit-wise resistance against the IS 3043:2018 Cl. 14.2 limit calculated from site soil resistivity.'
   },
   {
     id: 'continuityTest',
-    label: 'Continuity Test',
+    sheetCode: 'MS-03',
+    label: 'Earth Continuity & Bonding Test',
     shortLabel: 'Continuity',
-    description: 'Point-to-point resistance and impedance verification.'
+    description: 'Point-to-point bonding resistance with test-lead resistance subtracted.'
   },
   {
     id: 'loopImpedanceTest',
+    sheetCode: 'MS-04',
     label: 'Loop Impedance Test',
     shortLabel: 'Loop',
     description: 'Measured Zs values for protection loop verification.'
   },
   {
     id: 'prospectiveFaultCurrent',
+    sheetCode: 'MS-05',
     label: 'Prospective Fault Current',
     shortLabel: 'PFC',
-    description: 'Prospective fault current and related feeder details.'
+    description: 'PFC (L-PE) and PSC (L-N) against the device breaking capacity.'
   },
   {
     id: 'riserIntegrityTest',
+    sheetCode: 'MS-06',
     label: 'Riser / Grid Integrity Test',
     shortLabel: 'Riser',
     description: 'Resistance verification towards equipment and earth grid.'
   },
   {
-    id: 'earthContinuityTest',
-    label: 'Earth Continuity Test',
-    shortLabel: 'Earth Continuity',
-    description: 'Earth path continuity by tag, location, and distance.'
+    id: 'groundResistance',
+    sheetCode: 'MS-07',
+    label: 'Ground (Grid) Resistance Test',
+    shortLabel: 'Ground',
+    description: 'In-service grid resistance against the limit of the associated pit.'
+  },
+  {
+    id: 'stepTouchVoltage',
+    sheetCode: 'MS-08',
+    label: 'Step & Touch Voltage Test',
+    shortLabel: 'Step & Touch',
+    description: 'Injected-current step and touch voltages scaled by If/It against the tolerable limits.'
   },
   {
     id: 'towerFootingResistance',
+    sheetCode: 'MS-09',
     label: 'Tower Footing Resistance Measurement & Analysis',
     shortLabel: 'Tower Footing',
     description: 'Grouped tower footing impedance and current analysis with per-tower totals.'
+  },
+  {
+    id: 'earthContinuityTest',
+    sheetCode: 'legacy',
+    retired: true,
+    label: 'Earth Continuity Test',
+    shortLabel: 'Earth Continuity',
+    description: 'Retired: folded into Earth Continuity & Bonding (MS-03). Kept so older reports still open.'
   }
 ];
 
-const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
+const SOIL_DIRECTION_KEYS = ['direction1', 'direction2', 'direction3', 'direction4', 'direction5', 'direction6', 'direction7', 'direction8'];
 const TOWER_FOOT_POINTS = ['Foot-1', 'Foot-2', 'Foot-3', 'Foot-4'];
 const PHASE_MEASURED_POINTS = ['R-E', 'Y-E', 'B-E'];
 const EQUIPMENT_LIBRARY = [
@@ -96,22 +121,36 @@ function createDefaultSoilRow(spacing = '', resistivity = '') {
   return {
     ...createRowMeta('soil'),
     spacing,
-    resistivity
+    resistivity,
+    remark: ''
   };
 }
 
-function createDefaultSoilLocation(name = 'Location 1') {
-  return {
+function soilPreset(presetId) {
+  return SOIL_PRESETS[presetId] || SOIL_PRESETS[DEFAULT_SOIL_PRESET];
+}
+
+// A soil location for the project's spacing preset: one row per spacing in every
+// direction (the printed sheet has 4 direction columns per page; the substation
+// preset has 8 directions).
+function createDefaultSoilLocation(name = 'Location 1', presetId = DEFAULT_SOIL_PRESET) {
+  const preset = soilPreset(presetId);
+  const location = {
     locationId: buildRowId('soil-location'),
     name,
-    direction1: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
-    direction2: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
     // 'ohm-m': values are rho as read. 'ohm': values are R as read, rho = 2*pi*a*R.
     inputUnit: 'ohm-m',
+    probeDepthCm: '',
+    weather: '',
+    bearings: Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, ''])),
     drivenElectrodeDiameter: '',
     drivenElectrodeLength: '',
     notes: ''
   };
+  SOIL_DIRECTION_KEYS.forEach((key, index) => {
+    location[key] = index < preset.directions ? preset.spacings.map((spacing) => createDefaultSoilRow(spacing, '')) : [];
+  });
+  return location;
 }
 
 function createDefaultElectrodeRow() {
@@ -120,13 +159,19 @@ function createDefaultElectrodeRow() {
     tag: '',
     location: '',
     electrodeType: 'Rod',
-    materialType: 'Copper',
+    materialType: 'Cu',
     length: '',
     diameter: '',
+    plateLengthM: '',
+    plateWidthM: '',
     plateArea: '',
     resistanceWithoutGrid: '',
+    checkR50: '',
+    checkR70: '',
     resistanceWithGrid: '',
+    method: '',
     conditionCodes: [],
+    photoRef: '',
     observation: ''
   };
 }
@@ -135,11 +180,17 @@ function createDefaultContinuityRow() {
   return {
     ...createRowMeta('continuity'),
     srNo: '',
+    tag: '',
     mainLocation: '',
+    referencePoint: '',
     measurementPoint: '',
+    distanceM: '',
+    testCurrentA: '',
     resistance: '',
     impedance: '',
     testLeadResistance: '',
+    conditionCodes: [],
+    photoRef: '',
     comment: ''
   };
 }
@@ -152,10 +203,12 @@ function createDefaultLoopImpedanceRow() {
     feederTag: '',
     deviceType: 'MCB',
     deviceRating: '',
+    tripCurve: '',
     breakingCapacity: '',
     measuredPoints: 'R-E',
     loopImpedance: '',
     voltage: '230',
+    photoRef: '',
     remarks: ''
   };
 }
@@ -174,6 +227,7 @@ function createDefaultProspectiveFaultRow() {
     prospectiveFaultCurrent: '',
     shortCircuitCurrentLN: '',
     voltage: '230',
+    photoRef: '',
     comment: ''
   };
 }
@@ -204,10 +258,46 @@ function createDefaultRiserIntegrityRow() {
     resistanceTowardsGrid: '',
     testLeadResistance: '',
     conditionCodes: [],
+    photoRef: '',
     comment: ''
   };
 }
 
+function createDefaultGroundResistanceRow() {
+  return {
+    ...createRowMeta('ground'),
+    srNo: '',
+    tag: '',
+    location: '',
+    method: '',
+    currentProbeDistanceM: '',
+    r50: '',
+    r618: '',
+    r70: '',
+    conditionCodes: [],
+    remark: ''
+  };
+}
+
+function createDefaultStepTouchRow() {
+  return {
+    ...createRowMeta('steptouch'),
+    srNo: '',
+    location: '',
+    measurementType: '',
+    surface: '',
+    distanceM: '',
+    testCurrentA: '',
+    v1: '',
+    v2: '',
+    v3: '',
+    vmax: '',
+    photoRef: '',
+    remark: ''
+  };
+}
+
+// Retired (folded into MS-03). Kept so the shape of older reports stays defined.
 function createDefaultEarthContinuityRow() {
   return {
     ...createRowMeta('earth'),
@@ -228,6 +318,9 @@ function createDefaultTowerFootingReading(foot) {
     footToEarthingConnectionStatus: 'Given',
     measuredCurrentMa: '',
     measuredImpedance: '',
+    conditionCodes: [],
+    photoRef: '',
+    remark: '',
     ...createRowMeta('tower')
   };
 }
@@ -249,6 +342,23 @@ function createDefaultTowerFootingGroup() {
   };
 }
 
+// Header block of one sheet (instrument, serial, calibration, times, plus the sheet's
+// own printed header cells).
+function createDefaultSheetHeader(sheetId) {
+  const header = { instrument: '', serialNo: '', calibrationDue: '', timeStart: '', timeFinish: '' };
+  const sheet = SHEETS.find((entry) => entry.id === sheetId);
+  (sheet ? sheet.headerFields : []).forEach((field) => {
+    const fields = field.kind === 'group' ? field.fields : [field];
+    fields.forEach((entry) => {
+      if (entry.readOnly) {
+        return;
+      }
+      header[entry.key] = entry.kind === 'tick' ? false : '';
+    });
+  });
+  return header;
+}
+
 function buildDefaultDraft() {
   return {
     project: {
@@ -258,6 +368,9 @@ function buildDefaultDraft() {
       workOrder: '',
       reportDate: new Date().toISOString().slice(0, 10),
       engineerName: '',
+      clientRepresentative: '',
+      groundCondition: '',
+      soilSpacingPreset: DEFAULT_SOIL_PRESET,
       equipmentSelections: EQUIPMENT_LIBRARY.map((equipment) => equipment.id),
       acceptanceProfile: 'ETPL-DEFAULT',
       assumedSoilResistivity: '',
@@ -274,9 +387,12 @@ function buildDefaultDraft() {
       loopImpedanceTest: false,
       prospectiveFaultCurrent: false,
       riserIntegrityTest: false,
-      earthContinuityTest: false,
-      towerFootingResistance: false
+      groundResistance: false,
+      stepTouchVoltage: false,
+      towerFootingResistance: false,
+      earthContinuityTest: false
     },
+    sheetHeaders: {},
     soilResistivity: {
       locations: [createDefaultSoilLocation('Location 1')]
     },
@@ -285,6 +401,8 @@ function buildDefaultDraft() {
     loopImpedanceTest: createDefaultLoopGroupRows(1),
     prospectiveFaultCurrent: createDefaultFaultGroupRows(1),
     riserIntegrityTest: [createDefaultRiserIntegrityRow()],
+    groundResistance: [createDefaultGroundResistanceRow()],
+    stepTouchVoltage: [createDefaultStepTouchRow()],
     earthContinuityTest: [createDefaultEarthContinuityRow()],
     towerFootingResistance: [{ ...createDefaultTowerFootingGroup(), srNo: '1' }],
     ocrImports: {}
@@ -364,7 +482,19 @@ function buildAssessmentContext(report) {
     rhoAssumed = true;
     rhoSource = asTrimmedString(report?.project?.assumedSoilResistivitySource) || 'Source not stated';
   }
-  return { profile, rho, rhoAssumed, rhoSource };
+  // Limits of the pits by tag, for MS-07 (a ground reading is compared with the limit of
+  // the pit it belongs to).
+  const pitLimits = new Map();
+  (Array.isArray(report?.electrodeResistance) ? report.electrodeResistance : []).forEach((row) => {
+    const tag = asTrimmedString(row?.tag).toLowerCase();
+    const result = tag
+      ? calculateElectrodeLimit({ type: row?.electrodeType, lengthM: asLooseNumber(row?.length), diameterMm: asLooseNumber(row?.diameter), areaM2: plateAreaOf(row), rho }, profile)
+      : null;
+    if (result) {
+      pitLimits.set(tag, result.limit);
+    }
+  });
+  return { profile, rho, rhoAssumed, rhoSource, headers: report?.sheetHeaders || {}, pitLimits };
 }
 
 function resolveContext(contextOrReport) {
@@ -394,7 +524,9 @@ function getStandardGuidance(profile = resolveProfile()) {
     },
     riserIntegrityTest: { reference: cite('RISER-LIMIT'), limitLabel: valueLabel('RISER-LIMIT', 'riser bonding limit') },
     earthContinuityTest: { reference: cite('CONT-LIMIT'), limitLabel: valueLabel('CONT-LIMIT', 'continuity limit') },
-    towerFootingResistance: { reference: cite('TOWER-ZSAT'), limitLabel: valueLabel('TOWER-ZSAT', 'Zsat') }
+    towerFootingResistance: { reference: cite('TOWER-ZSAT'), limitLabel: valueLabel('TOWER-ZSAT', 'Zsat') },
+    groundResistance: { reference: cite('GND-LIMIT'), limitLabel: 'calculated limit of the associated pit (IS 3043:2018 Cl. 14.2), or the client value' },
+    stepTouchVoltage: { reference: cite('ST-LIMIT'), limitLabel: 'tolerable step / touch voltage after scaling by If/It' }
   };
 }
 
@@ -419,6 +551,61 @@ function getCorrosionAllowancePct(value, profile = resolveProfile()) {
 }
 
 // ---- Earth electrode (pit) --------------------------------------------------
+// Plate area for the Cl. 14.2.1 formula is the area of BOTH faces: 2 x length x width.
+// Older reports carried the area itself in `plateArea`.
+function plateAreaOf(row) {
+  const length = asLooseNumber(row?.plateLengthM);
+  const width = asLooseNumber(row?.plateWidthM);
+  if (Number.isFinite(length) && Number.isFinite(width) && length > 0 && width > 0) {
+    return 2 * length * width;
+  }
+  return asLooseNumber(row?.plateArea);
+}
+
+// 50% / 70% check readings against the 61.8% reading (IS 3043:2018 Cl. 41.1.6). The
+// tolerance is an ETPL acceptance criterion held on PIT-METHOD params; the standard
+// itself gives no number. Flag only: status and priority are never changed by it.
+// Not applicable to the clamp and slope methods, which take no 50/70% readings.
+function checkFopAgreement({ r618, r50, r70, method }, profile) {
+  const methodText = asTrimmedString(method);
+  if (methodText === 'Clamp' || methodText === 'Slope' || !Number.isFinite(r618)) {
+    return null;
+  }
+  const checks = [
+    { at: '50%', value: r50 },
+    { at: '70%', value: r70 }
+  ].filter((check) => Number.isFinite(check.value));
+  if (!checks.length) {
+    return null;
+  }
+  const params = profile.params('PIT-METHOD');
+  const tolerancePct = params.agreement_tolerance_pct;
+  const deviation = (value) => (r618 === 0 ? (value === 0 ? 0 : Infinity) : (Math.abs(value - r618) / Math.abs(r618)) * 100);
+  const result = {
+    tolerancePct,
+    toleranceBasis: params.agreement_tolerance_basis,
+    toleranceSource: params.agreement_tolerance_source,
+    r50DevPct: null,
+    r70DevPct: null,
+    // A 61.8% reading of 0 has no percentage to compare against; any non-zero check differs.
+    comparable: r618 !== 0
+  };
+  checks.forEach((check) => {
+    result[check.at === '50%' ? 'r50DevPct' : 'r70DevPct'] = Number.isFinite(deviation(check.value)) ? round(deviation(check.value), 1) : null;
+  });
+  // 1e-9 absorbs floating-point noise: 1.05 against 1.00 is exactly 5%.
+  result.agrees = checks.every((check) => deviation(check.value) <= tolerancePct + 1e-9);
+  return result;
+}
+
+function fopRemark(fop) {
+  const parts = [];
+  if (fop.r50DevPct !== null) parts.push(`50% reading ${fop.r50DevPct}% from the 61.8% value`);
+  if (fop.r70DevPct !== null) parts.push(`70% reading ${fop.r70DevPct}% from the 61.8% value`);
+  if (!fop.comparable) parts.push('the 61.8% reading is 0, so the checks cannot agree with it');
+  return `re-test – 61.8% value unconfirmed (${parts.join('; ')}; tolerance ${fop.tolerancePct}%)`;
+}
+
 // Limit by electrode type, IS 3043:2018 Cl. 14.2 (PIT-ROD / PIT-STRIP / PIT-PLATE).
 // l is entered in m and d in mm; the rod and strip formulas take both in cm.
 function calculateElectrodeLimit({ type, lengthM, diameterMm, areaM2, rho }, profile = resolveProfile()) {
@@ -523,13 +710,18 @@ function deriveElectrodeAssessment(row, contextOrReport) {
       type: row?.electrodeType,
       lengthM: asLooseNumber(row?.length),
       diameterMm: asLooseNumber(row?.diameter),
-      areaM2: asLooseNumber(row?.plateArea),
+      areaM2: plateAreaOf(row),
       rho: context.rho
     },
     context.profile
   );
   const limit = limitResult ? limitResult.limit : null;
   const status = getElectrodeStatus(reading.value, { notMeasurable, limit, profile: context.profile });
+  const fop = checkFopAgreement(
+    { r618: asLooseNumber(row?.resistanceWithoutGrid), r50: asLooseNumber(row?.checkR50), r70: asLooseNumber(row?.checkR70), method: row?.method },
+    context.profile
+  );
+  const flags = fop && !fop.agrees ? [{ code: 'FOP_DISAGREE', message: fopRemark(fop), review: true }] : [];
   const priority = deriveElectrodePriority(status, codes);
 
   const withoutGrid = asLooseNumber(row?.resistanceWithoutGrid);
@@ -553,6 +745,9 @@ function deriveElectrodeAssessment(row, contextOrReport) {
   if (context.rhoAssumed && limit !== null) {
     comment += ` The limit uses an assumed soil resistivity of ${fmt2(context.rho)} ohm-m (${context.rhoSource}).`;
   }
+  if (flags.length) {
+    comment += ` ${flags[0].message}.`;
+  }
 
   if (!notMeasurable && Number.isFinite(withoutGrid) && Number.isFinite(withGrid)) {
     if (withGrid > withoutGrid) {
@@ -574,12 +769,26 @@ function deriveElectrodeAssessment(row, contextOrReport) {
     rhoSource: context.rhoSource,
     conditionCodes: codes,
     priority,
+    fop,
+    flags,
     comment
   };
 }
 
 // ---- Continuity, loop, PFC, riser -------------------------------------------
 // Test-lead resistance is subtracted before comparison (IEEE 81-2012 Cl. 10.2).
+// The test-lead resistance is recorded once in the sheet header (as printed).
+function leadResistanceFor(context, sheetId, row) {
+  // A value on the row wins: older reports store it there, and a final report stitched
+  // from several days snapshots each day's header value onto the rows of that day.
+  const own = asLooseNumber(row?.testLeadResistance);
+  if (Number.isFinite(own)) {
+    return own;
+  }
+  const header = asLooseNumber(context && context.headers && context.headers[sheetId] && context.headers[sheetId].testLeadResistance);
+  return Number.isFinite(header) ? header : null;
+}
+
 function netOfLeadResistance(measured, lead) {
   if (!Number.isFinite(measured)) {
     return null;
@@ -626,7 +835,7 @@ function getRiserStatus(equipment, grid, options = {}) {
 function deriveContinuityAssessment(row, contextOrReport) {
   const context = resolveContext(contextOrReport);
   const standard = getStandardGuidance(context.profile).continuityTest;
-  const lead = asLooseNumber(row?.testLeadResistance);
+  const lead = leadResistanceFor(context, 'continuityTest', row);
   const net = netOfLeadResistance(asLooseNumber(row?.resistance), lead);
   const impedance = asLooseNumber(row?.impedance);
   const status = getContinuityStatus(net, { limit: context.profile.value('CONT-LIMIT') });
@@ -644,7 +853,7 @@ function deriveContinuityAssessment(row, contextOrReport) {
     comment += ` Recorded impedance: ${round(impedance, 2)} ohm.`;
   }
 
-  return { status, standard, measured: net, comment };
+  return { status, standard, measured: net, conditionCodes: normalizeConditionCodes(row?.conditionCodes), comment };
 }
 
 function deriveLoopImpedanceAssessment(row, contextOrReport) {
@@ -699,7 +908,7 @@ function deriveFaultCurrentAssessment(row, contextOrReport) {
 function deriveRiserAssessment(row, contextOrReport) {
   const context = resolveContext(contextOrReport);
   const standard = getStandardGuidance(context.profile).riserIntegrityTest;
-  const lead = asLooseNumber(row?.testLeadResistance);
+  const lead = leadResistanceFor(context, 'riserIntegrityTest', row);
   const equipment = netOfLeadResistance(asLooseNumber(row?.resistanceTowardsEquipment), lead);
   const grid = netOfLeadResistance(asLooseNumber(row?.resistanceTowardsGrid), lead);
   const status = getRiserStatus(equipment, grid, { limit: context.profile.value('RISER-LIMIT') });
@@ -714,13 +923,13 @@ function deriveRiserAssessment(row, contextOrReport) {
     comment += ` Readings are net of ${fmt2(lead)} ohm test-lead resistance.`;
   }
 
-  return { status, standard, comment };
+  return { status, standard, conditionCodes: normalizeConditionCodes(row?.conditionCodes), comment };
 }
 
 function deriveEarthContinuityAssessment(row, contextOrReport) {
   const context = resolveContext(contextOrReport);
   const standard = getStandardGuidance(context.profile).earthContinuityTest;
-  const lead = asLooseNumber(row?.testLeadResistance);
+  const lead = leadResistanceFor(context, 'continuityTest', row) ?? leadResistanceFor(context, 'earthContinuityTest', row);
   const net = netOfLeadResistance(asLooseNumber(row?.measuredValue), lead);
   const status = getContinuityStatus(net, { limit: context.profile.value('CONT-LIMIT') });
 
@@ -794,12 +1003,73 @@ function deriveTowerFootingAssessment(group, groupSummary, contextOrReport) {
     }
   }
 
+  // A foot marked "Not given" has no earth connection: reported as a defect, with the
+  // remark and a CAP line (6C). It does not change the tower status, which stays on Zt.
+  const readings = Array.isArray(group?.readings) ? group.readings : [];
+  const notGiven = readings
+    .map((reading, index) => ({ reading, index }))
+    .filter(({ reading }) => normalizeConnectionStatus(reading?.footToEarthingConnectionStatus) === 'Not given')
+    .map(({ index }) => `F-${index + 1}`);
+  const flags = notGiven.length
+    ? [{ code: 'FOOT_NOT_GIVEN', feet: notGiven, review: false, message: `Foot ${notGiven.join(', ')} has no earth connection (defect)` }]
+    : [];
+  const conditionCodes = [...new Set(readings.flatMap((reading) => normalizeConditionCodes(reading?.conditionCodes)))];
+
   return {
     status,
     standard,
     totalImpedanceZt,
     totalCurrentItotal,
     zsat: round(zsat, 2),
+    flags,
+    conditionCodes,
+    defectText: flags.length ? `${flags[0].message}.` : '',
+    comment
+  };
+}
+
+// ---- Ground (grid) resistance, MS-07 -----------------------------------------
+// Compared with the calculated limit of the pit sharing its tag (IS 3043:2018 Cl. 14.2),
+// or the client's value when the profile gives one on GND-LIMIT. Healthy or
+// >Permissible Limit: the pit warning band and P1/P2/P3 are electrode-only.
+function deriveGroundResistanceAssessment(row, contextOrReport) {
+  const context = resolveContext(contextOrReport);
+  const standard = getStandardGuidance(context.profile).groundResistance;
+  const reading = asLooseNumber(row?.r618);
+  const tag = asTrimmedString(row?.tag);
+  const clientValue = context.profile.get('GND-LIMIT').value;
+  const pitLimit = tag ? context.pitLimits && context.pitLimits.get(tag.toLowerCase()) : undefined;
+  const limit = Number.isFinite(clientValue) ? clientValue : Number.isFinite(pitLimit) ? pitLimit : null;
+  const limitSource = Number.isFinite(clientValue) ? 'client value' : Number.isFinite(pitLimit) ? `limit of pit ${tag}` : null;
+  const fop = checkFopAgreement({ r618: reading, r50: asLooseNumber(row?.r50), r70: asLooseNumber(row?.r70), method: row?.method }, context.profile);
+  const flags = fop && !fop.agrees ? [{ code: 'FOP_DISAGREE', message: fopRemark(fop), review: true }] : [];
+
+  let status = pendingStatus();
+  let comment = 'Enter the resistance at 61.8% to compare it with the limit of the associated pit.';
+  if (Number.isFinite(reading) && limit === null) {
+    comment = tag
+      ? `No pit with tag ${tag} has a calculable limit (soil resistivity and pit dimensions are needed), so this reading cannot be assessed.`
+      : 'Enter the tag of the pit this ground belongs to so its limit can be used.';
+  } else if (Number.isFinite(reading)) {
+    status = getLimitStatus(reading, limit);
+    comment =
+      status.label === 'Healthy'
+        ? `Ground resistance ${fmt2(reading)} ohm is within the ${fmt2(limit)} ohm ${limitSource}.`
+        : `Ground resistance ${fmt2(reading)} ohm exceeds the ${fmt2(limit)} ohm ${limitSource}.`;
+  }
+  if (flags.length) {
+    comment += ` ${flags[0].message}.`;
+  }
+
+  return {
+    status,
+    standard,
+    measured: Number.isFinite(reading) ? reading : null,
+    limit: limit === null ? null : round(limit, 2),
+    limitSource,
+    fop,
+    flags,
+    conditionCodes: normalizeConditionCodes(row?.conditionCodes),
     comment
   };
 }
@@ -845,6 +1115,91 @@ function assessStepTouchReading({ kind, measuredVolts, testCurrent, faultCurrent
   };
 }
 
+// Surface layer derating factor Cs. A client design value (header override) wins and is
+// printed as client-specified; with no surface layer Cs = 1; otherwise the IEEE 80-2013
+// formula named on ST-LIMIT params: Cs = 1 - 0.09 (1 - rho/rho_s) / (2 h_s + 0.09).
+function resolveSurfaceFactor(header, siteRho, profile) {
+  const params = profile.params('ST-LIMIT');
+  const override = asLooseNumber(header && header[params.cs_override_field]);
+  const surfaceRho = asLooseNumber(header?.surfaceResistivity);
+  const thickness = asLooseNumber(header?.surfaceThicknessM);
+  const rhoS = Number.isFinite(surfaceRho) && surfaceRho > 0 ? surfaceRho : Number.isFinite(siteRho) ? siteRho : null;
+  if (Number.isFinite(override) && override > 0) {
+    const source = asTrimmedString(header?.csSource);
+    return { cs: override, rhoS, source: `client-specified${source ? ` (${source})` : ''}`, missing: rhoS === null ? ['surface or site soil resistivity'] : [] };
+  }
+  if (Number.isFinite(surfaceRho) && surfaceRho > 0 && Number.isFinite(thickness) && thickness > 0) {
+    if (!Number.isFinite(siteRho) || siteRho <= 0) {
+      return { cs: null, rhoS, source: params.cs_formula_reference, missing: ['site soil resistivity (for Cs)'] };
+    }
+    return { cs: 1 - (0.09 * (1 - siteRho / surfaceRho)) / (2 * thickness + 0.09), rhoS, source: params.cs_formula_reference, missing: [] };
+  }
+  return { cs: 1, rhoS, source: 'no surface layer (Cs = 1)', missing: rhoS === null ? ['site soil resistivity (rho_s = rho without a surface layer)'] : [] };
+}
+
+// ---- Step & touch voltage, MS-08 ----------------------------------------------
+// Each row's Vmax (or the largest of V1-V3) is scaled by If/It and compared with the
+// tolerable step or touch voltage for the header's surface layer and fault clearing
+// time. With body weight "both" the stricter (50 kg) limit governs.
+function deriveStepTouchAssessment(row, contextOrReport) {
+  const context = resolveContext(contextOrReport);
+  const standard = getStandardGuidance(context.profile).stepTouchVoltage;
+  // `dayHeader` is the header of the day the row was measured on (final reports).
+  const header = row?.dayHeader || (context.headers && context.headers.stepTouchVoltage) || {};
+  const type = asTrimmedString(row?.measurementType);
+  const kind = type === 'Step' ? 'step' : type.startsWith('Touch') ? 'touch' : null;
+  const volts = ['v1', 'v2', 'v3'].map((key) => asLooseNumber(row?.[key])).filter((value) => Number.isFinite(value));
+  const vmax = asLooseNumber(row?.vmax) ?? (volts.length ? Math.max(...volts) : null);
+  const testCurrent = asLooseNumber(row?.testCurrentA);
+  const faultCurrent = Number.isFinite(asLooseNumber(header.faultCurrentKA)) ? asLooseNumber(header.faultCurrentKA) * 1000 : null;
+  const clearingTime = asLooseNumber(header.faultClearingTimeS);
+  const basis = asTrimmedString(header.bodyWeightBasis);
+  const weights = basis === 'both' ? [50, 70] : basis === '50' ? [50] : basis === '70' ? [70] : [];
+
+  const surface = resolveSurfaceFactor(header, context.rho, context.profile);
+  const missing = [];
+  if (!kind) missing.push('measurement type');
+  if (!Number.isFinite(vmax)) missing.push('voltage reading');
+  if (!Number.isFinite(testCurrent)) missing.push('test current It');
+  if (!Number.isFinite(faultCurrent)) missing.push('earth fault current If (header)');
+  if (!Number.isFinite(clearingTime)) missing.push('fault clearing time ts (header)');
+  if (!weights.length) missing.push('body weight basis (header)');
+  missing.push(...surface.missing);
+
+  const base = { standard, vmax: Number.isFinite(vmax) ? vmax : null, cs: surface.cs, csSource: surface.source, rhoS: surface.rhoS, missing, conditionCodes: [] };
+  if (missing.length) {
+    return {
+      ...base,
+      status: pendingStatus(),
+      scaledVolts: null,
+      limit: null,
+      limitSource: null,
+      bodyWeightKg: null,
+      comment: Number.isFinite(vmax) || kind ? `Cannot be assessed yet: ${missing.join(', ')} not recorded.` : 'Enter the measurement type, test current and voltage readings.'
+    };
+  }
+
+  const tolerables = weights.map((weight) => ({
+    weight,
+    tolerable: calculateTolerableStepTouch({ surfaceResistivity: surface.rhoS, surfaceFactor: surface.cs, faultClearingTime: clearingTime, bodyWeightKg: weight }, context.profile)
+  }));
+  const governing = tolerables.reduce((best, entry) => (!best || entry.tolerable[kind] < best.tolerable[kind] ? entry : best), null);
+  const result = assessStepTouchReading({ kind, measuredVolts: vmax, testCurrent, faultCurrent, tolerable: governing.tolerable }, context);
+  const comment =
+    result.status.label === 'Healthy'
+      ? `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; Cs ${fmt2(surface.cs)}, ${surface.source}).`
+      : `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, which is not below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; Cs ${fmt2(surface.cs)}, ${surface.source}).`;
+  return {
+    ...base,
+    status: result.status,
+    scaledVolts: result.scaledVolts,
+    limit: round(result.limit, 2),
+    limitSource: result.limitSource,
+    bodyWeightKg: governing.weight,
+    comment
+  };
+}
+
 function valueHasAnyInput(value, key = '') {
   if (key === 'rowId') {
     return false;
@@ -882,12 +1237,19 @@ function normalizeRowMeta(row, prefix = 'row') {
 
 function normalizeSoilRows(rows) {
   return (Array.isArray(rows) ? rows : [])
-    .filter(rowHasAnyValue)
+    // The printed sheet pre-fills the spacings; a row only counts once it holds a
+    // reading, a remark or an observation.
+    .filter((row) => asTrimmedString(row?.resistivity) !== '' || asTrimmedString(row?.remark) !== '' || asTrimmedString(row?.rowObservation) !== '' || (Array.isArray(row?.rowPhotos) && row.rowPhotos.length > 0))
     .map((row) => ({
       ...normalizeRowMeta(row, 'soil'),
       spacing: asTextNumber(row.spacing),
-      resistivity: asTextNumber(row.resistivity)
+      resistivity: asTextNumber(row.resistivity),
+      remark: asTrimmedString(row.remark)
     }));
+}
+
+function normalizeSoilBearings(bearings) {
+  return Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, asTextNumber(bearings && bearings[key])]));
 }
 
 function soilLocationHasAnyValue(location) {
@@ -896,8 +1258,7 @@ function soilLocationHasAnyValue(location) {
     Boolean(asTrimmedString(location?.drivenElectrodeDiameter)) ||
     Boolean(asTrimmedString(location?.drivenElectrodeLength)) ||
     Boolean(asTrimmedString(location?.notes)) ||
-    normalizeSoilRows(location?.direction1).length > 0 ||
-    normalizeSoilRows(location?.direction2).length > 0
+    SOIL_DIRECTION_KEYS.some((key) => normalizeSoilRows(location?.[key]).length > 0)
   );
 }
 
@@ -912,9 +1273,11 @@ function normalizeSoilLocations(input) {
     .map((location, index) => ({
       locationId: asTrimmedString(location?.locationId) || buildRowId('soil-location'),
       name: asTrimmedString(location?.name) || `Location ${index + 1}`,
-      direction1: normalizeSoilRows(location?.direction1),
-      direction2: normalizeSoilRows(location?.direction2),
+      ...Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, normalizeSoilRows(location?.[key])])),
       inputUnit: asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : 'ohm-m',
+      probeDepthCm: asTextNumber(location?.probeDepthCm),
+      weather: asTrimmedString(location?.weather),
+      bearings: normalizeSoilBearings(location?.bearings),
       drivenElectrodeDiameter: asTrimmedString(location?.drivenElectrodeDiameter),
       drivenElectrodeLength: asTrimmedString(location?.drivenElectrodeLength),
       notes: asTrimmedString(location?.notes)
@@ -942,8 +1305,27 @@ function towerReadingHasAnyValue(reading) {
     Boolean(asTrimmedString(reading?.measuredImpedance)) ||
     Boolean(asTrimmedString(reading?.rowObservation)) ||
     (Array.isArray(reading?.rowPhotos) && reading.rowPhotos.length > 0) ||
-    (asTrimmedString(reading?.footToEarthingConnectionStatus) && asTrimmedString(reading?.footToEarthingConnectionStatus) !== 'Given')
+    Boolean(asTrimmedString(reading?.photoRef)) ||
+    Boolean(asTrimmedString(reading?.remark)) ||
+    normalizeConditionCodes(reading?.conditionCodes).length > 0 ||
+    normalizeConnectionStatus(reading?.footToEarthingConnectionStatus) !== 'Given'
   );
+}
+
+// 'Given' | 'Not given'; older reports wrote 'Not Given'.
+function normalizeConnectionStatus(value) {
+  return asTrimmedString(value).toLowerCase() === 'not given' ? 'Not given' : 'Given';
+}
+
+function normalizeTowerReadingFields(source) {
+  return {
+    footToEarthingConnectionStatus: normalizeConnectionStatus(source?.footToEarthingConnectionStatus),
+    measuredCurrentMa: asTrimmedString(source?.measuredCurrentMa),
+    measuredImpedance: asTrimmedString(source?.measuredImpedance),
+    conditionCodes: normalizeConditionCodes(source?.conditionCodes),
+    photoRef: asTrimmedString(source?.photoRef),
+    remark: asTrimmedString(source?.remark)
+  };
 }
 
 function towerGroupHasAnyValue(group) {
@@ -968,9 +1350,7 @@ function normalizeTowerFootingGroups(inputGroups) {
         return {
           ...normalizeRowMeta(source, 'tower'),
           measurementPointLocation: foot,
-          footToEarthingConnectionStatus: asTrimmedString(source?.footToEarthingConnectionStatus) || 'Given',
-          measuredCurrentMa: asTrimmedString(source?.measuredCurrentMa),
-          measuredImpedance: asTrimmedString(source?.measuredImpedance)
+          ...normalizeTowerReadingFields(source)
         };
       });
 
@@ -1036,9 +1416,7 @@ function normalizeTowerFootingGroups(inputGroups) {
     group.readings[footIndex] = {
       ...normalizeRowMeta(row, 'tower'),
       measurementPointLocation: TOWER_FOOT_POINTS[footIndex],
-      footToEarthingConnectionStatus: asTrimmedString(row?.footToEarthingConnectionStatus) || 'Given',
-      measuredCurrentMa: asTrimmedString(row?.measuredCurrentMa),
-      measuredImpedance: asTrimmedString(row?.measuredImpedance)
+      ...normalizeTowerReadingFields(row)
     };
   });
 
@@ -1057,8 +1435,10 @@ function normalizeLoopRows(inputRows) {
       normalized.deviceRating = asTrimmedString(row?.deviceRating);
       normalized.breakingCapacity = asTrimmedString(row?.breakingCapacity);
       normalized.measuredPoints = asTrimmedString(row?.measuredPoints) || PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
+      normalized.tripCurve = asTrimmedString(row?.tripCurve);
       normalized.loopImpedance = asTrimmedString(row?.loopImpedance || row?.measuredZs);
       normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.photoRef = asTrimmedString(row?.photoRef);
       normalized.remarks = asTrimmedString(row?.remarks);
       return normalized;
     })
@@ -1086,6 +1466,7 @@ function normalizeFaultRows(inputRows) {
       normalized.prospectiveFaultCurrent = asTrimmedString(row?.prospectiveFaultCurrent);
       normalized.shortCircuitCurrentLN = asTrimmedString(row?.shortCircuitCurrentLN);
       normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.photoRef = asTrimmedString(row?.photoRef);
       normalized.comment = asTrimmedString(row?.comment);
       return normalized;
     })
@@ -1097,7 +1478,49 @@ function normalizeFaultRows(inputRows) {
     }));
 }
 
-function normalizeReportInput(payload) {
+const LEGACY_MATERIALS = { copper: 'Cu', 'copper bonded': 'Cu-bonded' };
+
+function normalizeMaterial(value) {
+  const text = asTrimmedString(value);
+  return LEGACY_MATERIALS[text.toLowerCase()] || text;
+}
+
+// Per-sheet header blocks as printed: instrument, serial, calibration due, times and the
+// sheet's own header cells. Soil keeps its header on each location instead.
+function normalizeSheetHeaders(input) {
+  const headers = {};
+  SHEETS.forEach((sheet) => {
+    const source = input && typeof input[sheet.id] === 'object' && input[sheet.id] ? input[sheet.id] : null;
+    if (!source || sheet.id === 'soilResistivity') {
+      return;
+    }
+    const header = createDefaultSheetHeader(sheet.id);
+    let hasInput = false;
+    Object.keys(header).forEach((key) => {
+      if (typeof header[key] === 'boolean') {
+        header[key] = source[key] === true || source[key] === 'true';
+      } else {
+        header[key] = asTrimmedString(source[key]);
+      }
+      hasInput = hasInput || Boolean(header[key]);
+    });
+    if (hasInput) {
+      headers[sheet.id] = header;
+    }
+  });
+  return headers;
+}
+
+class ReportValidationError extends Error {
+  constructor(errors) {
+    super(errors.length > 1 ? `${errors[0].message} (${errors.length - 1} more problem${errors.length === 2 ? '' : 's'} on this report.)` : errors[0].message);
+    this.name = 'ReportValidationError';
+    this.errors = errors;
+  }
+}
+
+// options.allowRetired: let a report select a retired test (only for reading old data).
+function normalizeReportInput(payload, options = {}) {
   const draft = buildDefaultDraft();
   const input = payload || {};
 
@@ -1108,6 +1531,9 @@ function normalizeReportInput(payload) {
     workOrder: asTrimmedString(input?.project?.workOrder),
     reportDate: asTrimmedString(input?.project?.reportDate),
     engineerName: asTrimmedString(input?.project?.engineerName),
+    clientRepresentative: asTrimmedString(input?.project?.clientRepresentative),
+    groundCondition: asTrimmedString(input?.project?.groundCondition),
+    soilSpacingPreset: asTrimmedString(input?.project?.soilSpacingPreset) || DEFAULT_SOIL_PRESET,
     acceptanceProfile: asTrimmedString(input?.project?.acceptanceProfile) || DEFAULT_PROFILE_ID,
     assumedSoilResistivity: asTextNumber(input?.project?.assumedSoilResistivity),
     assumedSoilResistivitySource: asTrimmedString(input?.project?.assumedSoilResistivitySource),
@@ -1133,6 +1559,9 @@ function normalizeReportInput(payload) {
   if (!selectedCount) {
     throw new Error('Select at least one measurement type.');
   }
+  TEST_LIBRARY.filter((test) => test.retired && tests[test.id] && !options.allowRetired).forEach((test) => {
+    throw new Error(`${test.label} is retired; record these points on Earth Continuity & Bonding (MS-03).`);
+  });
 
   const requiredProjectFields = [
     ['projectNo', 'Project number is required.'],
@@ -1169,6 +1598,7 @@ function normalizeReportInput(payload) {
   const report = {
     project,
     tests,
+    sheetHeaders: normalizeSheetHeaders(input?.sheetHeaders),
     soilResistivity,
     electrodeResistance: normalizeRows(
       input?.electrodeResistance,
@@ -1179,9 +1609,15 @@ function normalizeReportInput(payload) {
       'materialType',
       'length',
       'diameter',
+      'plateLengthM',
+      'plateWidthM',
       'plateArea',
       'resistanceWithoutGrid',
+      'checkR50',
+      'checkR70',
       'resistanceWithGrid',
+      'method',
+      'photoRef',
       'observation'
       ],
       'electrode',
@@ -1191,6 +1627,7 @@ function normalizeReportInput(payload) {
       const resistanceWithGrid = row.resistanceWithGrid || asTrimmedString(source?.measuredResistance);
       const normalizedRow = {
         ...row,
+        materialType: normalizeMaterial(row.materialType),
         resistanceWithGrid,
         observation: asTrimmedString(source?.observation)
       };
@@ -1203,14 +1640,20 @@ function normalizeReportInput(payload) {
       input?.continuityTest,
       [
       'srNo',
+      'tag',
       'mainLocation',
+      'referencePoint',
       'measurementPoint',
+      'distanceM',
+      'testCurrentA',
       'resistance',
       'impedance',
       'testLeadResistance',
+      'photoRef',
       'comment'
       ],
-      'continuity'
+      'continuity',
+      ['conditionCodes']
     ).map((row) => ({
       ...row,
       comment: engineerRemark(row.comment)
@@ -1226,6 +1669,7 @@ function normalizeReportInput(payload) {
       'resistanceTowardsEquipment',
       'resistanceTowardsGrid',
       'testLeadResistance',
+      'photoRef',
       'comment'
       ],
       'riser',
@@ -1234,6 +1678,17 @@ function normalizeReportInput(payload) {
       ...row,
       comment: engineerRemark(row.comment)
     })),
+    groundResistance: normalizeRows(
+      input?.groundResistance,
+      ['srNo', 'tag', 'location', 'method', 'currentProbeDistanceM', 'r50', 'r618', 'r70', 'remark'],
+      'ground',
+      ['conditionCodes']
+    ),
+    stepTouchVoltage: normalizeRows(
+      input?.stepTouchVoltage,
+      ['srNo', 'location', 'measurementType', 'surface', 'distanceM', 'testCurrentA', 'v1', 'v2', 'v3', 'vmax', 'photoRef', 'remark'],
+      'steptouch'
+    ),
     earthContinuityTest: normalizeRows(
       input?.earthContinuityTest,
       [
@@ -1306,6 +1761,14 @@ function normalizeReportInput(payload) {
     }
   });
 
+  // Field-level checks from the sheet definitions. Errors are invalid data and block the
+  // save; warnings (incomplete, out of range, unconfirmed) are computed again on every
+  // assessment and never stored.
+  const { errors } = validateReport(report, buildAssessmentContext(report));
+  if (errors.length) {
+    throw new ReportValidationError(errors);
+  }
+
   return report;
 }
 
@@ -1341,16 +1804,17 @@ function calculateSoilSummary(report) {
   const exact = [];
   const locationSummaries = rawLocations.map((location, index) => {
     const inputUnit = asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : 'ohm-m';
-    const direction1Values = (location.direction1 || [])
-      .map((row) => readSoilRho(row, inputUnit))
-      .filter((value) => Number.isFinite(value));
-    const direction2Values = (location.direction2 || [])
-      .map((row) => readSoilRho(row, inputUnit))
-      .filter((value) => Number.isFinite(value));
-
-    const direction1Average = average(direction1Values);
-    const direction2Average = average(direction2Values);
-    const overallAverage = average([direction1Average, direction2Average].filter((value) => Number.isFinite(value)));
+    // Mean of each direction's readings, then the mean of the direction means
+    // (up to 8 directions; 2 perpendicular directions minimum).
+    const directionAverages = Object.fromEntries(
+      SOIL_DIRECTION_KEYS.map((key) => [
+        key,
+        average((location[key] || []).map((row) => readSoilRho(row, inputUnit)).filter((value) => Number.isFinite(value)))
+      ])
+    );
+    const direction1Average = directionAverages.direction1;
+    const direction2Average = directionAverages.direction2;
+    const overallAverage = average(Object.values(directionAverages).filter((value) => Number.isFinite(value)));
     const category = getSoilCategory(overallAverage, soilProfile);
     exact.push({ direction1Average, direction2Average, overallAverage });
 
@@ -1360,6 +1824,7 @@ function calculateSoilSummary(report) {
       direction1Average: round(direction1Average, 2),
       direction2Average: round(direction2Average, 2),
       overallAverage: round(overallAverage, 2),
+      directionAverages: Object.fromEntries(Object.entries(directionAverages).map(([key, value]) => [key, round(value, 2)])),
       category,
       inputUnit,
       drivenElectrodeDiameter: asTrimmedString(location?.drivenElectrodeDiameter),
@@ -1474,6 +1939,8 @@ function collectTestUnits(report, context = buildAssessmentContext(report)) {
     units.prospectiveFaultCurrent = summarizePanels(report.prospectiveFaultCurrent, deriveFaultCurrentAssessment, context).map((panel) => panel.status);
   }
   collect('riserIntegrityTest', report?.riserIntegrityTest, deriveRiserAssessment);
+  collect('groundResistance', report?.groundResistance, deriveGroundResistanceAssessment);
+  collect('stepTouchVoltage', report?.stepTouchVoltage, deriveStepTouchAssessment);
   collect('earthContinuityTest', report?.earthContinuityTest, deriveEarthContinuityAssessment);
   if (report?.tests?.towerFootingResistance) {
     const summaries = summarizeTowerGroups(report.towerFootingResistance);
@@ -1558,6 +2025,11 @@ function normalizeOcrImports(input) {
 }
 
 module.exports = {
+  ReportValidationError,
+  normalizeSheetHeaders,
+  createDefaultSheetHeader,
+  createDefaultGroundResistanceRow,
+  createDefaultStepTouchRow,
   TEST_LIBRARY,
   EQUIPMENT_LIBRARY,
   buildDefaultDraft,
@@ -1578,6 +2050,11 @@ module.exports = {
   deriveRiserAssessment,
   deriveEarthContinuityAssessment,
   deriveTowerFootingAssessment,
+  deriveGroundResistanceAssessment,
+  deriveStepTouchAssessment,
+  checkFopAgreement,
+  plateAreaOf,
+  resolveSurfaceFactor,
   summarizeTowerGroups,
   buildTowerGroupKey,
   getStandardGuidance,

@@ -1,7 +1,7 @@
 {
   "document": "ET-D03-REG-002",
   "title": "ESHA Standards Acceptance List",
-  "revision": "R1 (draft)",
+  "revision": "R2 (draft)",
   "rules_for_use": [
     "Every limit, formula and classification used in an ESHA report must come from the project's active profile in this list.",
     "A project uses ETPL-DEFAULT unless a client profile exists. A client profile overrides only the criteria it lists; all others fall back to ETPL-DEFAULT.",
@@ -99,7 +99,16 @@
           "rule": "Fall of potential, potential probe at 61.8%; clamp-on, slope or 90/180 as alternatives",
           "basis": "standard",
           "source": "IS 3043:2018",
-          "clause": "41, 41.1"
+          "clause": "41, 41.1",
+          "params": {
+            "agreement_tolerance_pct": 5,
+            "agreement_tolerance_basis": "etpl_acceptance",
+            "agreement_tolerance_source": "ETPL practice. IS 3043:2018 Cl. 41.1.6 requires the 50% / 70% readings to agree with the 61.8% reading but gives no number; 5% is ETPL's adopted tolerance.",
+            "applies_to": [
+              "earth_electrode",
+              "ground_resistance"
+            ]
+          }
         },
         {
           "id": "PIT-BAND",
@@ -196,7 +205,10 @@
             "client_override_fields": [
               "stepLimitV",
               "touchLimitV"
-            ]
+            ],
+            "cs_formula": "Cs = 1 - 0.09*(1 - rho/rho_s)/(2*h_s + 0.09); Cs = 1 when there is no surface layer",
+            "cs_formula_reference": "IEEE 80-2013, surface layer derating factor Cs",
+            "cs_override_field": "csOverride"
           }
         },
         {
@@ -318,6 +330,10 @@
     {
       "rev": "R1",
       "note": "Machine-readable factors and bands added (PIT-BAND, TOWER-ZSAT, OVERALL, SOIL-CLASS); no value changed"
+    },
+    {
+      "rev": "R2",
+      "note": "Added PIT-METHOD.params.agreement_tolerance_pct (5, etpl_acceptance; used for MS-02 and MS-07) and ST-LIMIT.params.cs_formula / cs_formula_reference / cs_override_field. Draft: date and approver to be recorded on approval."
     }
   ]
 }

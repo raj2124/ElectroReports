@@ -47,7 +47,9 @@ const REMARK_FIELDS = Object.freeze({
   prospectiveFaultCurrent: 'comment',
   riserIntegrityTest: 'comment',
   earthContinuityTest: 'remark',
-  towerFootingResistance: 'remarks'
+  towerFootingResistance: 'remarks',
+  groundResistance: 'remark',
+  stepTouchVoltage: 'remark'
 });
 
 // A copy of the report with saved generated remarks cleared. Used when loading a

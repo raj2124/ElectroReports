@@ -9,6 +9,7 @@ const {
   canTransition,
   assembleFinalReport
 } = require('./reportCollectionModel');
+const { assessReport } = require('./assessmentService');
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -369,7 +370,10 @@ function createReportStore({ filePath }) {
   }
 
   // ---- Review workflow: draft -> in_review -> approved (daily AND final) ------
-  function transitionReport(id, toStatus, { actor = '', note = '' } = {}) {
+  // Expired instrument calibration is warned about on save (never blocked on site), but a
+  // FINAL report cannot be approved until a reviewer acknowledges it with a note. The
+  // acknowledgement is recorded with the transition in report_transitions.
+  function transitionReport(id, toStatus, { actor = '', note = '', acknowledgement = '' } = {}) {
     const current = getReport(id);
     if (!current) {
       return null;
@@ -380,6 +384,20 @@ function createReportStore({ filePath }) {
     const fromStatus = getReviewStatus(current);
     if (!canTransition(fromStatus, toStatus)) {
       throw new Error(`Invalid transition ${fromStatus} -> ${toStatus}.`);
+    }
+    let recordedNote = String(note || '');
+    if (toStatus === 'approved' && getReportKind(current) === REPORT_KINDS.FINAL) {
+      const blocking = assessReport(current).reviewItems.filter((item) => item.blocksApproval);
+      if (blocking.length) {
+        const acknowledged = String(acknowledgement || '').trim();
+        if (!acknowledged) {
+          const error = new Error(`Acknowledge before approving: ${blocking.map((item) => item.text).join(' ')}`);
+          error.code = 'ACKNOWLEDGEMENT_REQUIRED';
+          error.items = blocking;
+          throw error;
+        }
+        recordedNote = `Calibration acknowledged: ${acknowledged}${recordedNote ? ` | ${recordedNote}` : ''}`;
+      }
     }
     const at = new Date().toISOString();
     const updated = { ...current, reviewStatus: toStatus, updatedAt: at };
@@ -393,7 +411,7 @@ function createReportStore({ filePath }) {
       });
       db.prepare(
         'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at);
+      ).run(updated.id, fromStatus, toStatus, String(actor || ''), recordedNote, at);
     })();
     return updated;
   }

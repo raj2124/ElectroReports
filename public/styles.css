@@ -3210,3 +3210,386 @@ textarea {
   }
 }
 }
+
+/* ===== Measurement sheets MS-01..MS-09 (data-driven entry screens) ===== */
+
+.sheet-ref {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Tick groups: radio buttons (choose one) and checkboxes (condition codes).
+   Every tick is a 44 px tap target so it works with gloves and on a phone. */
+.tick-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tick input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tick-box {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--neutral);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.tick input[type='radio'] + .tick-box {
+  border-radius: 50%;
+}
+
+.tick input:checked + .tick-box {
+  border-color: var(--brand-dark);
+  background: var(--brand-dark) radial-gradient(circle, #fff 0 32%, transparent 36%);
+}
+
+.tick input[type='checkbox']:checked + .tick-box {
+  background: var(--brand-dark);
+  box-shadow: inset 0 0 0 4px #fff;
+}
+
+.tick input:checked ~ .tick-label {
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+
+.tick:focus-within {
+  outline: 3px solid var(--brand-soft);
+  border-color: var(--brand-dark);
+}
+
+.tick-label {
+  font-size: 0.95rem;
+  line-height: 1.15;
+}
+
+.tick-group-multi .tick {
+  min-width: 56px;
+  justify-content: flex-start;
+}
+
+/* Sheet header: instrument row and the printed header cells */
+.sheet-header {
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.sheet-job-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.sheet-job-line b {
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.button-small {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.header-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.header-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.header-cell-wide {
+  grid-column: 1 / -1;
+}
+
+.header-cell-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.header-cell .table-input {
+  min-height: 44px;
+  font-size: 1rem;
+}
+
+.header-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.header-subfield {
+  display: flex;
+  flex: 1 1 140px;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.header-hint,
+.field-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.job-ground,
+.assumed-rho-panel {
+  margin-top: 14px;
+}
+
+.assumed-rho-panel {
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+}
+
+/* Problems on a sheet */
+.sheet-problems {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+}
+
+.sheet-problems ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.sheet-problems-critical {
+  border: 1px solid var(--critical);
+  background: var(--critical-soft);
+  color: var(--critical);
+}
+
+.sheet-problems-warning {
+  border: 1px solid var(--warning);
+  background: var(--warning-soft);
+  color: #6f4e0a;
+}
+
+.flag-chip {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--warning);
+  background: var(--warning-soft);
+  color: #6f4e0a;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-limit {
+  display: inline-block;
+  margin: 2px 6px 2px 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.sheet-status-cell {
+  min-width: 190px;
+}
+
+.sheet-notes {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.sheet-notes summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.sheet-legend {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.sheet-legend span {
+  white-space: nowrap;
+}
+
+/* Tables on the sheets */
+.sheet-table .table-input,
+.sheet-cell .table-input {
+  min-height: 44px;
+  font-size: 1rem;
+}
+
+.sheet-cell-ticks {
+  min-width: 150px;
+}
+
+.soil-matrix td,
+.soil-matrix th {
+  white-space: nowrap;
+}
+
+.soil-matrix .table-input {
+  min-width: 96px;
+}
+
+.sheet-mean-row td {
+  background: var(--neutral-soft);
+}
+
+.soil-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.soil-pages .step-pill {
+  min-height: 44px;
+}
+
+.soil-add-spacing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* Reviewer checklist and export note */
+.review-checklist {
+  margin: 14px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+}
+
+.review-checklist ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.review-item-blocking {
+  color: var(--critical);
+}
+
+.export-note {
+  flex: 1 1 100%;
+  margin: 6px 0 0;
+  max-width: 460px;
+  color: var(--warning);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+/* Phones: each table row becomes a card, labelled by its column */
+@media (max-width: 720px) {
+  .sheet-table thead,
+  .data-table.sheet-table thead {
+    display: none;
+  }
+
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row,
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row > td {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row {
+    margin: 0 0 14px;
+    padding: 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-strong);
+  }
+
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row > td {
+    padding: 6px 0;
+    border: 0;
+  }
+
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row > td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .data-table:not(.tower-data-table):not(.soil-matrix) .sheet-row > td.phase-group-cell {
+    display: block;
+  }
+
+  .header-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tick {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .tick-group-multi .tick {
+    flex: 1 1 calc(25% - 6px);
+    padding-right: 8px;
+  }
+
+  .sheet-status-cell {
+    min-width: 0;
+  }
+
+  .export-note {
+    max-width: none;
+  }
+}

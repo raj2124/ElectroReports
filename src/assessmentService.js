@@ -1,7 +1,8 @@
 // Computed assessments for a report or an in-progress draft: the single source of
-// truth the browser reads. Every status, priority, limit, basis, remark and
-// classification shown in the UI is produced here by reportModel's rules, from the
-// project's acceptance profile. The browser holds no copy of any rule.
+// truth the browser reads. Every status, priority, limit, basis, remark, flag,
+// classification and validation message shown in the UI is produced here by
+// reportModel's rules, from the project's acceptance profile and the sheet
+// definitions. The browser holds no copy of any rule.
 //
 // Unlike normalizeReportInput this is lenient: a draft is incomplete by nature, so
 // missing sections, blank rows and absent project fields are fine. It only throws
@@ -9,6 +10,8 @@
 
 const { describeCriterion } = require('./acceptance');
 const { engineerRemark, REMARK_FIELDS } = require('./remarks');
+const { getSheet } = require('./sheetDefinitions');
+const { validateReport } = require('./sheetValidation');
 const {
   TEST_LIBRARY,
   buildAssessmentContext,
@@ -26,6 +29,8 @@ const {
   deriveFaultCurrentAssessment,
   deriveRiserAssessment,
   deriveEarthContinuityAssessment,
+  deriveGroundResistanceAssessment,
+  deriveStepTouchAssessment,
   deriveTowerFootingAssessment
 } = require('./reportModel');
 
@@ -34,6 +39,8 @@ const ROW_DERIVERS = {
   loopImpedanceTest: deriveLoopImpedanceAssessment,
   prospectiveFaultCurrent: deriveFaultCurrentAssessment,
   riserIntegrityTest: deriveRiserAssessment,
+  groundResistance: deriveGroundResistanceAssessment,
+  stepTouchVoltage: deriveStepTouchAssessment,
   earthContinuityTest: deriveEarthContinuityAssessment
 };
 
@@ -45,11 +52,17 @@ const TEST_CRITERIA = {
   loopImpedanceTest: ['LOOP-LIMIT'],
   prospectiveFaultCurrent: ['PFC-RULE'],
   riserIntegrityTest: ['RISER-LIMIT'],
+  groundResistance: ['GND-LIMIT', 'PIT-METHOD'],
+  stepTouchVoltage: ['ST-LIMIT', 'ST-METHOD'],
   earthContinuityTest: ['CONT-LIMIT'],
   towerFootingResistance: ['TOWER-ZSAT']
 };
 
+// Tests with a pass/fail unit that feeds the action counts (soil has none).
+const ACTION_TESTS = ['continuityTest', 'loopImpedanceTest', 'prospectiveFaultCurrent', 'riserIntegrityTest', 'groundResistance', 'stepTouchVoltage', 'earthContinuityTest', 'towerFootingResistance'];
+
 const arrayOf = (value) => (Array.isArray(value) ? value : []);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function citation(criterion) {
   const clause = criterion.clause && criterion.clause !== '-' ? `, Cl. ${criterion.clause}` : '';
@@ -60,16 +73,9 @@ function limitBasis(criterionId, profile) {
   return criterionId ? describeCriterion(profile.get(criterionId)) : null;
 }
 
-// Banner above the electrode table: where the per-pit limits come from.
-function buildElectrodeBanner(context, profile) {
-  const rod = profile.get('PIT-ROD');
-  const clauses = ['PIT-PLATE', 'PIT-ROD', 'PIT-STRIP'].map((id) => profile.get(id).clause).join(' / ');
-  const basis = `${rod.source} Cl. ${clauses}`;
-  if (context.rho === null) {
-    return `Permissible limits are calculated per pit (${basis}). Enter soil resistivity, or an assumed value with its source, to calculate them.`;
-  }
-  const origin = context.rhoAssumed ? `assumed: ${context.rhoSource}` : context.rhoSource.toLowerCase();
-  return `Permissible limit is calculated per pit from site rho = ${context.rho} ohm-m (${origin}). Basis: ${basis}.`;
+function sheetLabel(testId) {
+  const sheet = getSheet(testId);
+  return sheet && sheet.code !== 'legacy' ? sheet.code : (TEST_LIBRARY.find((test) => test.id === testId) || {}).shortLabel || testId;
 }
 
 function buildModules({ report, soil, summaries, assessments }) {
@@ -130,10 +136,10 @@ function buildActions(assessments) {
   const electrodes = assessments.electrodeResistance.rows;
   const electrodeP1 = electrodes.filter((row) => row.priority === 'P1').length;
   const electrodeP2 = electrodes.filter((row) => row.priority === 'P2').length;
-  const others = ['continuityTest', 'loopImpedanceTest', 'prospectiveFaultCurrent', 'riserIntegrityTest', 'earthContinuityTest', 'towerFootingResistance'];
   const counts = {};
-  others.forEach((id) => {
-    counts[id] = { attention: attention(assessments[id].rows), critical: critical(assessments[id].rows) };
+  ACTION_TESTS.forEach((id) => {
+    const rows = (assessments[id] && assessments[id].rows) || [];
+    counts[id] = { attention: attention(rows), critical: critical(rows) };
   });
   return {
     electrodeP1,
@@ -142,11 +148,73 @@ function buildActions(assessments) {
     loopAttention: counts.loopImpedanceTest.attention,
     faultAttention: counts.prospectiveFaultCurrent.attention,
     riserAttention: counts.riserIntegrityTest.attention,
+    groundAttention: counts.groundResistance.attention,
+    stepTouchAttention: counts.stepTouchVoltage.attention,
     earthContinuityAttention: counts.earthContinuityTest.attention,
     towerFootingAttention: counts.towerFootingResistance.attention,
-    criticalTotal: electrodeP1 + others.reduce((sum, id) => sum + counts[id].critical, 0),
-    total: electrodeP1 + electrodeP2 + others.reduce((sum, id) => sum + counts[id].attention, 0)
+    criticalTotal: electrodeP1 + ACTION_TESTS.reduce((sum, id) => sum + counts[id].critical, 0),
+    total: electrodeP1 + electrodeP2 + ACTION_TESTS.reduce((sum, id) => sum + counts[id].attention, 0)
   };
+}
+
+// Banner above the electrode table: where the per-pit limits come from.
+function buildElectrodeBanner(context, profile) {
+  const rod = profile.get('PIT-ROD');
+  const clauses = ['PIT-PLATE', 'PIT-ROD', 'PIT-STRIP'].map((id) => profile.get(id).clause).join(' / ');
+  const basis = `${rod.source} Cl. ${clauses}`;
+  if (context.rho === null) {
+    return `Permissible limits are calculated per pit (${basis}). Enter soil resistivity, or an assumed value with its source, to calculate them.`;
+  }
+  const origin = context.rhoAssumed ? `assumed: ${context.rhoSource}` : context.rhoSource.toLowerCase();
+  return `Permissible limit is calculated per pit from site rho = ${context.rho} ohm-m (${origin}). Basis: ${basis}.`;
+}
+
+// Calibration recorded per day on a FINAL report (assembled from its dailies).
+function calibrationItems(report) {
+  const seen = new Set();
+  const items = [];
+  arrayOf(report?.calibrationRecords).forEach((record) => {
+    const { calibrationDue, workDate } = record || {};
+    if (!ISO_DATE.test(String(calibrationDue || '')) || !ISO_DATE.test(String(workDate || '')) || calibrationDue >= workDate) {
+      return;
+    }
+    const key = [record.sheet, record.instrument, record.serialNo, calibrationDue, workDate].join('|');
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    items.push({
+      id: `CAL_EXPIRED:${key}`,
+      code: 'CAL_EXPIRED',
+      sheet: record.sheet,
+      blocksApproval: true,
+      text: `${sheetLabel(record.sheet)} (${record.collectionDate || workDate}): instrument calibration expired on ${calibrationDue}, before the work date ${workDate}.`
+    });
+  });
+  return items;
+}
+
+// What the reviewer must look at before approval (standard 6.4). Items with
+// blocksApproval stop a FINAL report being approved until acknowledged with a note.
+function buildReviewItems(source, validation, assessments) {
+  const items = [];
+  validation.warnings
+    .filter((warning) => warning.review)
+    .forEach((warning) => items.push({ id: `${warning.code}:${warning.path}`, code: warning.code, sheet: warning.sheet, blocksApproval: Boolean(warning.blocksApproval), text: warning.message }));
+  Object.entries(assessments).forEach(([testId, entry]) => {
+    ((entry && entry.rows) || []).forEach((row, index) => {
+      (row.flags || []).filter((flag) => flag.review).forEach((flag) => {
+        items.push({ id: `${flag.code}:${testId}.${index}`, code: flag.code, sheet: testId, blocksApproval: false, text: `${sheetLabel(testId)} row ${index + 1}: ${flag.message}.` });
+      });
+    });
+  });
+  const known = new Set(items.map((item) => item.id));
+  calibrationItems(source).forEach((item) => {
+    if (!known.has(item.id)) {
+      items.push(item);
+    }
+  });
+  return items;
 }
 
 function assessReport(report) {
@@ -171,6 +239,8 @@ function assessReport(report) {
         measured: result.measured,
         measuredBasis: result.measuredBasis,
         conditionCodes: result.conditionCodes,
+        fop: result.fop,
+        flags: result.flags,
         comment: result.comment,
         remark: result.comment
       };
@@ -183,14 +253,13 @@ function assessReport(report) {
     assessments[id] = {
       rows: rows.map((row) => {
         const result = derive(row, context);
+        const typed = field ? engineerRemark(row?.[field]) : '';
         return {
-          status: result.status,
-          standard: result.standard,
+          ...result,
           measured: result.measured ?? null,
-          pscNotRecorded: result.pscNotRecorded,
-          comment: result.comment,
+          typedRemark: typed,
           // The engineer's own words win; otherwise the remark follows the live status.
-          remark: engineerRemark(row?.[field]) || result.comment
+          remark: typed || result.comment
         };
       })
     };
@@ -204,14 +273,19 @@ function assessReport(report) {
   assessments.towerFootingResistance = {
     rows: groups.map((group) => {
       const result = deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group)), context);
+      const typed = engineerRemark(group?.remarks);
       return {
         status: result.status,
         standard: result.standard,
         totalImpedanceZt: result.totalImpedanceZt,
         totalCurrentItotal: result.totalCurrentItotal,
         zsat: result.zsat,
+        flags: result.flags,
+        conditionCodes: result.conditionCodes,
+        defectText: result.defectText,
         comment: result.comment,
-        remark: engineerRemark(group?.remarks) || result.comment
+        typedRemark: typed,
+        remark: typed || [result.comment, result.defectText].filter(Boolean).join(' – ')
       };
     })
   };
@@ -243,6 +317,7 @@ function assessReport(report) {
 
   const selectedIds = modules.map((module) => module.id);
   const criteriaIds = [...new Set(selectedIds.flatMap((id) => TEST_CRITERIA[id] || []))];
+  const validation = validateReport(source, context);
 
   return {
     profile: {
@@ -266,6 +341,8 @@ function assessReport(report) {
     healthySignals,
     tone,
     label,
+    validation,
+    reviewItems: buildReviewItems(source, validation, assessments),
     banners: { electrode: buildElectrodeBanner(context, profile) },
     standards: guidance,
     references: Object.fromEntries(selectedIds.map((id) => [id, (TEST_CRITERIA[id] || []).map((criterionId) => citation(profile.get(criterionId)))])),

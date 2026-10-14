@@ -179,7 +179,8 @@ function buildPayload() {
 
 async function main() {
   const payload = buildPayload();
-  const report = normalizeReportInput(payload);
+  // earthContinuityTest is retired for new reports; this payload still covers it as old data.
+  const report = normalizeReportInput(payload, { allowRetired: true });
 
   assert(report.soilResistivity.locations.length === 1, 'Soil should normalize to one location.');
   assert(report.soilResistivity.locations[0].direction1.length === 6, 'Soil direction 1 should normalize to 6 rows.');
