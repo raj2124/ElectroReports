@@ -88,14 +88,15 @@ textarea {
 }
 
 .app-shell {
-  width: min(1220px, calc(100% - 32px));
+  width: 100%;
   margin: 0 auto 48px;
-  padding-top: 18px;
+  padding: 18px clamp(16px, 2vw, 24px) 0;
 }
 
 .brand-bar {
-  width: min(1220px, calc(100% - 32px));
+  width: 100%;
   margin: 16px auto 0;
+  padding: 0 clamp(16px, 2vw, 24px);
 }
 
 .brand-shell {
@@ -825,16 +826,19 @@ textarea {
   box-shadow: 0 14px 24px rgba(39, 52, 159, 0.18);
 }
 
-/* Dashboard refresh */
+/* Dashboard refresh. The shell is full width with 16-24 px side padding (it used to be
+   capped at 1280 px and centred, which squeezed the measurement sheets). Reading pages
+   keep a comfortable width, see "Page widths" at the end of this file. */
 .app-shell {
-  width: min(1280px, calc(100% - 40px));
+  width: 100%;
   margin: 0 auto 80px;
-  padding-top: 28px;
+  padding: 28px clamp(16px, 2vw, 24px) 0;
 }
 
 .brand-bar {
-  width: min(1280px, calc(100% - 40px));
+  width: 100%;
   margin: 18px auto 0;
+  padding: 0 clamp(16px, 2vw, 24px);
 }
 
 .brand-shell,
@@ -2911,7 +2915,7 @@ textarea {
 @media (max-width: 640px) {
   .app-shell,
   .brand-bar {
-    width: min(100% - 20px, 1220px);
+    width: 100%;
   }
 
   .hero-panel,
@@ -3142,7 +3146,7 @@ textarea {
 @media (max-width: 480px) {
   .app-shell,
   .brand-bar {
-    width: min(100% - 14px, 1220px);
+    width: 100%;
   }
 
   .hero-panel,
@@ -3592,4 +3596,409 @@ textarea {
   .export-note {
     max-width: none;
   }
+}
+
+/* ===== Page widths and responsive sheet tables (Session 6B.1c) ==========================
+   The app shell is full width. Reading pages (dashboard) keep a comfortable width; the
+   sheet entry screens use all of it.
+   Breakpoints for the sheet tables:
+     >= 1280      every sheet fits, no horizontal scroll; ticks wrap inside their cell
+     1024-1279    no horizontal scroll; tick groups collapse to a summary + picker
+     721-1023     horizontal scroll inside the table only; Sr and TAG/location stay put
+     <= 720       one card per row (see the phone block above)                          */
+
+#app[data-view='dashboard'] .app-shell,
+#app[data-view='dashboard'] .brand-bar {
+  max-width: 1480px;
+}
+
+.card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+/* Form steps (project, selection) keep their width; sheet steps use the page. */
+.builder-layout-form {
+  max-width: 1480px;
+}
+
+.builder-layout-sheet {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.builder-layout-sheet .builder-aside {
+  position: static;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.builder-layout-sheet .section-card,
+.builder-layout-sheet .mini-surface {
+  overflow: visible;
+}
+
+.builder-layout-sheet .section-card {
+  padding: 18px clamp(12px, 1.5vw, 22px);
+}
+
+.builder-layout-sheet .mini-surface {
+  padding: 14px clamp(10px, 1.2vw, 18px);
+}
+
+/* Sheet tables: printed proportions, fixed layout, wrapped headers. */
+.sheet-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.sheet-table-wrap {
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.sheet-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 8px 4px;
+  background: #eef4fb;
+  box-shadow: 0 1px 0 var(--border-strong);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-align: center;
+  vertical-align: middle;
+  white-space: normal;
+  overflow-wrap: normal;
+  hyphens: manual;
+}
+
+.sheet-table th:first-child {
+  white-space: nowrap;
+}
+
+.sheet-table td {
+  padding: 6px 2px;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.sheet-table .table-input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 3px;
+  font-size: 0.88rem;
+  text-overflow: clip;
+}
+
+.sheet-table .sheet-cell-number .table-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-table .table-input-static {
+  display: block;
+  min-width: 0;
+  padding: 8px 4px;
+  border-radius: 10px;
+  letter-spacing: 0;
+}
+
+.sheet-table .sheet-cell-ticks {
+  min-width: 0;
+}
+
+.sheet-table .tick-cell {
+  min-width: 0;
+}
+
+.sheet-table .tick-group {
+  gap: 4px;
+}
+
+.sheet-table .tick {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 36px;
+  gap: 3px;
+  padding: 2px 4px 2px 3px;
+}
+
+.sheet-table .tick-box {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+.sheet-table .tick-label {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.sheet-table .sheet-status-cell {
+  min-width: 0;
+  font-size: 0.82rem;
+}
+
+.sheet-table .sheet-status-cell .pill,
+.sheet-table .sheet-status-cell .soft-chip {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.sheet-table .status-limit {
+  display: block;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.sheet-table .auto-eval-text {
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.sheet-table .table-action-cell {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.sheet-table .table-action-buttons {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sheet-table .tower-group-remove {
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.tick-summary {
+  display: none;
+}
+
+.sheet-table .soil-matrix .table-input,
+.soil-matrix .table-input {
+  min-width: 0;
+}
+
+.soil-matrix td,
+.soil-matrix th {
+  white-space: normal;
+}
+
+/* Tablet landscape: ticks collapse to a summary that opens a picker. */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .sheet-table .tick-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: 100%;
+    min-height: 44px;
+    padding: 4px 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-strong);
+    color: inherit;
+    font: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .sheet-table .tick-summary-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sheet-table .tick-cell.is-open .tick-summary {
+    border-color: var(--brand-dark);
+    outline: 3px solid var(--brand-soft);
+  }
+
+  .sheet-table .tick-cell .tick-group:not([popover]) {
+    display: none;
+  }
+
+  .sheet-table .tick-group[popover] {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    width: max-content;
+    max-width: min(340px, calc(100vw - 16px));
+    padding: 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: 0 18px 40px rgba(16, 33, 63, 0.28);
+    overflow: visible;
+  }
+
+  .sheet-table .tick-group[popover]:popover-open {
+    display: flex;
+  }
+
+  .sheet-table .tick-group[popover] .tick {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 6px 12px 6px 8px;
+  }
+}
+
+/* Sheet screens that are wide enough get the compact column set. */
+@media (min-width: 1024px) {
+  .sheet-table .tick-group-multi .tick {
+    min-width: 0;
+  }
+
+  .sheet-table .icon-button {
+    width: 34px;
+    height: 34px;
+    min-width: 0;
+  }
+}
+
+/* Mid widths: scroll inside the table only; Sr and TAG/location stay in view and the
+   assessment stays beside the readings. */
+@media (min-width: 721px) and (max-width: 1023.98px) {
+  .sheet-table-wrap {
+    max-height: 78vh;
+    overflow: auto;
+    padding-bottom: 8px;
+  }
+
+  .sheet-table {
+    min-width: 1180px;
+  }
+
+  .sheet-table td,
+  .sheet-table th {
+    background: var(--surface-strong, #fff);
+  }
+
+  .sheet-table th {
+    background: #eef4fb;
+  }
+
+  .sheet-table col:nth-child(1) {
+    width: 52px !important;
+  }
+
+  .sheet-table col:nth-child(2) {
+    width: 150px !important;
+  }
+
+  .sheet-table tr > :nth-child(1),
+  .sheet-table tr > :nth-child(2) {
+    position: sticky;
+    z-index: 2;
+  }
+
+  .sheet-table tr > :nth-child(1) {
+    left: 0;
+  }
+
+  .sheet-table tr > :nth-child(2) {
+    left: 52px;
+    box-shadow: 2px 0 0 var(--border-strong);
+  }
+
+  .sheet-table thead tr > :nth-child(1),
+  .sheet-table thead tr > :nth-child(2) {
+    z-index: 4;
+  }
+
+  .sheet-table .tick {
+    min-height: 44px;
+  }
+
+  /* The status column and the actions stay at the right edge. */
+  .sheet-table:not(.tower-sheet-table) .sheet-status-cell,
+  .sheet-table:not(.tower-sheet-table) th:nth-last-child(2) {
+    position: sticky;
+    right: 56px;
+    z-index: 2;
+    box-shadow: -2px 0 0 var(--border-strong);
+  }
+
+  .sheet-table:not(.tower-sheet-table) .table-action-cell,
+  .sheet-table:not(.tower-sheet-table) th:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+  }
+
+  .sheet-table:not(.tower-sheet-table) th:nth-last-child(2),
+  .sheet-table:not(.tower-sheet-table) th:last-child {
+    z-index: 4;
+  }
+
+  .sheet-table:not(.tower-sheet-table) col.col-status {
+    width: 170px !important;
+  }
+
+  .sheet-table:not(.tower-sheet-table) col.col-action {
+    width: 56px !important;
+  }
+}
+
+/* Phones: one card per row. The fixed layout and column widths do not apply. */
+@media (max-width: 720px) {
+  .sheet-table {
+    table-layout: auto;
+    min-width: 0;
+  }
+
+  .sheet-table colgroup {
+    display: none;
+  }
+
+  .sheet-table-wrap {
+    overflow-x: auto;
+  }
+
+  .sheet-table .table-input {
+    padding: 10px 12px;
+  }
+
+  .sheet-table .tick {
+    min-height: 44px;
+  }
+
+  .sheet-table .tick-label {
+    font-size: 0.95rem;
+  }
+
+  .sheet-table .table-action-buttons {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+}
+
+/* Narrow serial and action columns: no padding that pushes content past the cell. */
+.sheet-table .sheet-cell-serial .table-input-static,
+.sheet-table .sheet-cell-ticks .table-input-static {
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+.sheet-table th {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.sheet-table .sheet-status-cell .pill {
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: normal;
 }

@@ -8,7 +8,8 @@
     "dev": "node src/server.js",
     "test:electroreports": "node scripts/electroreports-verify.js",
     "test:multiday": "node scripts/test-multiday.js && node scripts/test-report-collection.js",
-    "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js && node scripts/test-sheet-definitions.js && node scripts/test-sheet-rules.js",
+    "test:layout": "node scripts/test-layout.js",
+    "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js && node scripts/test-sheet-definitions.js && node scripts/test-sheet-rules.js && node scripts/test-sheet-widths.js",
     "generate:ai-reference": "node scripts/generate-electroreports-ai-reference.js"
   },
   "dependencies": {
@@ -21,5 +22,8 @@
     "multer": "^2.1.1",
     "openai": "^6.32.0",
     "pdfkit": "^0.16.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0"
   }
 }

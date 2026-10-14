@@ -424,6 +424,31 @@ const SHEETS = [
   }
 ];
 
+// Printed column width fractions (the `w` of each col(...) in make_sheets_v3.py), one per
+// printed row column in print order. The entry tables use the same proportions so a sheet
+// looks like its printed form; a test compares these numbers with the generator.
+const PRINTED_WIDTHS = Object.freeze({
+  soilResistivity: [4, 10, 14, 14, 14, 14, 18],
+  electrodeResistance: [2.3, 7, 9, 8, 12.5, 5, 6, 7, 6, 6, 6, 8.5, 11.5, 3.6, 6],
+  continuityTest: [3.5, 8, 12, 13, 13, 7, 7.5, 8.5, 10.5, 5, 8],
+  loopImpedanceTest: [2.6, 14, 13, 11, 7, 7, 5, 9, 7, 4.5, 11],
+  prospectiveFaultCurrent: [2.6, 14, 13, 11, 6, 8, 4.2, 7.5, 7.5, 6, 4.5, 9],
+  riserIntegrityTest: [4, 15, 20, 12.5, 12.5, 12, 6, 11],
+  groundResistance: [3.6, 10.5, 16, 11, 9, 9.5, 9.5, 9.5, 9.5, 11.5],
+  stepTouchVoltage: [2.6, 16, 15, 9, 6.5, 6.5, 6, 6, 6, 6, 4, 9],
+  towerFootingResistance: [3.6, 14, 5.5, 11, 11, 11, 10.5, 5.5, 11]
+});
+
+SHEETS.forEach((sheet) => {
+  const widths = PRINTED_WIDTHS[sheet.id];
+  if (!widths) {
+    return;
+  }
+  sheet.rowFields.filter((field) => !field.extra && !field.legacy).forEach((field, position) => {
+    field.width = widths[position];
+  });
+});
+
 const SHEET_BY_ID = Object.fromEntries(SHEETS.map((sheet) => [sheet.id, sheet]));
 
 function getSheet(id) {

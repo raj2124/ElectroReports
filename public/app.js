@@ -1010,6 +1010,12 @@ function getSteps() {
   ];
 }
 
+// Entry screens for the measurement sheets use the full page width; the project and
+// selection steps are forms and keep a comfortable width.
+function isSheetStep(stepId) {
+  return stepId !== 'project' && stepId !== 'selection';
+}
+
 function currentStepId() {
   const steps = getSteps();
   return steps[state.stepIndex] ? steps[state.stepIndex].id : 'project';
@@ -2058,7 +2064,7 @@ function standardCell(reference, limitLabel) {
   `;
 }
 
-function tableSurface(title, subtitle, header, body, footer = '') {
+function tableSurface(title, subtitle, header, body, footer = '', tableOptions = {}) {
   return `
     <div class="mini-surface">
       <div class="mini-surface-head">
@@ -2067,8 +2073,9 @@ function tableSurface(title, subtitle, header, body, footer = '') {
           <p>${escapeHtml(subtitle)}</p>
         </div>
       </div>
-      <div class="table-wrap">
-        <table class="data-table">
+      <div class="table-wrap ${tableOptions.className ? 'sheet-table-wrap' : ''}">
+        <table class="data-table ${tableOptions.className || ''}">
+          ${tableOptions.colgroup || ''}
           <thead>${header}</thead>
           <tbody>${body}</tbody>
         </table>
@@ -2785,7 +2792,7 @@ function builderView() {
           .join('')}
       </div>
 
-      <div class="builder-layout">
+      <div class="builder-layout ${isSheetStep(currentStep) ? 'builder-layout-sheet' : 'builder-layout-form'}">
         <div class="builder-main">
           ${renderBuilderStep()}
         </div>
@@ -3072,6 +3079,7 @@ function render() {
   if (state.view === 'builder') {
     syncDraftAssessment();
   }
+  app.dataset.view = state.view;
   app.innerHTML = `
     ${brandHeader()}
     <main class="app-shell">
@@ -3087,6 +3095,9 @@ function render() {
   }
   bindMotionEffects();
   updateMotionEffects();
+  if (typeof restoreTickPicker === 'function') {
+    restoreTickPicker();
+  }
 }
 
 function buildFocusSelector(element) {

@@ -517,6 +517,67 @@ function applySoilPreset() {
 }
 
 // Handles the sheet-related data-action buttons. Returns true when it handled one.
+// ---- Tick picker (tablet landscape) ------------------------------------------------------
+// The whole page is re-rendered on every input, so the open picker is remembered here and
+// reopened by render() through restoreTickPicker().
+
+let openTickPicker = null;
+
+function closeTickPicker() {
+  if (!openTickPicker) {
+    return;
+  }
+  openTickPicker = null;
+  document.querySelectorAll('.tick-cell.is-open').forEach((cell) => {
+    const group = cell.querySelector('.tick-group');
+    cell.classList.remove('is-open');
+    if (group && group.hasAttribute('popover')) {
+      try {
+        group.hidePopover();
+      } catch (error) {
+        // already closed
+      }
+      group.removeAttribute('popover');
+    }
+  });
+}
+
+function restoreTickPicker() {
+  if (!openTickPicker) {
+    return;
+  }
+  const cell = document.querySelector(`[data-tick-cell="${openTickPicker}"]`);
+  const group = cell && cell.querySelector('.tick-group');
+  const button = cell && cell.querySelector('.tick-summary');
+  if (!group || !button || typeof group.showPopover !== 'function' || window.getComputedStyle(button).display === 'none') {
+    openTickPicker = null;
+    return;
+  }
+  group.setAttribute('popover', 'manual');
+  group.showPopover();
+  const rect = button.getBoundingClientRect();
+  group.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - group.offsetHeight - 8))}px`;
+  group.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - group.offsetWidth - 8))}px`;
+}
+
+document.addEventListener('click', (event) => {
+  if (openTickPicker && event.target && event.target.closest && !event.target.closest('.tick-cell')) {
+    closeTickPicker();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeTickPicker();
+  }
+});
+document.addEventListener('change', (event) => {
+  // Choosing one of several closes the picker; condition codes stay open for more ticks.
+  if (openTickPicker && event.target && event.target.type === 'radio') {
+    openTickPicker = null;
+  }
+});
+window.addEventListener('resize', closeTickPicker);
+
 function handleSheetAction(action, button) {
   if (action === 'add-row' && sheetById(button.dataset.section)) {
     addSheetRow(button.dataset.section);
@@ -547,6 +608,10 @@ function handleSheetAction(action, button) {
     removeSoilSpacing(Number(button.dataset.locationIndex), button.dataset.spacing);
     return true;
   }
+  if (action === 'open-tick-picker') {
+    openTickPicker = openTickPicker === button.dataset.picker ? null : button.dataset.picker;
+    return true;
+  }
   if (action === 'soil-page') {
     state.soilPage = Number(button.dataset.page) || 0;
     return true;
@@ -567,7 +632,25 @@ function dataAttrs(attrs) {
 
 // A tick group: radio buttons (choose one) or checkboxes (condition codes, choose any),
 // each with a 44 px tap target.
-function renderTicks(field, value, attrs, groupName, extraClass = '') {
+function tickSummaryText(field, value) {
+  const multi = Boolean(field.multi);
+  const chosen = optionList(field).filter((option) => (multi ? Array.isArray(value) && value.includes(option.value) : String(value === undefined || value === null ? '' : value) === String(option.value)));
+  return chosen.length ? chosen.map((option) => option.label).join(', ') : 'Select';
+}
+
+// In a table cell the tick group is wrapped with a summary button. Wide screens show the
+// ticks; on tablets in landscape (1024-1279 px) the ticks collapse to the summary and open
+// as a picker on tap (see styles.css).
+function renderTicks(field, value, attrs, groupName, extraClass = '', inTable = false) {
+  const group = renderTickGroup(field, value, attrs, groupName, extraClass);
+  if (!inTable) {
+    return group;
+  }
+  const open = openTickPicker === groupName;
+  return `<div class="tick-cell ${open ? 'is-open' : ''}" data-tick-cell="${esc(groupName)}"><button class="tick-summary" type="button" data-action="open-tick-picker" data-picker="${esc(groupName)}" aria-haspopup="true" aria-expanded="${open}" aria-label="${esc(field.label)}: choose"><span class="tick-summary-text">${esc(tickSummaryText(field, value))}</span><span class="tick-summary-caret" aria-hidden="true">&#9662;</span></button>${group}</div>`;
+}
+
+function renderTickGroup(field, value, attrs, groupName, extraClass = '') {
   const multi = Boolean(field.multi);
   const legend = SHEET_DEFS ? Object.fromEntries(SHEET_DEFS.conditionCodes.map((entry) => [entry.code, entry.text])) : {};
   return `
@@ -594,9 +677,9 @@ function renderTextControl(field, value, attrs, cssClass = 'table-input') {
   return `<input class="${cssClass}" type="${field.kind === 'date' ? 'date' : 'text'}" ${isNumber ? 'inputmode="decimal"' : ''} autocomplete="off" aria-label="${esc(field.label)}" ${field.unit ? `placeholder="${esc(field.unit)}"` : ''} value="${esc(value)}" ${dataAttrs(attrs)} />`;
 }
 
-function renderControl(field, value, attrs, groupName, cssClass = 'table-input') {
+function renderControl(field, value, attrs, groupName, cssClass = 'table-input', inTable = false) {
   if (field.kind === 'ticks') {
-    return renderTicks(field, value, attrs, groupName);
+    return renderTicks(field, value, attrs, groupName, '', inTable);
   }
   if (field.kind === 'tick') {
     return `<label class="tick"><input type="checkbox" ${value ? 'checked' : ''} ${dataAttrs(attrs)} /><span class="tick-box" aria-hidden="true"></span><span class="tick-label">${esc(field.tickLabel || field.label)}</span></label>`;
@@ -729,9 +812,23 @@ function renderRowCell(sheet, field, row, index, rowNumber, extra = {}) {
   } else if (field.showIf && !showIfMatches(field, row)) {
     content = '<span class="table-input-static">–</span>';
   } else {
-    content = renderControl(field, row[field.key], attrs, `${sheet.id}-${index}-${field.key}-${extra.readingIndex === undefined ? '' : extra.readingIndex}`);
+    content = renderControl(field, row[field.key], attrs, `${sheet.id}-${index}-${field.key}-${extra.readingIndex === undefined ? '' : extra.readingIndex}`, 'table-input', true);
   }
   return `<td data-label="${esc(field.label)}" class="sheet-cell sheet-cell-${field.kind}">${content}</td>`;
+}
+
+// Column widths come from the printed sheet (field.width = the fraction in
+// make_sheets_v3.py). The printed columns share what is left after the status and action
+// columns. (Plain percentages: a max()/calc() width on <col> is ignored by browsers.)
+const TRAILING_SHARE = { status: 13, action: 4.5, tower: 7, note: 4.5 };
+
+function renderColgroup(columns, trailing = ['status', 'action']) {
+  const trailingTotal = trailing.reduce((sum, name) => sum + TRAILING_SHARE[name], 0);
+  const printedTotal = columns.reduce((sum, field) => sum + (field.width || 8), 0);
+  const unit = (100 - trailingTotal) / printedTotal;
+  const printed = columns.map((field) => `<col class="col-${esc(field.kind)}" style="width:${((field.width || 8) * unit).toFixed(3)}%">`);
+  const extra = trailing.map((name) => `<col class="col-${name}" style="width:${TRAILING_SHARE[name]}%">`);
+  return `<colgroup>${printed.join('')}${extra.join('')}</colgroup>`;
 }
 
 function renderSheetHead(columns, withStatus) {
@@ -748,7 +845,8 @@ function renderRowsLayout(sheet) {
     rows
       .map((row, index) => `<tr class="sheet-row">${columns.map((field) => renderRowCell(sheet, field, row, index, index + 1)).join('')}${renderStatusCell(sheet.id, row)}${actionButtonsCell(sheet.id, index, row)}</tr>`)
       .join(''),
-    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add row</button></div>`
+    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add row</button></div>`,
+    { className: 'sheet-table', colgroup: renderColgroup(columns) }
   );
 }
 
@@ -767,7 +865,7 @@ function renderPhaseGroupsLayout(sheet) {
             if (offset !== 0) {
               return '';
             }
-            const merged = field.kind === 'serial' ? `<span class="table-input-static">${groupNumber}</span>` : renderControl(field, first[field.key], { section: sheet.id, index, field: field.key, groupSync: true }, `${sheet.id}-${index}-${field.key}`);
+            const merged = field.kind === 'serial' ? `<span class="table-input-static">${groupNumber}</span>` : renderControl(field, first[field.key], { section: sheet.id, index, field: field.key, groupSync: true }, `${sheet.id}-${index}-${field.key}`, 'table-input', true);
             return `<td rowspan="${size}" data-label="${esc(field.label)}" class="phase-group-cell sheet-cell sheet-cell-${field.kind}">${merged}</td>`;
           }
           return renderRowCell(sheet, field, row, index, index + 1);
@@ -776,7 +874,7 @@ function renderPhaseGroupsLayout(sheet) {
       return `<tr class="sheet-row ${offset === 0 ? 'tower-group-row-start' : ''}">${cells}${renderStatusCell(sheet.id, row)}${actionButtonsCell(sheet.id, index, row)}</tr>`;
     })
     .join('');
-  return tableSurface(`${sheet.code} ${sheet.title}`, 'Each feeder is three readings, one per phase; the shared cells are entered once.', renderSheetHead(columns, true), body, `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add feeder</button></div>`);
+  return tableSurface(`${sheet.code} ${sheet.title}`, 'Each feeder is three readings, one per phase; the shared cells are entered once.', renderSheetHead(columns, true), body, `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add feeder</button></div>`, { className: 'sheet-table', colgroup: renderColgroup(columns) });
 }
 
 function towerObservationButton(groupIndex, readingIndex, reading) {
@@ -804,7 +902,7 @@ function renderTowerLayout(sheet) {
                 const content =
                   field.kind === 'serial'
                     ? `<span class="table-input-static">${groupIndex + 1}</span>`
-                    : renderControl(field, group[field.key], { section: sheet.id, index: groupIndex, field: field.key }, `${sheet.id}-${groupIndex}-${field.key}`);
+                    : renderControl(field, group[field.key], { section: sheet.id, index: groupIndex, field: field.key }, `${sheet.id}-${groupIndex}-${field.key}`, 'table-input', true);
                 return `<td rowspan="${feet.length}" data-label="${esc(field.label)}" class="tower-group-cell sheet-cell">${content}</td>`;
               }
               if (field.kind === 'fixed') {
@@ -835,7 +933,8 @@ function renderTowerLayout(sheet) {
     'Each tower has four fixed feet (F-1 to F-4); the tower totals are calculated.',
     `<tr>${columns.map((field) => `<th>${esc(field.label)}</th>`).join('')}<th>Assessment</th><th>Tower</th><th>Photo / note</th></tr>`,
     body,
-    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add tower</button></div>`
+    `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add tower</button></div>`,
+    { className: 'sheet-table tower-sheet-table', colgroup: renderColgroup(columns, ['status', 'tower', 'note']) }
   );
 }
 
@@ -909,7 +1008,10 @@ function renderSoilMatrix(sheet, location, locationIndex, preset, locationAssess
     .join('');
   const means = locationAssessment && locationAssessment.directionAverages ? locationAssessment.directionAverages : {};
   const meanRow = `<tr class="sheet-mean-row"><td></td><td><strong>Mean ρ (Ω·m)</strong></td>${directions.map((direction) => `<td><strong>${means[direction] === null || means[direction] === undefined ? '-' : esc(means[direction])}</strong></td>`).join('')}${page === 0 ? `<td><strong>Location ${locationAssessment && locationAssessment.overallAverage !== null && locationAssessment.overallAverage !== undefined ? esc(locationAssessment.overallAverage) : '-'}</strong></td>` : ''}</tr>`;
-  return `<div class="table-wrap"><table class="data-table sheet-table soil-matrix"><thead>${header}</thead><tbody>${body}${meanRow}</tbody></table></div>`;
+  const fixedShare = 4 + 10 + (page === 0 ? 18 : 0);
+  const directionShare = ((100 - fixedShare) / Math.max(directions.length, 1)).toFixed(3);
+  const colgroup = `<colgroup><col class="col-serial" style="width:4%"><col class="col-fixed" style="width:10%">${directions.map(() => `<col class="col-number" style="width:${directionShare}%">`).join('')}${page === 0 ? '<col class="col-text" style="width:18%">' : ''}</colgroup>`;
+  return `<div class="table-wrap sheet-table-wrap"><table class="data-table sheet-table soil-matrix">${colgroup}<thead>${header}</thead><tbody>${body}${meanRow}</tbody></table></div>`;
 }
 
 function renderSoilStep() {
