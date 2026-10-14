@@ -101,7 +101,7 @@ check('invalid data is an error that blocks the save', () => {
 });
 
 check('an assumed rho is rejected when soil was measured, and needs a number', () => {
-  const soil = { locations: [{ name: 'L', direction1: [{ spacing: '1', resistivity: '40' }], direction2: [{ spacing: '1', resistivity: '40' }] }] };
+  const soil = { locations: [{ name: 'L', inputUnit: 'ohm-m', direction1: [{ spacing: '1', resistivity: '40' }], direction2: [{ spacing: '1', resistivity: '40' }] }] };
   assert.deepStrictEqual(errorCodes({ ...base(), tests: { soilResistivity: true, electrodeResistance: true }, soilResistivity: soil }), ['ASSUMED_RHO_WITH_MEASURED']);
   const measured = { ...base(), project: { ...project, assumedSoilResistivity: '', assumedSoilResistivitySource: '' }, tests: { soilResistivity: true, electrodeResistance: true }, soilResistivity: soil };
   assert.doesNotThrow(() => normalizeReportInput(measured));
@@ -112,8 +112,8 @@ check('warnings are saved and shown, never blocking: missing dimensions, probe d
     ...base(),
     project: { ...project, reportDate: '2026-10-13' },
     tests: { soilResistivity: true, electrodeResistance: true },
-    soilResistivity: { locations: [{ name: 'L', probeDepthCm: '25', direction1: [{ spacing: '1', resistivity: '40' }], direction2: [{ spacing: '1', resistivity: '40' }] }] },
-    electrodeResistance: [{ tag: 'EP-9', electrodeType: 'Rod', resistanceWithoutGrid: '2' }, { tag: 'EP-8', electrodeType: 'Plate', resistanceWithGrid: '2' }],
+    soilResistivity: { locations: [{ name: 'L', inputUnit: 'ohm-m', probeDepthCm: '25', direction1: [{ spacing: '1', resistivity: '40' }], direction2: [{ spacing: '1', resistivity: '40' }] }] },
+    electrodeResistance: [{ tag: 'EP-9', electrodeType: 'Rod', materialType: 'Cu', resistanceWithoutGrid: '2' }, { tag: 'EP-8', electrodeType: 'Plate', materialType: 'Cu', resistanceWithGrid: '2' }],
     sheetHeaders: { electrodeResistance: { instrument: 'mi3290', calibrationDue: '2026-09-01' } }
   };
   draft.project.assumedSoilResistivity = '';

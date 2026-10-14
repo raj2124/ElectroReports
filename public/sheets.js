@@ -110,7 +110,7 @@ function newSoilLocation(name = 'Location 1', presetId = 'etpl-default') {
   const location = {
     locationId: buildRowId('soil-location'),
     name,
-    inputUnit: 'ohm-m',
+    inputUnit: '',
     probeDepthCm: '',
     weather: '',
     bearings: Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, ''])),
@@ -578,6 +578,387 @@ document.addEventListener('change', (event) => {
 });
 window.addEventListener('resize', closeTickPicker);
 
+// ---- Faster entry ---------------------------------------------------------------------------
+// Fill down, copy previous row, Enter / Tab flow, a new row when the last one is used, and
+// pasting a block copied from Excel. All of them change the draft the same way typing does.
+
+const isEmptyValue = (value) => (Array.isArray(value) ? value.length === 0 : value === undefined || value === null || String(value).trim() === '');
+const cloneValue = (value) => (Array.isArray(value) ? [...value] : value);
+
+// The objects holding one column's values, in reading order (a phase group is one target for
+// its shared columns; a tower foot column has one target per foot).
+function columnTargets(sheet, field) {
+  const rows = state.draft[sheet.id] || [];
+  if (sheet.layout === 'towerGroups') {
+    return field.merge ? rows.map((group) => [group]) : rows.flatMap((group) => (group.readings || []).map((reading) => [reading]));
+  }
+  if (sheet.layout === 'phaseGroups' && field.merge) {
+    const size = sheet.groupSize || 3;
+    const groups = [];
+    for (let start = 0; start < rows.length; start += size) {
+      groups.push(rows.slice(start, start + size));
+    }
+    return groups;
+  }
+  return rows.map((row) => [row]);
+}
+
+// Empty cells of a column take the first value entered in it.
+function fillDown(sheetId, key) {
+  const sheet = sheetById(sheetId);
+  const field = sheet && sheet.rowFields.find((entry) => entry.key === key);
+  if (!field) {
+    return false;
+  }
+  const targets = columnTargets(sheet, field);
+  const source = targets.find((group) => !isEmptyValue(group[0][key]));
+  if (!source) {
+    return false;
+  }
+  targets.forEach((group) => {
+    if (isEmptyValue(group[0][key])) {
+      group.forEach((target) => {
+        target[key] = cloneValue(source[0][key]);
+      });
+    }
+  });
+  return true;
+}
+
+// Type, material, dimensions and device fields of the row above.
+function copyPreviousRow(sheetId, index) {
+  const sheet = sheetById(sheetId);
+  const rows = state.draft[sheetId];
+  if (!sheet || !Array.isArray(rows) || !rows[index]) {
+    return false;
+  }
+  const size = sheet.layout === 'phaseGroups' ? sheet.groupSize || 3 : 1;
+  const start = index - (index % size);
+  if (start - size < 0) {
+    return false;
+  }
+  const fields = sheet.rowFields.filter((field) => field.copyable && !field.legacy);
+  for (let offset = 0; offset < size; offset += 1) {
+    if (rows[start + offset] && rows[start - size + offset]) {
+      fields.forEach((field) => {
+        rows[start + offset][field.key] = cloneValue(rows[start - size + offset][field.key]);
+      });
+    }
+  }
+  return true;
+}
+
+// Called by app.js after a sheet cell changed: a new row appears when the last row is used.
+function autoAddRow(target) {
+  const ds = target && target.dataset;
+  const sheet = ds && ds.section !== undefined ? sheetById(ds.section) : null;
+  if (!sheet || !['rows', 'phaseGroups'].includes(sheet.layout)) {
+    return false;
+  }
+  const rows = state.draft[sheet.id] || [];
+  const size = sheet.layout === 'phaseGroups' ? sheet.groupSize || 3 : 1;
+  if (Number(ds.index) < rows.length - size || !rows.slice(rows.length - size).some((row) => rowHasEntry(sheet.id, row))) {
+    return false;
+  }
+  addSheetRow(sheet.id);
+  return true;
+}
+
+function cellSelector(section, index, field, readingIndex) {
+  return `[data-section="${section}"][data-index="${index}"][data-field="${field}"]${readingIndex !== undefined && readingIndex !== null ? `[data-reading-index="${readingIndex}"]` : ''}`;
+}
+
+// Enter: the next row of the same column (a new row after the last one).
+function moveDown(target) {
+  const ds = target.dataset;
+  const sheet = sheetById(ds.section);
+  const rows = state.draft[ds.section];
+  const field = sheet && sheet.rowFields.find((entry) => entry.key === ds.field);
+  if (!sheet || !field || !Array.isArray(rows)) {
+    return;
+  }
+  const index = Number(ds.index);
+  let next;
+  if (sheet.layout === 'towerGroups') {
+    const reading = ds.readingIndex === undefined ? null : Number(ds.readingIndex);
+    if (reading === null || field.merge) {
+      next = { index: index + 1 };
+    } else if (reading + 1 < (rows[index].readings || []).length) {
+      next = { index, reading: reading + 1 };
+    } else {
+      next = { index: index + 1, reading: 0 };
+    }
+  } else {
+    const size = sheet.layout === 'phaseGroups' && field.merge ? sheet.groupSize || 3 : 1;
+    next = { index: index + size };
+  }
+  let selector = () => cellSelector(ds.section, next.index, ds.field, next.reading);
+  if (!document.querySelector(selector())) {
+    if (next.index >= rows.length && sheet.layout !== 'soilMatrix') {
+      addSheetRow(ds.section);
+      scheduleDraftAutosave();
+      render();
+    }
+  }
+  const element = document.querySelector(selector());
+  if (element) {
+    element.focus();
+    if (typeof element.select === 'function') {
+      element.select();
+    }
+  }
+}
+
+function matchOption(field, raw) {
+  const wanted = String(raw).trim().toLowerCase();
+  return optionList(field).find((option) => String(option.value).toLowerCase() === wanted || String(option.label).toLowerCase() === wanted) || null;
+}
+
+function pastedValue(field, raw) {
+  const text = String(raw).trim();
+  if (field.kind === 'ticks' && field.multi) {
+    const tokens = text.toUpperCase().split(/[,;\s]+/).filter(Boolean);
+    return optionList(field).map((option) => option.value).filter((code) => tokens.includes(String(code).toUpperCase()));
+  }
+  if (field.kind === 'ticks') {
+    const option = matchOption(field, text);
+    return option ? option.value : undefined;
+  }
+  if (field.kind === 'tick') {
+    return /^(1|true|yes|y|x|✓)$/i.test(text);
+  }
+  return text;
+}
+
+// Paste a tab-separated block (copied from Excel) from the focused cell, across and down.
+function pasteGrid(target, grid) {
+  const ds = target.dataset;
+  if (ds.soilCell !== undefined) {
+    const table = target.closest('table');
+    const trs = [...table.querySelectorAll('tbody tr.sheet-row')];
+    const row0 = trs.indexOf(target.closest('tr'));
+    const col0 = [...target.closest('tr').querySelectorAll('[data-soil-cell]')].indexOf(target);
+    grid.forEach((line, r) => {
+      const inputs = trs[row0 + r] ? [...trs[row0 + r].querySelectorAll('[data-soil-cell]')] : [];
+      line.forEach((raw, c) => {
+        if (inputs[col0 + c]) {
+          applyFieldInput({ dataset: inputs[col0 + c].dataset, type: 'text', value: String(raw).trim() });
+        }
+      });
+    });
+    return true;
+  }
+  const sheet = sheetById(ds.section);
+  const rows = state.draft[ds.section];
+  if (!sheet || !Array.isArray(rows)) {
+    return false;
+  }
+  const columns = visibleRowFields(sheet, rows).filter((field) => !['serial', 'fixed'].includes(field.kind) && !field.legacy);
+  const startColumn = columns.findIndex((field) => field.key === ds.field);
+  if (startColumn < 0) {
+    return false;
+  }
+  const size = sheet.layout === 'phaseGroups' ? sheet.groupSize || 3 : 1;
+  let rowIndex = Number(ds.index);
+  let reading = ds.readingIndex === undefined ? 0 : Number(ds.readingIndex);
+  grid.forEach((line) => {
+    while (rows.length <= rowIndex) {
+      addSheetRow(sheet.id);
+    }
+    line.forEach((raw, c) => {
+      const field = columns[startColumn + c];
+      if (!field) {
+        return;
+      }
+      const value = pastedValue(field, raw);
+      if (value === undefined || (field.kind !== 'tick' && field.kind !== 'ticks' && String(raw).trim() === '')) {
+        return;
+      }
+      if (sheet.layout === 'towerGroups') {
+        if (field.merge) {
+          if (reading === 0) rows[rowIndex][field.key] = value;
+        } else if ((rows[rowIndex].readings || [])[reading]) {
+          rows[rowIndex].readings[reading][field.key] = value;
+        }
+        return;
+      }
+      if (field.merge && sheet.layout === 'phaseGroups') {
+        if (rowIndex % size === 0) {
+          for (let offset = 0; offset < size; offset += 1) {
+            if (rows[rowIndex + offset]) rows[rowIndex + offset][field.key] = cloneValue(value);
+          }
+        }
+        return;
+      }
+      rows[rowIndex][field.key] = cloneValue(value);
+    });
+    if (sheet.layout === 'towerGroups') {
+      reading += 1;
+      if (reading >= (rows[rowIndex].readings || []).length) {
+        reading = 0;
+        rowIndex += 1;
+      }
+    } else {
+      rowIndex += 1;
+    }
+  });
+  return true;
+}
+
+document.addEventListener('keydown', (event) => {
+  const target = event.target;
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && target && target.matches && target.matches('input.table-input[data-section]') && state.view === 'builder') {
+    event.preventDefault();
+    moveDown(target);
+  }
+});
+
+document.addEventListener('paste', (event) => {
+  const target = event.target;
+  if (!target || !target.matches || !target.matches('input[data-section], input[data-soil-cell]') || state.view !== 'builder') {
+    return;
+  }
+  const text = (event.clipboardData && event.clipboardData.getData('text/plain')) || '';
+  const trimmed = text.replace(/\r/g, '').replace(/\n+$/, '');
+  if (!/[\t\n]/.test(trimmed)) {
+    return; // one value: the ordinary paste
+  }
+  event.preventDefault();
+  if (pasteGrid(target, trimmed.split('\n').map((line) => line.split('\t')))) {
+    scheduleDraftAutosave();
+    rerenderPreservingFocus();
+  }
+});
+
+// ---- Step status dots -------------------------------------------------------------------------
+// not-started | in-progress | issues | complete. Built from the server's assessments and
+// validation, not from rules of its own. A row marked Not Measurable counts as complete.
+
+const STEP_STATUS_LABEL = { 'not-started': 'Not started', 'in-progress': 'In progress', issues: 'Has issues', complete: 'Complete' };
+
+function soilStepStatus(problems) {
+  const locations = (state.draft.soilResistivity && state.draft.soilResistivity.locations) || [];
+  const keys = ['direction1', 'direction2', 'direction3', 'direction4', 'direction5', 'direction6', 'direction7', 'direction8'];
+  const filled = (row) => !isEmptyValue(row && row.resistivity);
+  const any = locations.some((location) => keys.some((key) => (location[key] || []).some(filled)));
+  if (!any) {
+    return problems ? 'issues' : 'not-started';
+  }
+  if (problems) {
+    return 'issues';
+  }
+  const complete = locations.every((location) => !isEmptyValue(location.inputUnit) && keys.every((key) => (location[key] || []).length === 0 || (location[key] || []).every(filled)));
+  return complete ? 'complete' : 'in-progress';
+}
+
+function stepStatus(stepId) {
+  const project = state.draft.project;
+  if (stepId === 'project') {
+    const required = ['projectNo', 'clientName', 'siteLocation', 'workOrder', 'engineerName'];
+    const count = required.filter((key) => !isEmptyValue(project[key])).length;
+    if (count === 0) return 'not-started';
+    return count === required.length && !isEmptyValue(project.reportDate) ? 'complete' : 'in-progress';
+  }
+  if (stepId === 'selection') {
+    return Object.keys(state.draft.tests || {}).some((id) => state.draft.tests[id]) ? 'complete' : 'not-started';
+  }
+  const sheet = sheetById(stepId);
+  if (!sheet) {
+    return 'not-started';
+  }
+  const validation = assessmentSummary(state.draft).validation || { errors: [], warnings: [] };
+  const problems = validation.errors.some((item) => item.sheet === stepId) || validation.warnings.some((item) => item.sheet === stepId);
+  if (sheet.id === 'soilResistivity') {
+    return soilStepStatus(problems);
+  }
+  const rows = (Array.isArray(state.draft[stepId]) ? state.draft[stepId] : []).filter((row) => (sheet.layout === 'towerGroups' ? safeText(row.mainLocationTower, '') || (row.readings || []).some((reading) => rowHasEntry(stepId, reading)) : rowHasEntry(stepId, row)));
+  if (!rows.length) {
+    return problems ? 'issues' : 'not-started';
+  }
+  const assessments = rows.map((row) => rowAssessment(stepId, row));
+  if (problems || assessments.some((assessment) => assessment.status.tone === 'critical')) {
+    return 'issues';
+  }
+  const unfinished = assessments.some((assessment) => assessment.status.tone === 'neutral' && assessment.status.label !== 'Not Measurable');
+  return unfinished ? 'in-progress' : 'complete';
+}
+
+// ---- Explanation popover (hover, focus or tap on an "i" button) ------------------------------
+// One element outside #app, so the page re-render does not destroy it.
+
+let explainPinned = null;
+
+function explainPopover() {
+  let pop = document.getElementById('explainPop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'explainPop';
+    pop.className = 'explain-pop';
+    pop.setAttribute('popover', 'manual');
+    pop.setAttribute('role', 'tooltip');
+    document.body.appendChild(pop);
+  }
+  return pop;
+}
+
+function showExplain(button) {
+  const pop = explainPopover();
+  pop.textContent = button.dataset.explain;
+  if (typeof pop.showPopover === 'function' && !pop.matches(':popover-open')) {
+    pop.showPopover();
+  }
+  const rect = button.getBoundingClientRect();
+  const width = pop.offsetWidth;
+  pop.style.top = `${Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - pop.offsetHeight - 8))}px`;
+  pop.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`;
+}
+
+function hideExplain() {
+  explainPinned = null;
+  const pop = document.getElementById('explainPop');
+  if (pop && typeof pop.hidePopover === 'function' && pop.matches(':popover-open')) {
+    pop.hidePopover();
+  }
+}
+
+document.addEventListener('mouseover', (event) => {
+  const button = event.target.closest && event.target.closest('.explain-btn');
+  if (button && !explainPinned) {
+    showExplain(button);
+  }
+});
+document.addEventListener('mouseout', (event) => {
+  if (event.target.closest && event.target.closest('.explain-btn') && !explainPinned) {
+    hideExplain();
+  }
+});
+document.addEventListener('focusin', (event) => {
+  const button = event.target.closest && event.target.closest('.explain-btn');
+  if (button) {
+    showExplain(button);
+  }
+});
+document.addEventListener('focusout', (event) => {
+  if (event.target.closest && event.target.closest('.explain-btn') && !explainPinned) {
+    hideExplain();
+  }
+});
+document.addEventListener('click', (event) => {
+  const button = event.target.closest && event.target.closest('.explain-btn');
+  if (button) {
+    if (explainPinned === button.dataset.explain) {
+      hideExplain();
+    } else {
+      explainPinned = button.dataset.explain;
+      showExplain(button);
+    }
+    return;
+  }
+  if (explainPinned) {
+    hideExplain();
+  }
+});
+
 function handleSheetAction(action, button) {
   if (action === 'add-row' && sheetById(button.dataset.section)) {
     addSheetRow(button.dataset.section);
@@ -606,6 +987,16 @@ function handleSheetAction(action, button) {
   }
   if (action === 'remove-soil-spacing') {
     removeSoilSpacing(Number(button.dataset.locationIndex), button.dataset.spacing);
+    return true;
+  }
+  if (action === 'fill-down') {
+    fillDown(button.dataset.section, button.dataset.field);
+    scheduleDraftAutosave();
+    return true;
+  }
+  if (action === 'copy-prev-row') {
+    copyPreviousRow(button.dataset.section, Number(button.dataset.index));
+    scheduleDraftAutosave();
     return true;
   }
   if (action === 'open-tick-picker') {
@@ -672,9 +1063,17 @@ function renderTickGroup(field, value, attrs, groupName, extraClass = '') {
   `;
 }
 
+// An empty date shows "dd/mm/yyyy" in the placeholder colour; the browser's own empty date
+// text (which can look like a real, greyed-out date) is hidden until the field is focused.
+function dateControl(inputHtml, value) {
+  return `<span class="date-field ${value ? '' : 'is-empty'}">${inputHtml}<span class="date-placeholder" aria-hidden="true">dd/mm/yyyy</span></span>`;
+}
+
 function renderTextControl(field, value, attrs, cssClass = 'table-input') {
   const isNumber = field.kind === 'number';
-  return `<input class="${cssClass}" type="${field.kind === 'date' ? 'date' : 'text'}" ${isNumber ? 'inputmode="decimal"' : ''} autocomplete="off" aria-label="${esc(field.label)}" ${field.unit ? `placeholder="${esc(field.unit)}"` : ''} value="${esc(value)}" ${dataAttrs(attrs)} />`;
+  const placeholder = field.placeholder || field.unit;
+  const input = `<input class="${cssClass}" type="${field.kind === 'date' ? 'date' : 'text'}" ${isNumber ? 'inputmode="decimal"' : ''} autocomplete="off" aria-label="${esc(field.label)}" ${placeholder && field.kind !== 'date' ? `placeholder="${esc(placeholder)}"` : ''} value="${esc(value)}" ${dataAttrs(attrs)} />`;
+  return field.kind === 'date' ? dateControl(input, value) : input;
 }
 
 function renderControl(field, value, attrs, groupName, cssClass = 'table-input', inTable = false) {
@@ -712,10 +1111,11 @@ function renderSheetIntro(sheet) {
 }
 
 function renderNotes(sheet) {
-  if (!sheet.notes || !sheet.notes.length) {
+  const diagram = typeof sheetDiagram === 'function' ? sheetDiagram(sheet.id) : '';
+  if ((!sheet.notes || !sheet.notes.length) && !diagram) {
     return '';
   }
-  return `<details class="sheet-notes"><summary>How to record this sheet</summary><ul>${sheet.notes.map((note) => `<li>${esc(note)}</li>`).join('')}</ul></details>`;
+  return `<details class="sheet-notes"><summary>How to record this sheet</summary><div class="howto">${diagram ? `<figure class="howto-figure"><figcaption>SET-UP</figcaption>${diagram}</figure>` : ''}<div class="howto-steps"><strong>HOW TO RECORD</strong><ul>${(sheet.notes || []).map((note) => `<li>${esc(note)}</li>`).join('')}</ul></div></div></details>`;
 }
 
 function renderCodeLegend() {
@@ -773,20 +1173,6 @@ function flagChips(flags) {
   return (flags || []).map((flag) => `<span class="flag-chip" title="${esc(flag.message)}">${esc(flag.code === 'FOP_DISAGREE' ? 'Re-test: 61.8% unconfirmed' : flag.code === 'FOOT_NOT_GIVEN' ? 'Foot without earth connection' : flag.code)}</span>`).join('');
 }
 
-function renderStatusCell(sheetId, row) {
-  const assessment = rowAssessment(sheetId, row);
-  const limit = assessment.limit === null || assessment.limit === undefined ? '' : `<span class="status-limit">Limit ${Number(assessment.limit).toFixed(2)}</span>`;
-  return `
-    <td class="sheet-status-cell" data-label="Status">
-      ${pill(assessment.status.tone, assessment.status.label)}
-      ${assessment.priority ? `<span class="soft-chip">${esc(assessment.priority)}</span>` : ''}
-      ${limit}
-      ${flagChips(assessment.flags)}
-      <div class="auto-eval-text">${esc(assessment.comment)}</div>
-    </td>
-  `;
-}
-
 // ---- Rendering: cells and tables --------------------------------------------------------
 
 function visibleRowFields(sheet, rows) {
@@ -801,7 +1187,7 @@ function visibleRowFields(sheet, rows) {
   });
 }
 
-function renderRowCell(sheet, field, row, index, rowNumber, extra = {}) {
+function renderRowCell(sheet, field, row, index, rowNumber, extra = {}, columnIndex = -1) {
   const attrs = { section: sheet.id, index, field: field.key, ...extra };
   let content;
   if (field.kind === 'serial') {
@@ -814,15 +1200,45 @@ function renderRowCell(sheet, field, row, index, rowNumber, extra = {}) {
   } else {
     content = renderControl(field, row[field.key], attrs, `${sheet.id}-${index}-${field.key}-${extra.readingIndex === undefined ? '' : extra.readingIndex}`, 'table-input', true);
   }
-  return `<td data-label="${esc(field.label)}" class="sheet-cell sheet-cell-${field.kind}">${content}</td>`;
+  const sticky = columnIndex >= 0 && columnIndex < 2 ? ` sticky-left-${columnIndex + 1}` : '';
+  return `<td data-label="${esc(field.label)}" class="sheet-cell sheet-cell-${field.kind}${sticky}">${content}</td>`;
 }
 
-// Column widths come from the printed sheet (field.width = the fraction in
-// make_sheets_v3.py). The printed columns share what is left after the status and action
-// columns. (Plain percentages: a max()/calc() width on <col> is ignored by browsers.)
-const TRAILING_SHARE = { status: 13, action: 4.5, tower: 7, note: 4.5 };
+// Column widths. Sheets that fit the page (MS-01, 03, 06, 07) take the printed proportions
+// (field.width = the fraction in make_sheets_v3.py) as percentages. (Plain percentages: a
+// max()/calc() width on <col> is ignored by browsers.)
+// Dense sheets (MS-02, 04, 05, 08, 09) give every column a minimum width in pixels so its
+// content reads clearly (tick options on one line, numbers whole, Remark >= 160 px, Photo
+// ref >= 80 px); the table is as wide as those minimums need and scrolls inside its frame.
+const TRAILING_SHARE = { status: 13, action: 4.5, tower: 5, note: 4.5 };
+const TRAILING_PX = { status: 150, action: 56, tower: 56, note: 56 };
+const REMARK_KEYS = new Set(['remark', 'remarks', 'comment', 'observation']);
+const LEFT_STICKY_PX = [44, 150];
 
-function renderColgroup(columns, trailing = ['status', 'action']) {
+function tickOptionPx(option) {
+  return 27 + 4 + Math.round(String(option.label).length * 6.8) + 8;
+}
+
+function columnMinWidth(field) {
+  if (field.kind === 'serial') return LEFT_STICKY_PX[0];
+  if (field.kind === 'fixed') return 60;
+  if (field.kind === 'number') return 92;
+  if (field.kind === 'tick') return 130;
+  if (field.kind === 'ticks') {
+    const options = optionList(field);
+    return Math.max(80, options.reduce((sum, option) => sum + tickOptionPx(option), 0) + 4 * (options.length - 1) + 8);
+  }
+  if (field.key === 'photoRef') return 90;
+  if (REMARK_KEYS.has(field.key)) return 170;
+  return field.key === 'tag' || field.key === 'location' || field.key === 'mainLocationTower' ? LEFT_STICKY_PX[1] : 140;
+}
+
+function renderColgroup(columns, trailing = ['status', 'action'], dense = false) {
+  if (dense) {
+    const printed = columns.map((field, index) => `<col class="col-${esc(field.kind)}" style="width:${index === 1 ? Math.max(LEFT_STICKY_PX[1], columnMinWidth(field)) : columnMinWidth(field)}px">`);
+    const extra = trailing.map((name) => `<col class="col-${name}" style="width:${TRAILING_PX[name]}px">`);
+    return `<colgroup>${printed.join('')}${extra.join('')}</colgroup>`;
+  }
   const trailingTotal = trailing.reduce((sum, name) => sum + TRAILING_SHARE[name], 0);
   const printedTotal = columns.reduce((sum, field) => sum + (field.width || 8), 0);
   const unit = (100 - trailingTotal) / printedTotal;
@@ -831,50 +1247,110 @@ function renderColgroup(columns, trailing = ['status', 'action']) {
   return `<colgroup>${printed.join('')}${extra.join('')}</colgroup>`;
 }
 
-function renderSheetHead(columns, withStatus) {
-  return `<tr>${columns.map((field) => `<th>${esc(field.label)}</th>`).join('')}${withStatus ? '<th>Assessment</th>' : ''}<th>Action</th></tr>`;
+// Everything tableSurface needs to draw a sheet table.
+function sheetTableOptions(sheet, columns, trailing, extraClass = '') {
+  const dense = Boolean(sheet.dense);
+  const minPx = dense ? columns.reduce((sum, field, index) => sum + (index === 1 ? Math.max(LEFT_STICKY_PX[1], columnMinWidth(field)) : columnMinWidth(field)), 0) + trailing.reduce((sum, name) => sum + TRAILING_PX[name], 0) : 0;
+  return {
+    className: `sheet-table ${dense ? 'sheet-dense' : ''} ${extraClass}`.trim(),
+    colgroup: renderColgroup(columns, trailing, dense),
+    tableStyle: dense ? `min-width:${minPx}px` : ''
+  };
+}
+
+const FILLABLE_KINDS = new Set(['text', 'number', 'ticks', 'tick']);
+
+function renderSheetHead(columns, withStatus, sheetId = '') {
+  const label = (field) => {
+    const fill = sheetId && FILLABLE_KINDS.has(field.kind) && !field.legacy ? `<button class="fill-down" type="button" data-action="fill-down" data-section="${esc(sheetId)}" data-field="${esc(field.key)}" aria-label="Fill down ${esc(field.label)}" title="Fill the empty cells in this column with the first value entered">&#8615;</button>` : '';
+    return `<th scope="col"><span class="th-label">${esc(field.label)}</span>${fill}</th>`;
+  };
+  return `<tr>${columns.map((field, index) => label(field).replace('<th ', `<th class="${index < 2 ? `sticky-left-${index + 1}` : ''}" `)).join('')}${withStatus ? '<th class="sticky-right-2" scope="col">Assessment</th>' : ''}<th class="sticky-right-1" scope="col">Action</th></tr>`;
+}
+
+// Status cell: a compact badge, priority and the calculated limit stay beside the readings;
+// the full explanation opens on hover, focus or tap. `explain` overrides the text (the
+// loop and fault sheets show one explanation per feeder, on its first phase row).
+function renderStatusCell(sheetId, row, explain) {
+  const assessment = rowAssessment(sheetId, row);
+  const limit = assessment.limit === null || assessment.limit === undefined ? '' : `<span class="status-limit">Limit ${Number(assessment.limit).toFixed(2)}</span>`;
+  const text = explain === undefined ? assessment.comment : explain;
+  const button = text ? `<button class="explain-btn" type="button" data-explain="${esc(text)}" aria-label="Why this status">i</button>` : '';
+  return `
+    <td class="sheet-status-cell sticky-right-2" data-label="Status">
+      <div class="status-line">${pill(assessment.status.tone, assessment.status.label)}${assessment.priority ? `<span class="soft-chip">${esc(assessment.priority)}</span>` : ''}${button}</div>
+      ${limit}
+      ${flagChips(assessment.flags)}
+      <div class="auto-eval-text status-explain-inline">${esc(assessment.comment)}</div>
+    </td>
+  `;
+}
+
+// Row action cell with "copy previous row" ahead of remove / observation.
+function sheetActionCell(sheet, index, row, withCopy) {
+  const cell = actionButtonsCell(sheet.id, index, row).replace('class="table-action-cell"', 'class="table-action-cell sticky-right-1"');
+  const copy = withCopy ? `<button class="icon-button icon-button-copy" type="button" data-action="copy-prev-row" data-section="${esc(sheet.id)}" data-index="${index}" aria-label="Copy type, material, dimensions and device from the previous row" title="Copy from previous row">&#10697;</button>` : '';
+  return cell.replace('<div class="table-action-buttons">', `<div class="table-action-buttons">${copy}`);
+}
+
+function hasCopyable(sheet) {
+  return sheet.rowFields.some((field) => field.copyable && !field.legacy);
 }
 
 function renderRowsLayout(sheet) {
   const rows = state.draft[sheet.id] || [];
   const columns = visibleRowFields(sheet, rows);
+  const copy = hasCopyable(sheet);
   return tableSurface(
     `${sheet.code === 'legacy' ? sheet.title : `${sheet.code} ${sheet.title}`}`,
     'Add rows as needed for the executed field scope.',
-    renderSheetHead(columns, true),
+    renderSheetHead(columns, true, sheet.id),
     rows
-      .map((row, index) => `<tr class="sheet-row">${columns.map((field) => renderRowCell(sheet, field, row, index, index + 1)).join('')}${renderStatusCell(sheet.id, row)}${actionButtonsCell(sheet.id, index, row)}</tr>`)
+      .map((row, index) => `<tr class="sheet-row">${columns.map((field, columnIndex) => renderRowCell(sheet, field, row, index, index + 1, {}, columnIndex)).join('')}${renderStatusCell(sheet.id, row)}${sheetActionCell(sheet, index, row, copy && index > 0)}</tr>`)
       .join(''),
     `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add row</button></div>`,
-    { className: 'sheet-table', colgroup: renderColgroup(columns) }
+    sheetTableOptions(sheet, columns, ['status', 'action'])
   );
+}
+
+// One explanation per feeder: the distinct phase comments, joined.
+function groupExplanation(sheetId, rows, start, size) {
+  const labelled = rows.slice(start, start + size).map((row) => ({ phase: row.measuredPoints, text: rowAssessment(sheetId, row).comment })).filter((entry) => entry.text);
+  const distinct = [...new Set(labelled.map((entry) => entry.text))];
+  if (distinct.length <= 1) {
+    return distinct[0] || '';
+  }
+  return labelled.map((entry) => `${entry.phase ? `${entry.phase}: ` : ''}${entry.text}`).join('\n');
 }
 
 function renderPhaseGroupsLayout(sheet) {
   const rows = state.draft[sheet.id] || [];
   const size = sheet.groupSize || 3;
   const columns = visibleRowFields(sheet, rows);
+  const copy = hasCopyable(sheet);
   const body = rows
     .map((row, index) => {
       const offset = index % size;
       const groupNumber = Math.floor(index / size) + 1;
       const first = rows[index - offset] || row;
       const cells = columns
-        .map((field) => {
+        .map((field, columnIndex) => {
+          const sticky = columnIndex < 2 ? ` sticky-left-${columnIndex + 1}` : '';
           if (field.merge) {
             if (offset !== 0) {
               return '';
             }
             const merged = field.kind === 'serial' ? `<span class="table-input-static">${groupNumber}</span>` : renderControl(field, first[field.key], { section: sheet.id, index, field: field.key, groupSync: true }, `${sheet.id}-${index}-${field.key}`, 'table-input', true);
-            return `<td rowspan="${size}" data-label="${esc(field.label)}" class="phase-group-cell sheet-cell sheet-cell-${field.kind}">${merged}</td>`;
+            return `<td rowspan="${size}" data-label="${esc(field.label)}" class="phase-group-cell sheet-cell sheet-cell-${field.kind}${sticky}">${merged}</td>`;
           }
-          return renderRowCell(sheet, field, row, index, index + 1);
+          return renderRowCell(sheet, field, row, index, index + 1, {}, columnIndex);
         })
         .join('');
-      return `<tr class="sheet-row ${offset === 0 ? 'tower-group-row-start' : ''}">${cells}${renderStatusCell(sheet.id, row)}${actionButtonsCell(sheet.id, index, row)}</tr>`;
+      const explain = offset === 0 ? groupExplanation(sheet.id, rows, index, size) : '';
+      return `<tr class="sheet-row ${offset === 0 ? 'tower-group-row-start' : ''}">${cells}${renderStatusCell(sheet.id, row, explain)}${sheetActionCell(sheet, index, row, copy && offset === 0 && index > 0)}</tr>`;
     })
     .join('');
-  return tableSurface(`${sheet.code} ${sheet.title}`, 'Each feeder is three readings, one per phase; the shared cells are entered once.', renderSheetHead(columns, true), body, `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add feeder</button></div>`, { className: 'sheet-table', colgroup: renderColgroup(columns) });
+  return tableSurface(`${sheet.code} ${sheet.title}`, 'Each feeder is three readings, one per phase; the shared cells are entered once.', renderSheetHead(columns, true, sheet.id), body, `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add feeder</button></div>`, sheetTableOptions(sheet, columns, ['status', 'action']));
 }
 
 function towerObservationButton(groupIndex, readingIndex, reading) {
@@ -894,7 +1370,8 @@ function renderTowerLayout(sheet) {
         .map((reading, readingIndex) => {
           const first = readingIndex === 0;
           const cells = columns
-            .map((field) => {
+            .map((field, columnIndex) => {
+              const sticky = columnIndex < 2 ? ` sticky-left-${columnIndex + 1}` : '';
               if (field.merge) {
                 if (!first) {
                   return '';
@@ -903,38 +1380,39 @@ function renderTowerLayout(sheet) {
                   field.kind === 'serial'
                     ? `<span class="table-input-static">${groupIndex + 1}</span>`
                     : renderControl(field, group[field.key], { section: sheet.id, index: groupIndex, field: field.key }, `${sheet.id}-${groupIndex}-${field.key}`, 'table-input', true);
-                return `<td rowspan="${feet.length}" data-label="${esc(field.label)}" class="tower-group-cell sheet-cell">${content}</td>`;
+                return `<td rowspan="${feet.length}" data-label="${esc(field.label)}" class="tower-group-cell sheet-cell${sticky}">${content}</td>`;
               }
               if (field.kind === 'fixed') {
                 const position = feetField.values.indexOf(reading.measurementPointLocation);
                 return `<td data-label="${esc(field.label)}" class="tower-foot-label"><span class="table-input-static">${esc(position >= 0 ? feetField.display[position] : reading.measurementPointLocation)}</span></td>`;
               }
-              return renderRowCell(sheet, field, reading, groupIndex, groupIndex + 1, { readingIndex });
+              return renderRowCell(sheet, field, reading, groupIndex, groupIndex + 1, { readingIndex }, columnIndex);
             })
             .join('');
+          const num = (value) => (value === null || value === undefined ? '-' : esc(value));
           const status = first
-            ? `<td rowspan="${feet.length}" class="sheet-status-cell tower-group-cell" data-label="Assessment">
-                 ${pill(assessment.status.tone, assessment.status.label)}
-                 ${flagChips(assessment.flags)}
-                 <div class="status-limit">Zt ${assessment.totalImpedanceZt === null || assessment.totalImpedanceZt === undefined ? '-' : esc(assessment.totalImpedanceZt)} Ω · Σ I ${assessment.totalCurrentItotal === null || assessment.totalCurrentItotal === undefined ? '-' : esc(assessment.totalCurrentItotal)} mA · Zsat ${assessment.zsat === null || assessment.zsat === undefined ? esc(sheet.zsat) : esc(assessment.zsat)} Ω</div>
-                 <div class="auto-eval-text">${esc(assessment.remark)}</div>
+            ? `<td rowspan="${feet.length}" class="sheet-status-cell tower-group-cell sticky-right-3" data-label="Assessment">
+                 <div class="tower-totals tower-totals-${esc(assessment.status.tone)}">Zt ${num(assessment.totalImpedanceZt)} Ω · Zsat ${assessment.zsat === null || assessment.zsat === undefined ? esc(sheet.zsat) : esc(assessment.zsat)} Ω · <strong>${esc(assessment.status.label)}</strong></div>
+                 <div class="status-line">${flagChips(assessment.flags)}${assessment.remark ? `<button class="explain-btn" type="button" data-explain="${esc(assessment.remark)}" aria-label="Why this status">i</button>` : ''}</div>
+                 <div class="auto-eval-text status-explain-inline">ΣI ${num(assessment.totalCurrentItotal)} mA. ${esc(assessment.remark)}</div>
                </td>`
             : '';
           const action = first
-            ? `<td rowspan="${feet.length}" class="table-action-cell tower-group-action-cell"><button class="button button-ghost tower-group-remove" type="button" data-action="remove-tower-group" data-group-index="${groupIndex}">Remove tower</button></td>`
+            ? `<td rowspan="${feet.length}" class="table-action-cell tower-group-action-cell sticky-right-2"><button class="icon-button icon-button-danger tower-group-remove" type="button" data-action="remove-tower-group" data-group-index="${groupIndex}" aria-label="Remove tower ${groupIndex + 1}" title="Remove tower"><span class="icon-button-symbol">&times;</span></button></td>`
             : '';
-          return `<tr class="${first ? 'tower-group-row-start' : ''} ${readingIndex === feet.length - 1 ? 'tower-group-row-end' : ''}">${cells}${status}${action}<td class="table-action-cell">${towerObservationButton(groupIndex, readingIndex, reading)}</td></tr>`;
+          return `<tr class="${first ? 'tower-group-row-start' : ''} ${readingIndex === feet.length - 1 ? 'tower-group-row-end' : ''}">${cells}${status}${action}<td class="table-action-cell sticky-right-1">${towerObservationButton(groupIndex, readingIndex, reading)}</td></tr>`;
         })
         .join('');
     })
     .join('');
+  const head = `<tr>${columns.map((field, index) => `<th class="${index < 2 ? `sticky-left-${index + 1}` : ''}" scope="col"><span class="th-label">${esc(field.label)}</span>${FILLABLE_KINDS.has(field.kind) ? `<button class="fill-down" type="button" data-action="fill-down" data-section="${esc(sheet.id)}" data-field="${esc(field.key)}" aria-label="Fill down ${esc(field.label)}" title="Fill the empty cells in this column with the first value entered">&#8615;</button>` : ''}</th>`).join('')}<th class="sticky-right-3" scope="col">Assessment</th><th class="sticky-right-2" scope="col">Tower</th><th class="sticky-right-1" scope="col">Note</th></tr>`;
   return tableSurface(
     `${sheet.code} ${sheet.title}`,
     'Each tower has four fixed feet (F-1 to F-4); the tower totals are calculated.',
-    `<tr>${columns.map((field) => `<th>${esc(field.label)}</th>`).join('')}<th>Assessment</th><th>Tower</th><th>Photo / note</th></tr>`,
+    head,
     body,
     `<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="${esc(sheet.id)}">Add tower</button></div>`,
-    { className: 'sheet-table tower-sheet-table', colgroup: renderColgroup(columns, ['status', 'tower', 'note']) }
+    sheetTableOptions(sheet, columns, ['status', 'tower', 'note'], 'tower-sheet-table')
   );
 }
 

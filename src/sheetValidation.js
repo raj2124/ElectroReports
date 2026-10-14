@@ -65,6 +65,10 @@ function validateReport(report, context = {}) {
     ((report.soilResistivity && report.soilResistivity.locations) || []).forEach((location, locationIndex) => {
       const where = `${soil.code} location ${locationIndex + 1}`;
       const path = `soilResistivity.locations.${locationIndex}`;
+      const hasSoilReading = SOIL_DIRECTIONS.some((key) => ((location && location[key]) || []).some((row) => !isBlank(row.resistivity)));
+      if (hasSoilReading && isBlank(location.inputUnit)) {
+        warn({ code: 'SELECTION_MISSING', sheet: soil.id, path: `${path}.inputUnit`, message: `${where}: readings are entered but the reading unit (R or rho) is not ticked.` });
+      }
       if (!isBlank(location.inputUnit) && !['ohm', 'ohm-m'].includes(location.inputUnit)) {
         error({ code: 'BAD_OPTION', sheet: soil.id, path: `${path}.inputUnit`, message: `${where}: reading unit must be R (ohm) or rho (ohm-m).` });
       }
@@ -101,6 +105,7 @@ function validateReport(report, context = {}) {
 
     rows.forEach((row, rowIndex) => {
       const where = `${label} row ${rowIndex + 1}`;
+      warnMissingSelections(sheet, row, rowIndex, label, warn);
       validateFields(sheet, flattenFields(sheet.rowFields), row, `${sheet.id}.${rowIndex}`, where, error);
       if (sheet.layout === 'towerGroups') {
         (row.readings || []).forEach((reading, readingIndex) => {
@@ -199,6 +204,31 @@ function validateHeader(sheet, header, label, project, { error, warn }) {
       });
     }
   }
+}
+
+// A row (or tower foot) with a reading must also have the selections the assessment needs
+// (electrode type and material, device type, foot connection). They are never pre-filled.
+function warnMissingSelections(sheet, row, rowIndex, label, warn) {
+  const needed = sheet.rowFields.filter((field) => field.needsSelection);
+  if (!needed.length || !sheet.readingKeys) {
+    return;
+  }
+  const check = (target, hasReading, where, pathPrefix) => {
+    if (!hasReading) {
+      return;
+    }
+    const missing = needed.filter((field) => isBlank(target[field.key]) && (target[field.key] === undefined || !Array.isArray(target[field.key])));
+    if (missing.length) {
+      warn({ code: 'SELECTION_MISSING', sheet: sheet.id, path: pathPrefix, message: `${where}: has a reading but ${missing.map((field) => field.label).join(' and ')} ${missing.length > 1 ? 'are' : 'is'} not ticked.` });
+    }
+  };
+  if (sheet.layout === 'towerGroups') {
+    (row.readings || []).forEach((reading, readingIndex) => {
+      check(reading, sheet.readingKeys.some((key) => !isBlank(reading[key])), `${label} tower ${rowIndex + 1} foot ${readingIndex + 1}`, `${sheet.id}.${rowIndex}.readings.${readingIndex}`);
+    });
+    return;
+  }
+  check(row, sheet.readingKeys.some((key) => !isBlank(row[key])), `${label} row ${rowIndex + 1}${row.tag ? ` (${row.tag})` : ''}`, `${sheet.id}.${rowIndex}`);
 }
 
 function warnElectrodeDimensions(row, rowIndex, label, warn) {

@@ -1694,16 +1694,18 @@ function sectionCard(title, subtitle, content) {
 }
 
 function renderField(label, value, bind, type = 'text', placeholder = '') {
-  return `
-    <label class="field">
-      <span>${escapeHtml(label)}</span>
+  const input = `
       <input
         type="${type}"
         class="text-input"
         placeholder="${escapeHtml(placeholder)}"
         value="${escapeHtml(value || '')}"
         data-bind="${bind}"
-      />
+      />`;
+  return `
+    <label class="field">
+      <span>${escapeHtml(label)}</span>
+      ${type === 'date' && typeof dateControl === 'function' ? dateControl(input, value) : input}
     </label>
   `;
 }
@@ -1783,14 +1785,8 @@ function renderProjectStep() {
           ? `
             <div class="zoho-selected-bar">
               <div class="zoho-selected-primary">
-                <span>Project Number</span>
-                <strong>${escapeHtml(state.draft.project.projectNo || state.draft.project.zohoProjectName || '-')}</strong>
-                ${
-                  state.draft.project.zohoProjectName &&
-                  state.draft.project.zohoProjectName !== state.draft.project.projectNo
-                    ? `<small>${escapeHtml(state.draft.project.zohoProjectName)}</small>`
-                    : ''
-                }
+                <span>Zoho project</span>
+                <strong>${escapeHtml(state.draft.project.zohoProjectName || '-')}</strong>
               </div>
               <div><span>Owner</span><strong>${escapeHtml(state.draft.project.zohoProjectOwner || '-')}</strong></div>
               <div><span>Stage</span><strong>${escapeHtml(state.draft.project.zohoProjectStage || '-')}</strong></div>
@@ -2073,8 +2069,8 @@ function tableSurface(title, subtitle, header, body, footer = '', tableOptions =
           <p>${escapeHtml(subtitle)}</p>
         </div>
       </div>
-      <div class="table-wrap ${tableOptions.className ? 'sheet-table-wrap' : ''}">
-        <table class="data-table ${tableOptions.className || ''}">
+      <div class="table-wrap ${tableOptions.className ? `sheet-table-wrap ${tableOptions.className.includes('sheet-dense') ? 'sheet-dense-wrap' : ''}` : ''}">
+        <table class="data-table ${tableOptions.className || ''}" ${tableOptions.tableStyle ? `style="${tableOptions.tableStyle}"` : ''}>
           ${tableOptions.colgroup || ''}
           <thead>${header}</thead>
           <tbody>${body}</tbody>
@@ -2786,6 +2782,7 @@ function builderView() {
               >
                 <span>${index + 1}</span>
                 <strong>${escapeHtml(step.label)}</strong>
+                ${typeof stepStatus === 'function' ? (() => { const status = stepStatus(step.id); return `<i class="step-dot step-dot-${status}" role="img" aria-label="${STEP_STATUS_LABEL[status]}" title="${STEP_STATUS_LABEL[status]}"></i>`; })() : ''}
               </button>
             `;
           })
@@ -3097,6 +3094,9 @@ function render() {
   updateMotionEffects();
   if (typeof restoreTickPicker === 'function') {
     restoreTickPicker();
+  }
+  if (typeof hideExplain === 'function') {
+    hideExplain();
   }
 }
 
@@ -3625,6 +3625,9 @@ document.addEventListener('input', (event) => {
 
   if (target.matches('[data-section], [data-soil-cell], [data-soil-location], [data-header-sheet]')) {
     if (applyFieldInput(target)) {
+      if (typeof autoAddRow === 'function') {
+        autoAddRow(target);
+      }
       scheduleDraftAutosave();
       rerenderPreservingFocus();
     }
@@ -3690,6 +3693,9 @@ document.addEventListener('change', async (event) => {
   }
   if (target.matches('[data-section], [data-soil-cell], [data-soil-location], [data-header-sheet]')) {
     if (applyFieldInput(target)) {
+      if (typeof autoAddRow === 'function') {
+        autoAddRow(target);
+      }
       scheduleDraftAutosave();
       rerenderPreservingFocus();
     }

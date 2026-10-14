@@ -49,6 +49,7 @@ function buildPayload() {
       locations: [
         {
           name: 'VAV Link 220kV Switch Yard',
+          inputUnit: 'ohm-m',
           direction1: [
             { spacing: '0.5', resistivity: '60', rowObservation: 'Dry top layer observed.' },
             { spacing: '1.0', resistivity: '70' },

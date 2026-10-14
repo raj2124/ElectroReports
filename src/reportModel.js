@@ -139,7 +139,7 @@ function createDefaultSoilLocation(name = 'Location 1', presetId = DEFAULT_SOIL_
     locationId: buildRowId('soil-location'),
     name,
     // 'ohm-m': values are rho as read. 'ohm': values are R as read, rho = 2*pi*a*R.
-    inputUnit: 'ohm-m',
+    inputUnit: '',
     probeDepthCm: '',
     weather: '',
     bearings: Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, ''])),
@@ -158,8 +158,8 @@ function createDefaultElectrodeRow() {
     ...createRowMeta('electrode'),
     tag: '',
     location: '',
-    electrodeType: 'Rod',
-    materialType: 'Cu',
+    electrodeType: '',
+    materialType: '',
     length: '',
     diameter: '',
     plateLengthM: '',
@@ -201,13 +201,13 @@ function createDefaultLoopImpedanceRow() {
     srNo: '',
     location: '',
     feederTag: '',
-    deviceType: 'MCB',
+    deviceType: '',
     deviceRating: '',
     tripCurve: '',
     breakingCapacity: '',
     measuredPoints: 'R-E',
     loopImpedance: '',
-    voltage: '230',
+    voltage: '',
     photoRef: '',
     remarks: ''
   };
@@ -219,14 +219,14 @@ function createDefaultProspectiveFaultRow() {
     srNo: '',
     location: '',
     feederTag: '',
-    deviceType: 'MCB',
+    deviceType: '',
     deviceRating: '',
     breakingCapacity: '',
     measuredPoints: 'R-E',
     loopImpedance: '',
     prospectiveFaultCurrent: '',
     shortCircuitCurrentLN: '',
-    voltage: '230',
+    voltage: '',
     photoRef: '',
     comment: ''
   };
@@ -315,7 +315,7 @@ function createDefaultTowerFootingReading(foot) {
   return {
     measurementPointLocation: '',
     footLabel: foot,
-    footToEarthingConnectionStatus: 'Given',
+    footToEarthingConnectionStatus: '',
     measuredCurrentMa: '',
     measuredImpedance: '',
     conditionCodes: [],
@@ -962,7 +962,7 @@ function summarizeTowerGroups(groups) {
     const key = buildTowerGroupKey(group);
     const hasAnyInput = Boolean(asTrimmedString(group?.mainLocationTower)) || readings.some((reading) => {
       return (
-        asTrimmedString(reading?.footToEarthingConnectionStatus) !== '' && asTrimmedString(reading?.footToEarthingConnectionStatus) !== 'Given'
+        normalizeConnectionStatus(reading?.footToEarthingConnectionStatus) === 'Not given'
       ) || Boolean(asTrimmedString(reading?.measuredCurrentMa)) || Boolean(asTrimmedString(reading?.measuredImpedance)) || Boolean(asTrimmedString(reading?.rowObservation)) || (Array.isArray(reading?.rowPhotos) && reading.rowPhotos.length);
     });
 
@@ -1274,7 +1274,7 @@ function normalizeSoilLocations(input) {
       locationId: asTrimmedString(location?.locationId) || buildRowId('soil-location'),
       name: asTrimmedString(location?.name) || `Location ${index + 1}`,
       ...Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, normalizeSoilRows(location?.[key])])),
-      inputUnit: asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : 'ohm-m',
+      inputUnit: asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : asTrimmedString(location?.inputUnit) === 'ohm-m' ? 'ohm-m' : '',
       probeDepthCm: asTextNumber(location?.probeDepthCm),
       weather: asTrimmedString(location?.weather),
       bearings: normalizeSoilBearings(location?.bearings),
@@ -1308,13 +1308,14 @@ function towerReadingHasAnyValue(reading) {
     Boolean(asTrimmedString(reading?.photoRef)) ||
     Boolean(asTrimmedString(reading?.remark)) ||
     normalizeConditionCodes(reading?.conditionCodes).length > 0 ||
-    normalizeConnectionStatus(reading?.footToEarthingConnectionStatus) !== 'Given'
+    normalizeConnectionStatus(reading?.footToEarthingConnectionStatus) !== ''
   );
 }
 
 // 'Given' | 'Not given'; older reports wrote 'Not Given'.
 function normalizeConnectionStatus(value) {
-  return asTrimmedString(value).toLowerCase() === 'not given' ? 'Not given' : 'Given';
+  const text = asTrimmedString(value).toLowerCase();
+  return text === 'not given' ? 'Not given' : text === 'given' ? 'Given' : '';
 }
 
 function normalizeTowerReadingFields(source) {
@@ -1431,13 +1432,13 @@ function normalizeLoopRows(inputRows) {
       normalized.srNo = asTrimmedString(row?.srNo) || String(index + 1);
       normalized.location = asTrimmedString(row?.location || row?.mainLocation);
       normalized.feederTag = asTrimmedString(row?.feederTag || row?.panelEquipment);
-      normalized.deviceType = asTrimmedString(row?.deviceType) || 'MCB';
+      normalized.deviceType = asTrimmedString(row?.deviceType);
       normalized.deviceRating = asTrimmedString(row?.deviceRating);
       normalized.breakingCapacity = asTrimmedString(row?.breakingCapacity);
       normalized.measuredPoints = asTrimmedString(row?.measuredPoints) || PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
       normalized.tripCurve = asTrimmedString(row?.tripCurve);
       normalized.loopImpedance = asTrimmedString(row?.loopImpedance || row?.measuredZs);
-      normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.voltage = asTrimmedString(row?.voltage);
       normalized.photoRef = asTrimmedString(row?.photoRef);
       normalized.remarks = asTrimmedString(row?.remarks);
       return normalized;
@@ -1458,14 +1459,14 @@ function normalizeFaultRows(inputRows) {
       normalized.srNo = asTrimmedString(row?.srNo) || String(index + 1);
       normalized.location = asTrimmedString(row?.location || row?.mainLocation);
       normalized.feederTag = asTrimmedString(row?.feederTag || row?.panelEquipment);
-      normalized.deviceType = asTrimmedString(row?.deviceType) || 'MCB';
+      normalized.deviceType = asTrimmedString(row?.deviceType);
       normalized.deviceRating = asTrimmedString(row?.deviceRating);
       normalized.breakingCapacity = asTrimmedString(row?.breakingCapacity);
       normalized.measuredPoints = asTrimmedString(row?.measuredPoints) || PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
       normalized.loopImpedance = asTrimmedString(row?.loopImpedance || row?.measuredZs);
       normalized.prospectiveFaultCurrent = asTrimmedString(row?.prospectiveFaultCurrent);
       normalized.shortCircuitCurrentLN = asTrimmedString(row?.shortCircuitCurrentLN);
-      normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.voltage = asTrimmedString(row?.voltage);
       normalized.photoRef = asTrimmedString(row?.photoRef);
       normalized.comment = asTrimmedString(row?.comment);
       return normalized;
@@ -1790,6 +1791,7 @@ function calculateSoilSummary(report) {
       : [
           {
             name: 'Location 1',
+            inputUnit: 'ohm-m', // the old single-location shape predates the unit field: values are rho
             direction1: report?.soilResistivity?.direction1 || [],
             direction2: report?.soilResistivity?.direction2 || [],
             drivenElectrodeDiameter: report?.soilResistivity?.drivenElectrodeDiameter || '',
@@ -1803,13 +1805,18 @@ function calculateSoilSummary(report) {
   const soilProfile = resolveProfile(report?.project?.acceptanceProfile);
   const exact = [];
   const locationSummaries = rawLocations.map((location, index) => {
-    const inputUnit = asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : 'ohm-m';
+    const unitText = asTrimmedString(location?.inputUnit);
+    const inputUnit = unitText === 'ohm' ? 'ohm' : unitText === 'ohm-m' ? 'ohm-m' : '';
+    // Without a ticked reading unit the values cannot be read as R or as rho, so the location
+    // is Pending: no rho, no corrosivity class, and it stays out of the site average (and so
+    // out of the electrode limits that use it).
+    const unitMissing = inputUnit === '';
     // Mean of each direction's readings, then the mean of the direction means
     // (up to 8 directions; 2 perpendicular directions minimum).
     const directionAverages = Object.fromEntries(
       SOIL_DIRECTION_KEYS.map((key) => [
         key,
-        average((location[key] || []).map((row) => readSoilRho(row, inputUnit)).filter((value) => Number.isFinite(value)))
+        unitMissing ? null : average((location[key] || []).map((row) => readSoilRho(row, inputUnit)).filter((value) => Number.isFinite(value)))
       ])
     );
     const direction1Average = directionAverages.direction1;
@@ -1827,6 +1834,8 @@ function calculateSoilSummary(report) {
       directionAverages: Object.fromEntries(Object.entries(directionAverages).map(([key, value]) => [key, round(value, 2)])),
       category,
       inputUnit,
+      pending: unitMissing,
+      pendingReason: unitMissing ? 'reading unit not selected' : '',
       drivenElectrodeDiameter: asTrimmedString(location?.drivenElectrodeDiameter),
       drivenElectrodeLength: asTrimmedString(location?.drivenElectrodeLength),
       notes: asTrimmedString(location?.notes)
@@ -1843,6 +1852,7 @@ function calculateSoilSummary(report) {
     direction2Average: round(direction2Average, 2),
     overallAverage: round(overallAverage, 2),
     category,
+    pendingLocations: locationSummaries.filter((location) => location.pending && SOIL_DIRECTION_KEYS.some((key) => ((rawLocations[locationSummaries.indexOf(location)] || {})[key] || []).some((row) => asTrimmedString(row?.resistivity)))).map((location) => location.name),
     locations: locationSummaries
   };
 }

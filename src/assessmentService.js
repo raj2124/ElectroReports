@@ -90,8 +90,10 @@ function buildModules({ report, soil, summaries, assessments }) {
         badge: soil.category.label,
         detail:
           soil.overallAverage === null
-            ? `Awaiting numeric readings across ${count} soil location${count === 1 ? '' : 's'}.`
-            : `${soil.overallAverage} ohm-m mean across ${count} location${count === 1 ? '' : 's'}.`,
+            ? soil.pendingLocations && soil.pendingLocations.length
+              ? `Pending: reading unit not selected for ${soil.pendingLocations.join(', ')}.`
+              : `Awaiting numeric readings across ${count} soil location${count === 1 ? '' : 's'}.`
+            : `${soil.overallAverage} ohm-m mean across ${count} location${count === 1 ? '' : 's'}${soil.pendingLocations && soil.pendingLocations.length ? `; ${soil.pendingLocations.join(', ')} excluded (reading unit not selected)` : ''}.`,
         complete: soil.overallAverage !== null
       });
       return;

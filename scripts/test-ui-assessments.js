@@ -147,7 +147,12 @@ async function main() {
     const printed = ['Pit TAG No.', 'Location / name of pit', 'Electrode type', 'Material', 'Length l (m)', 'Dia d / strip width (mm)', 'R without grid at 61.8% (Ω)', 'Check R at 50% (Ω)', 'Check R at 70% (Ω)', 'R with grid (Ω)', 'Method', 'Condition codes', 'Photo ref.', 'Remark'];
     let position = html.indexOf('<thead>');
     printed.forEach((label) => {
-      const next = html.indexOf(`<th>${label.replace(/&/g, '&amp;')}</th>`, position);
+      // Header cells carry a fill-down button and sticky classes, so match the label inside <th ...>.
+      const escaped = label.replace(/&/g, '&amp;').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`<th[^>]*>(<span class="th-label">)?${escaped}(</span>|</th>)`, 'g');
+      pattern.lastIndex = position;
+      const match = pattern.exec(html);
+      const next = match ? match.index : -1;
       assert.ok(next > position, `column "${label}" is missing or out of order`);
       position = next;
     });

@@ -3,7 +3,7 @@
   --surface: rgba(255, 255, 255, 0.72);
   --surface-strong: rgba(255, 255, 255, 0.88);
   --text: #0f1728;
-  --muted: #65748b;
+  --muted: #55657c;
   --border: rgba(170, 188, 208, 0.42);
   --border-strong: rgba(155, 178, 203, 0.58);
   --brand: #1991ff;
@@ -3618,7 +3618,7 @@ textarea {
 
 /* Form steps (project, selection) keep their width; sheet steps use the page. */
 .builder-layout-form {
-  max-width: 1480px;
+  max-width: none;
 }
 
 .builder-layout-sheet {
@@ -3792,7 +3792,7 @@ textarea {
 
 /* Tablet landscape: ticks collapse to a summary that opens a picker. */
 @media (min-width: 1024px) and (max-width: 1279.98px) {
-  .sheet-table .tick-summary {
+  .sheet-table:not(.sheet-dense) .tick-summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -3810,23 +3810,23 @@ textarea {
     cursor: pointer;
   }
 
-  .sheet-table .tick-summary-text {
+  .sheet-table:not(.sheet-dense) .tick-summary-text {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .sheet-table .tick-cell.is-open .tick-summary {
+  .sheet-table:not(.sheet-dense) .tick-cell.is-open .tick-summary {
     border-color: var(--brand-dark);
     outline: 3px solid var(--brand-soft);
   }
 
-  .sheet-table .tick-cell .tick-group:not([popover]) {
+  .sheet-table:not(.sheet-dense) .tick-cell .tick-group:not([popover]) {
     display: none;
   }
 
-  .sheet-table .tick-group[popover] {
+  .sheet-table:not(.sheet-dense) .tick-group[popover] {
     position: fixed;
     inset: auto;
     margin: 0;
@@ -3840,11 +3840,11 @@ textarea {
     overflow: visible;
   }
 
-  .sheet-table .tick-group[popover]:popover-open {
+  .sheet-table:not(.sheet-dense) .tick-group[popover]:popover-open {
     display: flex;
   }
 
-  .sheet-table .tick-group[popover] .tick {
+  .sheet-table:not(.sheet-dense) .tick-group[popover] .tick {
     min-height: 44px;
     min-width: 44px;
     padding: 6px 12px 6px 8px;
@@ -3864,87 +3864,161 @@ textarea {
   }
 }
 
-/* Mid widths: scroll inside the table only; Sr and TAG/location stay in view and the
-   assessment stays beside the readings. */
+/* Sticky columns: Sr and TAG/location stay on the left, assessment and actions on the right.
+   Dense sheets (MS-02, 04, 05, 08, 09) scroll inside their frame at any width >= 721 px; the
+   sheets that fit (MS-01, 03, 06, 07) only scroll between 721 and 1023 px. */
+@media (min-width: 721px) {
+  .sheet-dense .sticky-left-1,
+  .sheet-dense .sticky-left-2,
+  .sheet-dense .sticky-right-1,
+  .sheet-dense .sticky-right-2,
+  .sheet-dense .sticky-right-3 {
+    position: sticky;
+    z-index: 2;
+    background: #fff;
+  }
+
+  .sheet-dense .phase-group-cell.sticky-left-1,
+  .sheet-dense .phase-group-cell.sticky-left-2,
+  .sheet-dense .tower-group-cell.sticky-left-1,
+  .sheet-dense .tower-group-cell.sticky-left-2 {
+    background: #f6f9fd;
+  }
+
+  .sheet-dense th.sticky-left-1,
+  .sheet-dense th.sticky-left-2,
+  .sheet-dense th.sticky-right-1,
+  .sheet-dense th.sticky-right-2,
+  .sheet-dense th.sticky-right-3 {
+    z-index: 5;
+    background: #eef4fb;
+  }
+
+  .sheet-dense .sticky-left-1 {
+    left: 0;
+  }
+
+  .sheet-dense .sticky-left-2 {
+    left: 44px;
+    box-shadow: 2px 0 0 var(--border-strong);
+  }
+
+  .sheet-dense .sticky-right-1 {
+    right: 0;
+  }
+
+  .sheet-dense .sticky-right-2 {
+    right: 56px;
+    box-shadow: -2px 0 0 var(--border-strong);
+  }
+
+  .sheet-dense.tower-sheet-table .sticky-right-2 {
+    right: 56px;
+    box-shadow: none;
+  }
+
+  .sheet-dense .sticky-right-3 {
+    right: 112px;
+    box-shadow: -2px 0 0 var(--border-strong);
+  }
+
+  .sheet-dense-wrap {
+    max-height: calc(100vh - 150px);
+    overflow: auto;
+    padding-bottom: 6px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .sheet-dense {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  /* One line per tick group: the column is as wide as its options need. */
+  .sheet-dense .tick-group {
+    flex-wrap: nowrap;
+  }
+
+  .sheet-dense .tick {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .sheet-dense .tick-label {
+    overflow-wrap: normal;
+  }
+
+  .sheet-dense .sheet-status-cell .status-line {
+    flex-wrap: wrap;
+  }
+}
+
 @media (min-width: 721px) and (max-width: 1023.98px) {
-  .sheet-table-wrap {
+  .sheet-table:not(.sheet-dense) .sheet-table-wrap,
+  .sheet-table-wrap:not(.sheet-dense-wrap) {
     max-height: 78vh;
     overflow: auto;
     padding-bottom: 8px;
   }
 
-  .sheet-table {
+  .sheet-table:not(.sheet-dense) {
     min-width: 1180px;
   }
 
-  .sheet-table td,
-  .sheet-table th {
-    background: var(--surface-strong, #fff);
-  }
-
-  .sheet-table th {
-    background: #eef4fb;
-  }
-
-  .sheet-table col:nth-child(1) {
+  .sheet-table:not(.sheet-dense) col:nth-child(1) {
     width: 52px !important;
   }
 
-  .sheet-table col:nth-child(2) {
+  .sheet-table:not(.sheet-dense) col:nth-child(2) {
     width: 150px !important;
   }
 
-  .sheet-table tr > :nth-child(1),
-  .sheet-table tr > :nth-child(2) {
-    position: sticky;
-    z-index: 2;
+  .sheet-table:not(.sheet-dense) col.col-status {
+    width: 170px !important;
   }
 
-  .sheet-table tr > :nth-child(1) {
+  .sheet-table:not(.sheet-dense) col.col-action {
+    width: 56px !important;
+  }
+
+  .sheet-table:not(.sheet-dense) .sticky-left-1,
+  .sheet-table:not(.sheet-dense) .sticky-left-2,
+  .sheet-table:not(.sheet-dense) .sticky-right-1,
+  .sheet-table:not(.sheet-dense) .sticky-right-2 {
+    position: sticky;
+    z-index: 2;
+    background: #fff;
+  }
+
+  .sheet-table:not(.sheet-dense) th.sticky-left-1,
+  .sheet-table:not(.sheet-dense) th.sticky-left-2,
+  .sheet-table:not(.sheet-dense) th.sticky-right-1,
+  .sheet-table:not(.sheet-dense) th.sticky-right-2 {
+    z-index: 5;
+    background: #eef4fb;
+  }
+
+  .sheet-table:not(.sheet-dense) .sticky-left-1 {
     left: 0;
   }
 
-  .sheet-table tr > :nth-child(2) {
+  .sheet-table:not(.sheet-dense) .sticky-left-2 {
     left: 52px;
     box-shadow: 2px 0 0 var(--border-strong);
   }
 
-  .sheet-table thead tr > :nth-child(1),
-  .sheet-table thead tr > :nth-child(2) {
-    z-index: 4;
+  .sheet-table:not(.sheet-dense) .sticky-right-1 {
+    right: 0;
   }
 
-  .sheet-table .tick {
-    min-height: 44px;
-  }
-
-  /* The status column and the actions stay at the right edge. */
-  .sheet-table:not(.tower-sheet-table) .sheet-status-cell,
-  .sheet-table:not(.tower-sheet-table) th:nth-last-child(2) {
-    position: sticky;
+  .sheet-table:not(.sheet-dense) .sticky-right-2 {
     right: 56px;
-    z-index: 2;
     box-shadow: -2px 0 0 var(--border-strong);
   }
 
-  .sheet-table:not(.tower-sheet-table) .table-action-cell,
-  .sheet-table:not(.tower-sheet-table) th:last-child {
-    position: sticky;
-    right: 0;
-    z-index: 2;
-  }
-
-  .sheet-table:not(.tower-sheet-table) th:nth-last-child(2),
-  .sheet-table:not(.tower-sheet-table) th:last-child {
-    z-index: 4;
-  }
-
-  .sheet-table:not(.tower-sheet-table) col.col-status {
-    width: 170px !important;
-  }
-
-  .sheet-table:not(.tower-sheet-table) col.col-action {
-    width: 56px !important;
+  .sheet-table:not(.sheet-dense) .tick {
+    min-height: 44px;
   }
 }
 
@@ -3952,7 +4026,12 @@ textarea {
 @media (max-width: 720px) {
   .sheet-table {
     table-layout: auto;
-    min-width: 0;
+    min-width: 0 !important;
+  }
+
+  .sheet-dense-wrap {
+    max-height: none;
+    border: 0;
   }
 
   .sheet-table colgroup {
@@ -4001,4 +4080,371 @@ textarea {
   line-height: 1.2;
   overflow-wrap: normal;
   word-break: normal;
+}
+
+/* ===== Session 6B.1d ===================================================================
+   A. Empty dates read "dd/mm/yyyy" in the placeholder colour, never a real-looking date. */
+.date-field {
+  position: relative;
+  display: block;
+}
+
+.date-field.is-empty input[type='date']:not(:focus)::-webkit-datetime-edit {
+  opacity: 0;
+}
+
+.date-field .date-placeholder {
+  display: none;
+}
+
+.date-field.is-empty .date-placeholder {
+  display: block;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: #5b6b82;
+  pointer-events: none;
+}
+
+.date-field.is-empty:focus-within .date-placeholder {
+  display: none;
+}
+
+/* B. Project and Selection steps: fluid form, sticky right rail of 340-380 px, one field
+   grid with even spacing (fields are plain label + input, not boxed cards). */
+.builder-layout-form {
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 380px);
+}
+
+.builder-layout-form .builder-aside {
+  position: sticky;
+  top: 18px;
+}
+
+.builder-layout-form .field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px 20px;
+  align-items: start;
+}
+
+.builder-layout-form .field {
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  align-content: start;
+}
+
+.builder-layout-form .field > span:first-child {
+  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+}
+
+.builder-layout-form .field input,
+.builder-layout-form .field select {
+  width: 100%;
+  min-height: 46px;
+}
+
+.builder-layout-form .field-hint {
+  margin-top: 2px;
+}
+
+.selection-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+/* WCAG AA: chips and test-card labels sit on white / pale blue, so they need dark text. */
+.surface .soft-chip,
+.mini-surface .soft-chip,
+.selection-tile .soft-chip {
+  background: #e3edfb;
+  border-color: #a9c1e6;
+  color: #0b3a8c;
+}
+
+.selection-tile .soft-chip {
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+}
+
+.selection-tile p {
+  color: #46566d;
+}
+
+.toggle-mark {
+  color: #0b3a8c;
+  background: #e8eef7;
+}
+
+.selection-tile-active .toggle-mark {
+  background: #cfe0fb;
+  color: #08357f;
+}
+
+.zoho-selected-bar .zoho-selected-primary small {
+  color: #46566d;
+}
+
+/* The label style of ".field span" must not reach the date wrapper. */
+.field .date-field {
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: inherit;
+}
+
+.field .date-field input {
+  min-height: 46px;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.field .date-field.is-empty .date-placeholder {
+  color: #5b6b82;
+}
+
+/* C. Sheet screens ---------------------------------------------------------------------------- */
+.th-label {
+  display: inline;
+}
+
+.fill-down,
+.explain-btn,
+.icon-button-copy {
+  cursor: pointer;
+}
+
+.fill-down {
+  margin-left: 3px;
+  padding: 0 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: #0b3a8c;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.fill-down:hover,
+.fill-down:focus-visible {
+  background: #e3edfb;
+}
+
+.icon-button-copy {
+  color: #0b3a8c;
+}
+
+.status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-explain-inline {
+  display: none;
+}
+
+.explain-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #5b78a8;
+  border-radius: 50%;
+  background: #fff;
+  color: #0b3a8c;
+  font: italic 700 0.8rem/1 Georgia, serif;
+}
+
+.explain-btn:hover,
+.explain-btn:focus-visible {
+  background: #e3edfb;
+}
+
+.explain-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #10243f;
+  color: #fff;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  white-space: pre-line;
+  box-shadow: 0 14px 34px rgba(16, 33, 63, 0.35);
+}
+
+.tower-totals {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.tower-totals-healthy strong {
+  color: #1f6d45;
+}
+
+.tower-totals-critical strong {
+  color: #a2362b;
+}
+
+.tower-totals-warning strong {
+  color: #8a5a00;
+}
+
+.tower-totals-neutral strong {
+  color: #46566d;
+}
+
+.tower-group-remove.icon-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+/* Header cells: compact responsive grid, each field 180-280 px. */
+.header-grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 280px));
+  gap: 12px 16px;
+}
+
+.header-cell .table-input,
+.header-cell .text-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.header-subfield {
+  flex: 0 0 96px;
+}
+
+.header-subfield .table-input {
+  min-width: 0;
+}
+
+/* Autofill: a slim one-line bar. */
+.soil-ocr-assist {
+  padding: 8px 14px;
+}
+
+.soil-ocr-assist .mini-surface-head {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0;
+}
+
+.soil-ocr-assist .mini-surface-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.soil-ocr-assist .mini-surface-head p {
+  display: none;
+}
+
+.soil-ocr-assist .soft-chip-button {
+  min-height: 34px;
+  padding: 6px 12px;
+}
+
+.soil-ocr-assist .limit-banner,
+.soil-ocr-assist > p {
+  display: none;
+}
+
+/* Step tabs: a small status dot (shape as well as colour). */
+.step-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  margin-left: 6px;
+  border: 2px solid #5b6b82;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.step-dot-in-progress {
+  border-color: #8a5a00;
+  background: linear-gradient(90deg, #8a5a00 50%, transparent 50%);
+}
+
+.step-dot-issues {
+  border-color: #a2362b;
+  background: #a2362b;
+  border-radius: 3px;
+}
+
+.step-dot-complete {
+  border-color: #1f6d45;
+  background: #1f6d45;
+}
+
+/* How to record this sheet: set-up diagram and instructions. */
+.sheet-notes[open] {
+  padding-bottom: 12px;
+}
+
+.howto {
+  display: grid;
+  grid-template-columns: minmax(280px, 560px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 10px;
+}
+
+.howto-figure {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.howto-figure figcaption,
+.howto-steps > strong {
+  color: #0b2a67;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.setup-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 900px) {
+  .howto {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .explain-btn {
+    display: none;
+  }
+
+  .status-explain-inline {
+    display: block;
+  }
+
+  .fill-down {
+    display: none;
+  }
 }
