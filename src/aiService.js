@@ -591,10 +591,17 @@ async function generateNarrativeWithClaude(report) {
     system: REPORT_AI_SYSTEM_GUIDE,
     thinking: { type: 'adaptive' },
     output_config: {
+      effort: config.claude.effort,
       format: { type: 'json_schema', schema: buildNarrativeSchema() }
     },
     messages: [{ role: 'user', content }]
   });
+
+  // Opus 5.5 can decline on a safety classifier (HTTP 200, stop_reason 'refusal'); throw so the
+  // caller's existing fallback to OpenAI runs instead of parsing an empty body.
+  if (response.stop_reason === 'refusal') {
+    throw new Error(`Claude declined the request (${response.stop_details?.category || 'refusal'}).`);
+  }
 
   const parsed = parseStructuredJson(extractClaudeText(response), 'Claude');
   return {
@@ -737,7 +744,7 @@ async function generateMeasurementObservations(report) {
   const client = getOpenAiClient();
   const context = buildAiContext(report);
   const response = await client.responses.create({
-    model: config.openai.model,
+    model: config.openai.observationModel,
     instructions: REPORT_AI_OBSERVATION_GUIDE,
     input: [
       {
@@ -759,7 +766,7 @@ async function generateMeasurementObservations(report) {
   return {
     generatedAt: new Date().toISOString(),
     provider: 'openai',
-    model: response.model || config.openai.model,
+    model: response.model || config.openai.observationModel,
     modules: parsed
   };
 }
@@ -844,7 +851,7 @@ async function sanityCheckNarrative(report, narrative) {
   const client = getOpenAiClient();
   const context = buildAiContext(report);
   const response = await client.responses.create({
-    model: config.openai.model,
+    model: config.openai.sanityModel,
     instructions: REPORT_AI_SYSTEM_GUIDE,
     input: [
       {
@@ -866,7 +873,7 @@ async function sanityCheckNarrative(report, narrative) {
   return {
     generatedAt: new Date().toISOString(),
     provider: 'openai',
-    model: response.model || config.openai.model,
+    model: response.model || config.openai.sanityModel,
     ...parsed
   };
 }
@@ -877,11 +884,14 @@ function getAiStatus() {
     claude: {
       configured: isClaudeConfigured(),
       model: config.claude.model,
+      effort: config.claude.effort,
       role: config.claude.role
     },
     openai: {
       configured: isOpenAiConfigured(),
       model: config.openai.model,
+      observationModel: config.openai.observationModel,
+      sanityModel: config.openai.sanityModel,
       role: config.openai.role
     },
     referenceDocuments: discoverReferencePdfPaths().map((filePath) => path.basename(filePath))

@@ -107,7 +107,7 @@ function buildPrompt(schema, instructions) {
 function createModel(config) {
   const client = new GoogleGenerativeAI(String(config.gemini.apiKey || '').trim());
   return client.getGenerativeModel({
-    model: String(config.gemini.model || 'gemini-2.5-pro').trim()
+    model: String(config.gemini.model || 'gemini-3.8-flash').trim()
   });
 }
 

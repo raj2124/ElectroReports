@@ -34,14 +34,21 @@ const referencePdfPaths = String(process.env.OPENAI_REFERENCE_PDFS || '')
 //   Gemini  = OCR only   (unchanged)
 const claude = {
   apiKey: String(process.env.ANTHROPIC_API_KEY || '').trim(),
-  model: String(process.env.ANTHROPIC_MODEL || 'claude-opus-4-8').trim(),
+  model: String(process.env.ANTHROPIC_MODEL || 'claude-opus-5-5').trim(),
+  // Opus 5.5 defaults to medium effort (4.8 defaulted to high); keep the report writer at high.
+  effort: String(process.env.ANTHROPIC_EFFORT || 'high').trim(),
   role: String(process.env.CLAUDE_ROLE || 'report-narrative').trim(),
   referencePdfPaths
 };
 
+const openaiSanityModel = String(process.env.OPENAI_SANITY_MODEL || process.env.OPENAI_MODEL || 'gpt-6-sol').trim();
 const openai = {
   apiKey: String(process.env.OPENAI_API_KEY || '').trim(),
-  model: String(process.env.OPENAI_MODEL || 'gpt-5.6-sol').trim(),
+  // Per-row observations/remarks: the cheaper model. Once-per-report sanity check: the stronger one.
+  observationModel: String(process.env.OPENAI_OBSERVATION_MODEL || 'gpt-6-luna').trim(),
+  sanityModel: openaiSanityModel,
+  // Also used for the OpenAI narrative fallback and for any photo/visual check.
+  model: openaiSanityModel,
   role: String(process.env.OPENAI_ROLE || 'observations-and-sanity-check').trim(),
   referencePdfPaths
 };
@@ -76,7 +83,9 @@ module.exports = {
   gemini: {
     enabled: toBool(process.env.GEMINI_ENABLED, true),
     apiKey: String(process.env.GEMINI_API_KEY || '').trim(),
-    model: String(process.env.GEMINI_MODEL || 'gemini-2.5-pro').trim(),
+    model: String(process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim(),
+    // Re-reads a page once when the primary read has low-confidence or illegible cells.
+    escalationModel: String(process.env.GEMINI_ESCALATION_MODEL || 'gemini-4-argon').trim(),
     maxUploadBytes: Number.parseInt(process.env.GEMINI_MAX_UPLOAD_BYTES || '15728640', 10)
   },
   envPath

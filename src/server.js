@@ -102,6 +102,7 @@ app.get('/api/ocr/status', (_req, res) => {
     configured: Boolean(config.gemini.enabled && config.gemini.apiKey),
     enabled: Boolean(config.gemini.enabled),
     model: String(config.gemini.model || '').trim(),
+    escalationModel: String(config.gemini.escalationModel || '').trim(),
     supportedSheets: [
       'soilResistivity',
       'electrodeResistance',
