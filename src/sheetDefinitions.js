@@ -34,7 +34,7 @@ const INSTRUMENTS = Object.freeze([
   { id: 'mi3152', label: 'Metrel MI 3152 EurotestXC', registerName: 'MI 3152' },
   { id: 'kyoritsu4105a', label: 'Kyoritsu 4105A Digital Earth Tester', registerName: 'Kyoritsu 4105A' },
   { id: 'kyoritsu4118a', label: 'Kyoritsu 4118A Loop / PSC Tester', registerName: 'Kyoritsu 4118A' },
-  { id: 'mi3295', label: 'Metrel MI 3295 Step & Contact Voltage Meter (optional – confirm availability)', registerName: 'MI 3295' }
+  { id: 'mi3295', label: 'Metrel MI 3295 Step & Contact Voltage Meter', registerName: 'MI 3295' }
 ]);
 
 // Presets for the soil spacing set (a per-project setting).
@@ -371,8 +371,7 @@ const SHEETS = [
     ],
     notes: [
       'Step: two probes 1 m apart. Touch: probe within 1 m of the structure (arm reach). Probes ~150 mm into moist soil (IEEE 81-2012 Cl. 9.2–9.3).',
-      'Write the test current It for every row – the app scales each voltage by If / It before comparing with the tolerable limit.',
-      'MI 3295 is not on the current instrument list – confirm availability.'
+      'Write the test current It for every row – the app scales each voltage by If / It before comparing with the tolerable limit.'
     ]
   },
   {

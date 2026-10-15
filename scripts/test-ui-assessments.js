@@ -16,6 +16,7 @@ const { listProfiles } = require('../src/acceptance');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', 'public', file), 'utf8');
 const appSource = read('app.js');
 const sheetsSource = read('sheets.js');
+const printSource = read('print-sheets.js');
 let passed = 0;
 function check(name, fn) {
   return Promise.resolve(fn()).then(() => {
@@ -64,10 +65,11 @@ async function createBrowser() {
     innerHeight: 800,
     localStorage: { getItem: (key) => (storage.has(key) ? storage.get(key) : null), setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key) }
   });
-  const document = tolerant({ getElementById: (id) => (id === 'app' ? appEl : null), addEventListener() {}, activeElement: null, body: tolerant(), documentElement: tolerant(), hidden: false });
+  const document = tolerant({ getElementById: (id) => (id === 'app' ? appEl : null), createElement: () => tolerant({ click() {}, remove() {} }), addEventListener() {}, activeElement: null, body: tolerant(), documentElement: tolerant(), hidden: false });
   const fetchStub = async (url, options = {}) => {
-    calls.push({ url, method: options.method || 'GET' });
+    calls.push({ url, method: options.method || 'GET', body: options.body });
     const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+    if (url === '/api/sheets/print') return { ok: true, status: 200, headers: { get: (name) => (name === 'X-Sheet-Ids' ? 'ER-AAAA-AAAAA,ER-BBBB-BBBBB' : '') }, blob: async () => ({}) };
     if (url === '/api/sheets') return reply(JSON.parse(JSON.stringify(publicDefinitions())));
     if (url === '/api/acceptance/profiles') return reply(listProfiles());
     if (url === '/api/assessments') {
@@ -84,9 +86,10 @@ async function createBrowser() {
   const context = vm.createContext({
     window, document, localStorage: window.localStorage, fetch: fetchStub, console, JSON, Math, Date, Intl, Promise, WeakMap, Map, Set, Array, Object, String, Number, RegExp, Error, Boolean,
     setTimeout: window.setTimeout, clearTimeout: () => {}, requestAnimationFrame: () => 0, FormData: class {}, FileReader: class {},
-    Image: class {}, URL: { createObjectURL: () => '' }, structuredClone: (value) => JSON.parse(JSON.stringify(value)), navigator: {}
+    Image: class {}, URL: { createObjectURL: () => '', revokeObjectURL: () => {} }, structuredClone: (value) => JSON.parse(JSON.stringify(value)), navigator: {}
   });
   vm.runInContext(sheetsSource, context, { filename: 'sheets.js' });
+  vm.runInContext(printSource, context, { filename: 'print-sheets.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   const run = (code) => vm.runInContext(code, context);
   const flush = async () => {
@@ -371,6 +374,41 @@ async function main() {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.electrodeResistance[0].conditionCodes)), []);
     assert.strictEqual(restored.project.soilSpacingPreset, 'etpl-default');
     assert.ok(Array.isArray(restored.groundResistance) && Array.isArray(restored.stepTouchVoltage));
+  });
+
+  await check('"Print sheets for site" is on the project step and every sheet screen, and sends the project, date and tests', async () => {
+    const html = read('index.html');
+    assert.ok(html.indexOf('print-sheets.js') > html.indexOf('sheets.js') && html.indexOf('print-sheets.js') < html.indexOf('app.js'), 'print-sheets.js loads between sheets.js and app.js');
+    const browser = await createBrowser();
+    browser.run(`state.draft.project = { ...state.draft.project, projectNo: 'P-9', clientName: 'Client', siteLocation: 'Site', workOrder: 'WO', reportDate: '2026-10-14', engineerName: 'Eng', zohoProjectId: '' }; state.draft.tests.electrodeResistance = true; state.draft.tests.loopImpedanceTest = true; state.view = 'builder'; state.stepIndex = 0; render();`);
+    assert.ok(browser.html().includes('data-action="open-print-sheets"'), 'project step');
+    const sheetIds = browser.run('allSheets().filter((sheet) => !sheet.retired).map((sheet) => sheet.id)');
+    assert.strictEqual(sheetIds.length, 9);
+    sheetIds.forEach((id) => assert.ok(browser.run(`renderSheetIntro(sheetById('${id}'))`).includes('Print sheets for site'), `${id} sheet screen`));
+    assert.ok(!browser.run("renderSheetIntro(sheetById('earthContinuityTest'))").includes('Print sheets for site'), 'the retired sheet has no print button');
+    browser.run("openPrintSheets('stepTouchVoltage')");
+    await browser.flush();
+    assert.deepStrictEqual(JSON.parse(browser.run('JSON.stringify(Object.keys(printState.selected).filter((id) => printState.selected[id]).sort())')), ['electrodeResistance', 'loopImpedanceTest', 'soilResistivity', 'stepTouchVoltage'], 'the report\'s selected tests (soil is on by default) plus the sheet it was opened from');
+    assert.ok(browser.html().includes('print-dialog') && browser.html().includes('Download PDF'));
+    assert.strictEqual(browser.run('printState.workDate'), '2026-10-14');
+    assert.strictEqual(browser.run('printState.engineerName'), 'Eng');
+    browser.run("handlePrintInput({ dataset: { printSheet: 'loopImpedanceTest' }, checked: false }); handlePrintInput({ dataset: { printField: 'engineerName' }, value: 'Typed' }); handlePrintInput({ dataset: { printField: 'workDate' }, value: '2026-10-20' });");
+    await browser.run('downloadPrintSheets()');
+    await browser.flush();
+    const call = browser.calls.find((item) => item.url === '/api/sheets/print');
+    assert.ok(call && call.method === 'POST', 'POSTs to /api/sheets/print');
+    const body = JSON.parse(call.body);
+    assert.deepStrictEqual(body.sheets.sort(), ['electrodeResistance', 'soilResistivity', 'stepTouchVoltage']);
+    assert.strictEqual(body.workDate, '2026-10-20');
+    assert.strictEqual(body.engineerName, 'Typed');
+    assert.strictEqual(body.project.projectNo, 'P-9');
+    assert.strictEqual(browser.run('printState.open'), false, 'the dialog closes after the download');
+    // Nothing ticked: refused in the dialog, no request.
+    browser.run("openPrintSheets(''); Object.keys(printState.selected).forEach((id) => { printState.selected[id] = false; });");
+    const before = browser.calls.length;
+    await browser.run('downloadPrintSheets()');
+    assert.strictEqual(browser.calls.length, before);
+    assert.ok(/at least one test/i.test(browser.run('printState.error')));
   });
 
   console.log(`\n${passed} UI checks passed.`);

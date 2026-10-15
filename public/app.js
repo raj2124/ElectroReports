@@ -1780,6 +1780,10 @@ function renderProjectStep() {
           <button class="button button-secondary" data-action="refresh-zoho-projects">Refresh Zoho Projects</button>
         </div>
       </div>
+      <div class="print-sheets-row">
+        <p class="muted">Going to site? Print the measurement sheets for this project, pre-filled and ready to write on.</p>
+        ${renderPrintButton()}
+      </div>
       ${
         state.draft.project.zohoProjectId
           ? `
@@ -3085,6 +3089,7 @@ function render() {
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
     </main>
     ${renderObservationDrawer()}
+    ${renderPrintDialog()}
     ${toastHtml()}
   `;
   if (state.view === 'builder') {
@@ -3411,6 +3416,10 @@ document.addEventListener('click', async (event) => {
 
   const action = button.dataset.action;
 
+  if (handlePrintAction(action, button)) {
+    return;
+  }
+
   if (handleSheetAction(action, button)) {
     render();
     return;
@@ -3592,6 +3601,10 @@ document.addEventListener('click', async (event) => {
 
 document.addEventListener('input', (event) => {
   const target = event.target;
+
+  if (handlePrintInput(target)) {
+    return;
+  }
 
   // Ticks are handled on `change` (one event per tap); typing and selects are handled here.
   if (target.type === 'checkbox' || target.type === 'radio') {

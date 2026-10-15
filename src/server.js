@@ -8,6 +8,7 @@ const { createReportStore } = require('./reportStore');
 const { normalizeReportInput, TEST_LIBRARY, ReportValidationError } = require('./reportModel');
 const { publicDefinitions } = require('./sheetDefinitions');
 const { listProfiles } = require('./acceptance');
+const { printSheets, SheetPrintError } = require('./sheetPrint');
 const { generateElectroReportPdf } = require('./pdfService');
 const { assessReport } = require('./assessmentService');
 const { scrubGeneratedRemarks } = require('./remarks');
@@ -82,6 +83,44 @@ app.get('/api/health', (_req, res) => {
 // in printed order. The browser renders every entry screen from these.
 app.get('/api/sheets', (_req, res) => {
   res.json(publicDefinitions());
+});
+
+// Printable measurement sheets for a site visit: project + work date + selected tests in, one
+// PDF out. Every printed page is recorded with its sheet ID (the QR code) in `issued_sheets`.
+app.post('/api/sheets/print', async (req, res) => {
+  try {
+    const result = await printSheets(req.body, { store, getTasks: (zohoProjectId) => getProjectTasks(zohoProjectId) });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="ESHA_Sheets_${String(req.body?.workDate || '').replace(/[^0-9-]/g, '')}.pdf"`);
+    res.setHeader('X-Sheet-Batch', result.batchId);
+    res.setHeader('X-Sheet-Ids', result.pages.map((page) => page.sheetId).join(','));
+    res.setHeader('X-Print-Engineer', encodeURIComponent(result.engineer));
+    if (result.warnings.length) {
+      res.setHeader('X-Print-Warnings', encodeURIComponent(result.warnings.join(' ')));
+    }
+    res.setHeader('Access-Control-Expose-Headers', 'X-Sheet-Batch, X-Sheet-Ids, X-Print-Engineer, X-Print-Warnings');
+    return res.send(result.buffer);
+  } catch (error) {
+    if (error instanceof SheetPrintError) {
+      return res.status(error.status).json({ message: error.message });
+    }
+    console.error('Failed to print sheets', error);
+    return res.status(500).json({ message: 'Failed to generate the sheets.' });
+  }
+});
+
+// What was issued: by sheet ID (what a scan matches against), or by batch / project / date.
+app.get('/api/sheets/issued/:id', (req, res) => {
+  const sheet = store.getIssuedSheet(req.params.id);
+  return sheet ? res.json(sheet) : res.status(404).json({ message: 'Sheet ID not found.' });
+});
+
+app.get('/api/sheets/issued', (req, res) => {
+  res.json(store.listIssuedSheets({
+    batchId: String(req.query.batch || '').trim(),
+    projectNo: String(req.query.projectNo || '').trim(),
+    workDate: String(req.query.workDate || '').trim()
+  }));
 });
 
 // Acceptance profiles a project can pick (from the register; templates excluded).

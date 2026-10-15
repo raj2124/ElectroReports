@@ -58,6 +58,7 @@ function openDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_reports_updated_at ON reports(updated_at DESC);
   `);
   migrateMultiDaySchema(db);
+  migrateSheetSchema(db);
   return db;
 }
 
@@ -124,6 +125,35 @@ function migrateMultiDaySchema(db) {
   // IMMEDIATE takes the write lock before the column checks, so two processes opening
   // a fresh database serialise (busy_timeout applies) instead of both ALTERing.
   apply.immediate();
+}
+
+// Printed measurement sheets (ADDITIVE). Every printed page is issued with a unique sheet ID that
+// is also its QR code; this table is what lets a scan be matched back to exactly what was
+// printed: project, work date, test, page, and the pre-printed rows.
+function migrateSheetSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS issued_sheets (
+      sheet_id        TEXT PRIMARY KEY,
+      batch_id        TEXT NOT NULL,
+      project_no      TEXT,
+      zoho_project_id TEXT,
+      report_id       TEXT,
+      work_date       TEXT NOT NULL,
+      sheet_key       TEXT NOT NULL,
+      sheet_code      TEXT NOT NULL,
+      doc_no          TEXT NOT NULL,
+      page_no         INTEGER NOT NULL,
+      page_count      INTEGER NOT NULL,
+      row_offset      INTEGER NOT NULL,
+      row_count       INTEGER NOT NULL,
+      engineer        TEXT,
+      issued_at       TEXT NOT NULL,
+      data            TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_issued_sheets_project ON issued_sheets(project_no, work_date);
+    CREATE INDEX IF NOT EXISTS idx_issued_sheets_batch ON issued_sheets(batch_id);
+  `);
+  db.pragma('user_version = 3');
 }
 
 // The mirror columns used for list sorting/searching. Everything else lives in `data`.
@@ -475,6 +505,76 @@ function createReportStore({ filePath }) {
     })();
   }
 
+  // ---- Issued (printed) sheets ----------------------------------------------------------------
+  const issuedColumns = (sheet) => ({
+    sheet_id: sheet.sheetId,
+    batch_id: sheet.batchId,
+    project_no: sheet.project.projectNo || null,
+    zoho_project_id: sheet.project.zohoProjectId || null,
+    report_id: sheet.reportId || null,
+    work_date: sheet.workDate,
+    sheet_key: sheet.sheetKey,
+    sheet_code: sheet.sheetCode,
+    doc_no: sheet.docNo,
+    page_no: sheet.page,
+    page_count: sheet.pages,
+    row_offset: sheet.rowOffset,
+    row_count: sheet.rowCount,
+    engineer: sheet.engineer || null,
+    issued_at: sheet.issuedAt,
+    data: JSON.stringify({ project: sheet.project, preRows: sheet.preRows, itemOffset: sheet.itemOffset, group: sheet.group })
+  });
+
+  function rowToIssuedSheet(row) {
+    if (!row) {
+      return null;
+    }
+    const data = JSON.parse(row.data);
+    return {
+      sheetId: row.sheet_id,
+      batchId: row.batch_id,
+      project: data.project,
+      reportId: row.report_id,
+      workDate: row.work_date,
+      sheetKey: row.sheet_key,
+      sheetCode: row.sheet_code,
+      docNo: row.doc_no,
+      page: row.page_no,
+      pages: row.page_count,
+      rowOffset: row.row_offset,
+      rowCount: row.row_count,
+      itemOffset: data.itemOffset,
+      group: data.group,
+      engineer: row.engineer,
+      issuedAt: row.issued_at,
+      preRows: data.preRows
+    };
+  }
+
+  function addIssuedSheets(sheets) {
+    const insert = db.prepare(`INSERT INTO issued_sheets
+      (sheet_id, batch_id, project_no, zoho_project_id, report_id, work_date, sheet_key, sheet_code, doc_no,
+       page_no, page_count, row_offset, row_count, engineer, issued_at, data)
+      VALUES (@sheet_id, @batch_id, @project_no, @zoho_project_id, @report_id, @work_date, @sheet_key, @sheet_code, @doc_no,
+       @page_no, @page_count, @row_offset, @row_count, @engineer, @issued_at, @data)`);
+    db.transaction(() => sheets.forEach((sheet) => insert.run(issuedColumns(sheet))))();
+    return sheets;
+  }
+
+  function getIssuedSheet(sheetId) {
+    return rowToIssuedSheet(db.prepare('SELECT * FROM issued_sheets WHERE sheet_id = ?').get(String(sheetId)));
+  }
+
+  function listIssuedSheets({ batchId, projectNo, workDate } = {}) {
+    const where = [];
+    const params = {};
+    if (batchId) { where.push('batch_id = @batchId'); params.batchId = batchId; }
+    if (projectNo) { where.push('project_no = @projectNo'); params.projectNo = projectNo; }
+    if (workDate) { where.push('work_date = @workDate'); params.workDate = workDate; }
+    const sql = `SELECT * FROM issued_sheets ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY issued_at, sheet_code, page_no`;
+    return db.prepare(sql).all(params).map(rowToIssuedSheet);
+  }
+
   return {
     listReports,
     getReport,
@@ -490,7 +590,11 @@ function createReportStore({ filePath }) {
     transitionReport,
     listTransitions,
     assembleFinal,
-    listAssemblyProvenance
+    listAssemblyProvenance,
+    // printed sheets (additive)
+    addIssuedSheets,
+    getIssuedSheet,
+    listIssuedSheets
   };
 }
 

@@ -9,6 +9,7 @@
     "test:electroreports": "node scripts/electroreports-verify.js",
     "test:multiday": "node scripts/test-multiday.js && node scripts/test-report-collection.js",
     "test:layout": "node scripts/test-layout.js",
+    "test:sheets": "node scripts/test-sheet-print.js",
     "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js && node scripts/test-sheet-definitions.js && node scripts/test-sheet-rules.js && node scripts/test-sheet-widths.js && node scripts/test-soil-unit.js",
     "generate:ai-reference": "node scripts/generate-electroreports-ai-reference.js"
   },
@@ -19,9 +20,12 @@
     "better-sqlite3": "^13.0.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "jsqr": "^1.4.0",
     "multer": "^2.1.1",
+    "mupdf": "^1.28.1",
     "openai": "^6.32.0",
-    "pdfkit": "^0.16.0"
+    "pdfkit": "^0.16.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0"

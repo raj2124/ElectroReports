@@ -1107,7 +1107,7 @@ function renderProblems(sheetId) {
 }
 
 function renderSheetIntro(sheet) {
-  return `<p class="sheet-ref"><strong>${esc(sheet.code === 'legacy' ? 'Retired sheet' : `${sheet.code} · ${sheet.docNo}`)}</strong> · ${esc(sheet.reference)}</p>`;
+  return `<div class="sheet-ref-row"><p class="sheet-ref"><strong>${esc(sheet.code === 'legacy' ? 'Retired sheet' : `${sheet.code} · ${sheet.docNo}`)}</strong> · ${esc(sheet.reference)}</p>${sheet.retired ? '' : `<button class="button button-secondary print-sheets-button" type="button" data-action="open-print-sheets" data-sheet="${esc(sheet.id)}">Print sheets for site</button>`}</div>`;
 }
 
 function renderNotes(sheet) {

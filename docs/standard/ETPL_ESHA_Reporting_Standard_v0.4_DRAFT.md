@@ -159,7 +159,7 @@ ETPL engineer name + signature · Client representative name + signature · Time
 | MS-05 Prospective Fault & Short-circuit Current | ET-D03-FRM-005 | Landscape | 4 panels × R/Y/B | Kyoritsu 4118A, MI 3152 | IS/IEC 60364-4-43 Reg. 434.5.1 |
 | MS-06 Riser Integrity | ET-D03-FRM-006 | Portrait | 19 points | MI 3290 GX, MI 3152 | IEEE 81 Cl. 10 |
 | MS-07 Ground (Grid) Resistance — **new** | ET-D03-FRM-007 | Portrait | 18 points, readings at 51.8/61.8/71.8% | MI 3290 GX, Kyoritsu 4105A | IS 3043 Cl. 41; IEEE 81 Cl. 8 |
-| MS-08 Step & Touch Voltage — **new** | ET-D03-FRM-008 | Landscape | 12 points | MI 3295 (confirm), MI 3290 GX | IEEE 81 Cl. 9; IS 3043 Cl. 10.3 |
+| MS-08 Step & Touch Voltage — **new** | ET-D03-FRM-008 | Landscape | 12 points | MI 3295, MI 3290 GX | IEEE 81 Cl. 9; IS 3043 Cl. 10.3 |
 | MS-09 Tower Footing Impedance — **new** | ET-D03-FRM-009 | Portrait | 5 towers × 4 feet | MI 3290 GX + clamps | IEEE 81 Cl. 8; IS 3043 Cl. 14 |
 
 Changes from ETPL's previous sheets: ETPL navy theme and fixed header/footer; QR per sheet; work date per sheet (old sheets printed "Start Date" twice on loop and PFC); boxed digits and labelled tick-boxes; condition codes and photo reference on every row (requested on the old continuity sheet); instrument tick and serial no.; loop and PFC kept as separate per-phase sheets; PFC sheet records both PFC (L-PE) and PSC (L-N); "Earth Continuity" and "Continuity Test" merged into MS-03; test-lead resistance recorded (IEEE 81 Cl. 10.2); spelling fixed ("Riser Intrigrity"). Calculated columns (mean ρ, category, limits) removed from print sheets — the app calculates them.

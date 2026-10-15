@@ -18,7 +18,7 @@ PROJECT = dict(client="Gujarat Fluorochemicals Ltd", site="Dahej – FI Plant", 
                wo="1002-1261201769")
 INSTR = {"3290": "Metrel MI 3290 GX Earth Analyser", "3152": "Metrel MI 3152 EurotestXC",
          "4105": "Kyoritsu 4105A Digital Earth Tester", "4118": "Kyoritsu 4118A Loop / PSC Tester",
-         "3295": "Metrel MI 3295 Step & Contact Voltage Meter*"}
+         "3295": "Metrel MI 3295 Step & Contact Voltage Meter"}
 CODE_LEGEND = ("C1 Corroded · C2 Strip / test link disconnected · C3 Single earth connection (optional) · "
                "C4 Buried / chamber not accessible or damaged · C5 Electrode damaged · C6 Loose connection · "
                "C7 Joint not cleaned / tinned / protected · C8 No tag / label · OTH Other – write remark")
@@ -286,8 +286,7 @@ make(c, True, "ET-D03-FRM-008", "MS-08  Step & Touch Voltage – Measurement She
       col("V3\n(V)", 6, "digits"), col("Vmax\n(V)", 6, "digits"), col("Photo\nref.", 4, "text"), col("Remark", 9, "text")], 12, 24,
      min_rows=V2["008"],
      notes=["Step: two probes 1 m apart. Touch: probe within 1 m of the structure (arm reach). Probes ~150 mm into moist soil (IEEE 81-2012 Cl. 9.2–9.3).",
-            "Write the test current It for every row – the app scales each voltage by If / It before comparing with the tolerable limit.",
-            "*MI 3295 is not on the current instrument list – confirm availability."],
+            "Write the test current It for every row – the app scales each voltage by If / It before comparing with the tolerable limit."],
      extra=[[("Earth fault current If (kA) & source", "", .42), ("Fault clearing time ts (s) & source", "", .33), ("Remote current electrode distance (m)", "", .25)],
             [("Surface layer ρs (Ω·m) & thickness hs (m)", "", .42), ("Body weight basis", "☐ 50 kg   ☐ 70 kg   ☐ Both", .33), ("Injection point", "", .25)]],
      legend=False, fig=DG.step_touch)
