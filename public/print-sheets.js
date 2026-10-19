@@ -8,11 +8,17 @@ const printState = {
   selected: {},
   taskId: '',
   engineerName: '',
+  project: null, // the workspace's project when opened from a project workspace; else the wizard draft
   tasks: [],
   loadingTasks: false,
   busy: false,
   error: ''
 };
+
+// The project the sheets are printed for: the workspace's, or the report being built.
+function printProject() {
+  return printState.project || state.draft.project;
+}
 
 function printableSheets() {
   return allSheets().filter((sheet) => !sheet.retired);
@@ -26,7 +32,7 @@ function renderPrintDialog() {
   if (!printState.open) {
     return '';
   }
-  const project = state.draft.project;
+  const project = printProject();
   const sheets = printableSheets();
   const taskOptions = printState.tasks
     .map((task) => `<option value="${escapeHtml(task.id)}" ${String(task.id) === printState.taskId ? 'selected' : ''}>${escapeHtml(task.name || task.id)}${task.ownerName ? ` · ${escapeHtml(task.ownerName)}` : ''}</option>`)
@@ -69,11 +75,13 @@ function renderPrintDialog() {
     </div>`;
 }
 
-async function openPrintSheets(currentSheetId = '') {
-  const project = state.draft.project;
+async function openPrintSheets(currentSheetId = '', workspaceProject = null) {
+  printState.project = workspaceProject;
+  const project = printProject();
   const selected = {};
+  const tests = workspaceProject ? workspaceProject.tests || {} : state.draft.tests;
   printableSheets().forEach((sheet) => {
-    if (state.draft.tests[sheet.id] || sheet.id === currentSheetId) {
+    if (tests[sheet.id] || sheet.id === currentSheetId) {
       selected[sheet.id] = true;
     }
   });
@@ -103,7 +111,7 @@ async function openPrintSheets(currentSheetId = '') {
 }
 
 async function downloadPrintSheets() {
-  const project = state.draft.project;
+  const project = printProject();
   const sheets = Object.keys(printState.selected).filter((id) => printState.selected[id]);
   printState.error = '';
   if (!project.projectNo) {

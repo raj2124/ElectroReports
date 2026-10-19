@@ -18,7 +18,8 @@ const {
   generateMeasurementObservations,
   sanityCheckNarrative
 } = require('./aiService');
-const { getReportKind } = require('./reportCollectionModel');
+const { getReportKind, getReviewStatus } = require('./reportCollectionModel');
+const { ensureProject, buildWorkspace, listProjectSummaries, findDay, assembleFor, pickProjectFields } = require('./workspace');
 const { buildReviewState } = require('./review');
 const { exportReportPdf } = require('./finalReport/service');
 const { ConsistencyError } = require('./finalReport/data');
@@ -466,6 +467,123 @@ app.post('/api/reports/:id/reissue', (req, res) => {
   }
 });
 
+
+// ---- Project workspaces (Session 6C.4) -------------------------------------------------------
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+app.get('/api/projects', (_req, res) => {
+  res.json(listProjectSummaries(store));
+});
+
+// One workspace per Zoho project: finds it, or creates it from the project details given.
+app.post('/api/projects', (req, res) => {
+  try {
+    const { project, created } = ensureProject(store, (req.body && req.body.project) || req.body);
+    return res.status(created ? 201 : 200).json({ projectId: project.id, created });
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid project.', code: error.code });
+  }
+});
+
+app.get('/api/projects/:id', (req, res) => {
+  const workspace = buildWorkspace(store, req.params.id);
+  return workspace ? res.json(workspace) : res.status(404).json({ message: 'Project not found.' });
+});
+
+// Project-level details: planned quantities (the denominator of progress), unit, engineer...
+app.put('/api/projects/:id', (req, res) => {
+  const project = store.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ message: 'Project not found.' });
+  }
+  const patch = pickProjectFields((req.body && req.body.project) || req.body);
+  delete patch.zohoProjectId;
+  if (patch.plannedQuantities) {
+    const planned = {};
+    Object.entries(patch.plannedQuantities).forEach(([testId, value]) => {
+      const number = Number(value);
+      if (String(value).trim() !== '' && Number.isFinite(number) && number >= 0) {
+        planned[testId] = number;
+      }
+    });
+    patch.plannedQuantities = planned;
+  }
+  store.updateProject(req.params.id, patch);
+  return res.json(buildWorkspace(store, req.params.id));
+});
+
+// Records a site day: the daily report of a work date, one per date.
+app.post('/api/projects/:id/days', (req, res) => {
+  const project = store.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ message: 'Project not found.' });
+  }
+  const body = req.body || {};
+  const workDate = String(body.workDate || '').trim();
+  if (!ISO_DAY.test(workDate)) {
+    return res.status(400).json({ message: 'Choose the work date of this site day.' });
+  }
+  const existing = findDay(store, project.id, workDate);
+  if (existing) {
+    return res.status(409).json({ message: `A daily report for ${workDate} already exists: reopen it instead.`, code: 'DAY_EXISTS', reportId: existing.id });
+  }
+  try {
+    const draft = body.report || {};
+    const normalized = normalizeReportInput({ ...draft, project: { ...(draft.project || {}), reportDate: workDate } });
+    const created = store.addReport({ ...normalized, kind: 'daily', projectId: project.id, collectionDate: workDate });
+    if (!project.plannedQuantities && normalized.project.plannedQuantities) {
+      store.updateProject(project.id, { plannedQuantities: normalized.project.plannedQuantities });
+    }
+    return res.status(201).json(presentReport(created));
+  } catch (error) {
+    return res.status(400).json({
+      message: error instanceof Error ? error.message : 'Invalid report payload.',
+      errors: error instanceof ReportValidationError ? error.errors : undefined
+    });
+  }
+});
+
+// Stitches every daily report of the project into a NEW draft final report; an earlier final
+// report is kept as it was. Days not yet approved are included and flagged.
+app.post('/api/projects/:id/final/assemble', (req, res) => {
+  if (!store.getProject(req.params.id)) {
+    return res.status(404).json({ message: 'Project not found.' });
+  }
+  try {
+    const result = assembleFor(store, req.params.id, { actor: String((req.body && req.body.actor) || '').trim() });
+    return res.status(201).json({ ...result, report: presentReport(result.report) });
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Could not assemble the final report.' });
+  }
+});
+
+// Saves changes to a daily report that is still a draft (a day being entered over several visits).
+app.put('/api/reports/:id', (req, res) => {
+  const current = store.getReport(req.params.id);
+  if (!current) {
+    return res.status(404).json({ message: 'Report not found.' });
+  }
+  if (getReportKind(current) !== 'daily') {
+    return res.status(400).json({ message: 'Only a daily report can be edited. A final report is assembled from the daily reports.' });
+  }
+  if (getReviewStatus(current) !== 'draft') {
+    return res.status(409).json({ message: 'Only a draft daily report can be edited. Return it to draft from the review screen first.', code: 'NOT_DRAFT' });
+  }
+  const body = req.body || {};
+  if (body.project && body.project.reportDate && body.project.reportDate !== current.collectionDate) {
+    return res.status(400).json({ message: `The work date of this day is ${current.collectionDate} and cannot be changed here.` });
+  }
+  try {
+    const normalized = normalizeReportInput({ ...body, project: { ...(body.project || {}), reportDate: current.collectionDate } });
+    const updated = store.updateReport(req.params.id, () => ({ ...normalized, collectionDate: current.collectionDate }));
+    return res.json(presentReport(updated));
+  } catch (error) {
+    return res.status(400).json({
+      message: error instanceof Error ? error.message : 'Invalid report payload.',
+      errors: error instanceof ReportValidationError ? error.errors : undefined
+    });
+  }
+});
 
 // ---- Client logos ------------------------------------------------------------------------------
 app.get('/api/client-logo', (req, res) => {

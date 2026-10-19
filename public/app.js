@@ -141,6 +141,7 @@ const state = {
   soilPage: 0,
   stepIndex: 0,
   activeReport: null,
+  editing: null, // { projectId, workDate, reportId }: the builder holds a site day of a project workspace
   saving: false,
   exporting: false,
   observationEditor: null,
@@ -250,6 +251,7 @@ function persistDraftSnapshotNow() {
       version: 1,
       savedAt: new Date().toISOString(),
       stepIndex: state.stepIndex,
+      editing: state.editing ? { ...state.editing } : null,
       draft: cloneSerializable(state.draft)
     })
   );
@@ -291,6 +293,7 @@ function restoreDraftSnapshot() {
 
     state.draft = restoredDraft;
     state.stepIndex = Number.isInteger(parsed?.stepIndex) ? parsed.stepIndex : 0;
+    state.editing = parsed && parsed.editing && parsed.editing.projectId ? parsed.editing : null;
     state.view = 'builder';
     state.restoredDraftNoticePending = true;
     return true;
@@ -1041,6 +1044,8 @@ async function api(path, options = {}) {
     const data = await response.json().catch(() => ({ message: 'Request failed.' }));
     const failure = new Error(data.message || 'Request failed.');
     failure.errors = data.errors;
+    failure.code = data.code;
+    failure.reportId = data.reportId;
     throw failure;
   }
 
@@ -1586,6 +1591,8 @@ function dashboardView() {
       </article>
     </section>
 
+    ${renderHomeProjects()}
+
     <section class="surface toolbar">
       <div class="dashboard-section-copy">
         <p class="section-kicker">Dashboard</p>
@@ -1743,7 +1750,8 @@ function renderZohoProjectCards() {
               </div>
             </div>
             <div class="zoho-card-actions">
-              <button class="button button-secondary" data-action="use-zoho-project" data-project-id="${escapeHtml(project.id)}">Use In ElectroReports</button>
+              <button class="button button-primary" data-action="open-workspace-zoho" data-project-id="${escapeHtml(project.id)}">Open workspace</button>
+              <button class="button button-secondary" data-action="use-zoho-project" data-project-id="${escapeHtml(project.id)}">Single report</button>
             </div>
           </article>
         `;
@@ -1793,7 +1801,7 @@ function renderProjectStep() {
     'Project Information',
     'Step 1',
     `
-      <div class="zoho-sync-panel">
+      <div class="zoho-sync-panel${state.editing ? ' is-hidden' : ''}">
         <div class="zoho-sync-copy">
           <p class="section-kicker">Zoho Projects Sync</p>
           <h4>Pick a live Zoho project to prefill this report</h4>
@@ -1875,10 +1883,12 @@ function renderProjectStep() {
         ${renderField('Client Name', state.draft.project.clientName, 'project.clientName', 'text', 'Client Name')}
         ${renderField('Site Location', state.draft.project.siteLocation, 'project.siteLocation', 'text', 'Main Plant, Surat')}
         ${renderField('Work Order / Ref', state.draft.project.workOrder, 'project.workOrder', 'text', 'WO-628')}
-        ${renderField('Work date', state.draft.project.reportDate, 'project.reportDate', 'date')}
+        ${state.editing ? `<div class="field"><span>Work date</span><strong>${escapeHtml(formatDisplayDate(state.editing.workDate) || state.editing.workDate)}</strong><small class="muted">Fixed for this site day of the project.</small></div>` : renderField('Work date', state.draft.project.reportDate, 'project.reportDate', 'date')}
         ${renderField('Testing Engineer', state.draft.project.engineerName, 'project.engineerName', 'text', 'Engineer Name')}
         ${renderField('Unit / plant', state.draft.project.unit, 'project.unit', 'text', 'FI Plant')}
         ${renderField('Unit code (required for the final report)', state.draft.project.unitCode, 'project.unitCode', 'text', 'FI')}
+        ${state.editing ? renderField('Plan for next day', state.draft.project.nextDayPlan, 'project.nextDayPlan', 'text', 'e.g. Earth pits EP-07 to EP-10') : ''}
+        ${state.editing ? renderField('Data collection mode', state.draft.project.dataCollectionMode, 'project.dataCollectionMode', 'text', 'Printed sheets / direct entry') : ''}
       </div>
       ${renderPlannedQuantities()}
       ${renderJobHeaderFields()}
@@ -2792,12 +2802,12 @@ function builderView() {
       <div class="builder-header">
         <div>
           <p class="section-kicker">Report Builder</p>
-          <h2>New ElectroReports Project</h2>
+          <h2>${state.editing ? `Site day ${escapeHtml(formatDisplayDate(state.editing.workDate) || state.editing.workDate)}` : 'New ElectroReports Project'}</h2>
           <p>Only the sections you select will appear in the report flow and in the final PDF.</p>
         </div>
         <div class="button-row">
-          <button class="button button-secondary" data-action="go-dashboard">Cancel</button>
-          <button class="button button-primary" data-action="save-report" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Saving...' : 'Save Report'}</button>
+          ${state.editing ? '<button class="button button-secondary" data-action="workspace-back">Back to project</button>' : '<button class="button button-secondary" data-action="go-dashboard">Cancel</button>'}
+          <button class="button button-primary" data-action="save-report" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Saving...' : state.editing ? 'Save site day' : 'Save Report'}</button>
         </div>
         ${renderFloatingShapes(18, 'hero-shapes hero-shapes-subtle')}
       </div>
@@ -3118,6 +3128,7 @@ function render() {
       ${state.view === 'builder' ? builderView() : ''}
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
       ${state.view === 'review' ? reviewView() : ''}
+      ${state.view === 'workspace' ? workspaceView() : ''}
     </main>
     ${renderObservationDrawer()}
     ${renderPrintDialog()}
@@ -3306,6 +3317,9 @@ function validateCurrentStep() {
 }
 
 async function saveReport() {
+  if (state.editing) {
+    return saveWorkspaceDay();
+  }
   state.saving = true;
   closeObservationEditor();
   resetAllOcrStates(false);
@@ -3458,6 +3472,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (handleWorkspaceAction(action, button)) {
+    return;
+  }
+
   if (handleSheetAction(action, button)) {
     render();
     return;
@@ -3465,6 +3483,7 @@ document.addEventListener('click', async (event) => {
 
   if (action === 'new-report') {
     closeObservationEditor();
+    state.editing = null;
     state.draft = createDraft();
     state.stepIndex = 0;
     state.view = 'builder';
@@ -3476,6 +3495,7 @@ document.addEventListener('click', async (event) => {
 
   if (action === 'go-dashboard') {
     closeObservationEditor();
+    state.editing = null;
     state.view = 'dashboard';
     state.activeReport = null;
     resetAllOcrStates(false);
@@ -3623,6 +3643,7 @@ document.addEventListener('click', async (event) => {
   }
 
   if (action === 'use-zoho-project') {
+    state.editing = null;
     applyZohoProject(button.dataset.projectId);
     state.view = 'builder';
     state.stepIndex = 0;
@@ -3645,6 +3666,10 @@ document.addEventListener('input', (event) => {
   }
 
   if (handleReviewInput(target)) {
+    return;
+  }
+
+  if (handleWorkspaceInput(target)) {
     return;
   }
 
@@ -3798,6 +3823,7 @@ async function init() {
   await loadCatalog();
   await loadZohoProjects();
   await loadReports();
+  await loadProjects();
 }
 
 window.addEventListener('beforeunload', () => {

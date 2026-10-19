@@ -4578,3 +4578,27 @@ textarea {
 .review-reissue { margin-top: 16px; border-top: 1px solid var(--line, #d7deea); padding-top: 12px; }
 .review-shell textarea.text-input { width: 100%; resize: vertical; }
 
+
+/* ---- Project workspace (6C.4) ---- */
+.is-hidden { display: none; }
+.workspace-shell { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+.workspace-shell > *, .workspace-grid > * { min-width: 0; }
+.workspace-shell .section-card { overflow-x: auto; }
+.project-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.project-card { display: grid; gap: 8px; padding: 18px; border-radius: 18px; background: #fff; border: 1px solid rgba(16, 36, 63, 0.1); box-shadow: 0 10px 24px rgba(16, 36, 63, 0.06); }
+.project-card h4 { margin: 0; }
+.project-card-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; color: #475467; font-size: 0.88rem; }
+.project-card-facts strong { color: #101828; }
+.completed-projects > summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.workspace-grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+@media (max-width: 900px) { .workspace-grid { grid-template-columns: minmax(0, 1fr); } }
+.workspace-days th, .workspace-days td { text-align: left; padding: 8px 10px; }
+.workspace-days .day-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.progress-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; padding: 8px 0; }
+.progress-row .progress-track { grid-column: 1 / -1; }
+.progress-track { height: 10px; border-radius: 6px; background: #e6eaf1; overflow: hidden; }
+.progress-fill { height: 100%; background: #0b2a67; }
+.progress-fill.is-complete { background: #1e7b34; }
+.workspace-confirm { border: 1px solid #d9a521; background: #fff8e6; border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; }
+.workspace-confirm ul { margin: 4px 0 0 18px; padding: 0; }
+.workspace-planned { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
