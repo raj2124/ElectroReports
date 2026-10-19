@@ -108,7 +108,8 @@ function drawCover(doc, data, revisions, clientLogo) {
     ['Internal Project No.', data.project.seq],
     ['Zoho Project', data.project.projectNo || '-'],
     ['Document No.', data.project.documentNo],
-    ['Work Order No.', data.project.workOrder || '-']
+    // optional: printed only when it was filled in
+    ...(String(data.project.workOrder || '').trim() ? [['Work Order No.', data.project.workOrder]] : [])
   ].forEach(([key, value]) => {
     pdf.rect(margin + 20, y, 170, 18).lineWidth(0.5).strokeColor(COLORS.grey).stroke();
     pdf.rect(margin + 190, y, cw - 210, 18).stroke();

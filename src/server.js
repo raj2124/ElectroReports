@@ -24,7 +24,9 @@ const { buildReviewState } = require('./review');
 const { exportReportPdf } = require('./finalReport/service');
 const { ConsistencyError } = require('./finalReport/data');
 const { LogoError, parseLogoDataUrl, clientKeys } = require('./finalReport/logos');
-const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
+const { getProjects, getProject, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
+const { isD03Name, buildTaskPlan, nameOwners } = require('./zohoTasks');
+const { pollNewProjects, answerNotice, dismissNotice, startProjectWatch } = require('./projectWatch');
 const {
   previewSoilSheetWithGemini,
   previewElectrodeSheetWithGemini,
@@ -227,6 +229,30 @@ app.get('/api/zoho/users', async (_req, res) => {
   } catch (error) {
     console.error('Failed to load Zoho users', error);
     return res.status(500).json({ message: 'Failed to load Zoho users.' });
+  }
+});
+
+// The step 1 task plan of a project: tasklists and tasks, the measurement tasks (pre-selected), the
+// planned quantity per test with its hint / warnings, and the engineers (task owners).
+async function loadTaskPlan(projectRef) {
+  const project = await getProject(projectRef);
+  const d03 = Boolean(project) && isD03Name(project.name);
+  const tasks = await getProjectTasks(projectRef);
+  let users = [];
+  try {
+    users = await getProjectUsers(projectRef);
+  } catch (_error) {
+    users = [];
+  }
+  return { project: project ? { id: project.id, name: project.name, stage: project.stage } : { id: projectRef, name: '' }, plan: nameOwners(buildTaskPlan(tasks, { d03 }), users) };
+}
+
+app.get('/api/zoho/projects/:id/plan', async (req, res) => {
+  try {
+    return res.json(await loadTaskPlan(req.params.id));
+  } catch (error) {
+    console.error('Failed to load the Zoho task plan', error);
+    return res.status(500).json({ message: 'Failed to load the Zoho project tasks.' });
   }
 });
 
@@ -498,6 +524,13 @@ app.put('/api/projects/:id', (req, res) => {
   }
   const patch = pickProjectFields((req.body && req.body.project) || req.body);
   delete patch.zohoProjectId;
+  const sent = (req.body && req.body.project) || req.body || {};
+  if ('workOrder' in sent) {
+    patch.workOrder = String(sent.workOrder || '').trim(); // optional: an empty value clears it
+  }
+  if (patch.dataCollectionMode && !['On-site entry', 'Printed sheets'].includes(patch.dataCollectionMode)) {
+    return res.status(400).json({ message: 'Data collection mode is On-site entry or Printed sheets.' });
+  }
   if (patch.plannedQuantities) {
     const planned = {};
     Object.entries(patch.plannedQuantities).forEach(([testId, value]) => {
@@ -582,6 +615,78 @@ app.put('/api/reports/:id', (req, res) => {
       message: error instanceof Error ? error.message : 'Invalid report payload.',
       errors: error instanceof ReportValidationError ? error.errors : undefined
     });
+  }
+});
+
+// ---- New-project notices (Session 6D) --------------------------------------------------------
+// Who is asking is the "I am ..." choice on Home for now (no logins yet). This is the ONE place the
+// server reads it; per-engineer logins will replace it.
+function noticeRecipientFrom(req) {
+  const email = String(req.query.email || (req.body && req.body.email) || '').trim().toLowerCase();
+  const name = String(req.query.name || (req.body && req.body.name) || '').trim().toLowerCase();
+  return { keys: [email, name].filter(Boolean), label: String(req.query.name || (req.body && req.body.name) || email) };
+}
+
+app.get('/api/notices', (req, res) => {
+  const { keys } = noticeRecipientFrom(req);
+  const seen = new Map();
+  keys.forEach((key) => store.listNotices({ recipientKey: key, status: 'open' }).forEach((notice) => seen.set(notice.id, notice)));
+  return res.json([...seen.values()]);
+});
+
+app.post('/api/notices/:id/answer', (req, res) => {
+  try {
+    const body = req.body || {};
+    return res.json(answerNotice(store, req.params.id, { phonesAllowed: body.phonesAllowed, mobileData: body.mobileData, by: noticeRecipientFrom(req).label }));
+  } catch (error) {
+    return res.status(error.code === 'NOT_FOUND' ? 404 : error.code === 'ANSWERS_REQUIRED' ? 400 : 409).json({ message: error.message, code: error.code });
+  }
+});
+
+app.post('/api/notices/:id/dismiss', (req, res) => {
+  try {
+    dismissNotice(store, req.params.id, noticeRecipientFrom(req).label);
+    return res.json({ dismissed: true });
+  } catch (error) {
+    return res.status(error.code === 'NOT_FOUND' ? 404 : 409).json({ message: error.message, code: error.code });
+  }
+});
+
+// Runs the new-project check now (the timer runs it every ZOHO_POLL_MINUTES).
+app.post('/api/zoho/poll', async (_req, res) => {
+  try {
+    return res.json(await pollNewProjects({ store }));
+  } catch (error) {
+    console.error('Zoho project check failed', error);
+    return res.status(500).json({ message: 'The Zoho project check failed.' });
+  }
+});
+
+// Fills the workspace's planned quantities from the Zoho Planned Quantity of the Onsite tasks. Only
+// tests with one clear Zoho number are set; every other value is left as it is.
+app.post('/api/projects/:id/zoho-refresh', async (req, res) => {
+  const project = store.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ message: 'Project not found.' });
+  }
+  if (!project.zohoProjectId) {
+    return res.status(400).json({ message: 'This project is not linked to a Zoho project.' });
+  }
+  try {
+    const { plan } = await loadTaskPlan(project.zohoProjectId);
+    const planned = { ...(project.plannedQuantities || {}) };
+    const filled = [];
+    Object.values(plan.tests).forEach((test) => {
+      if (test.planned !== null) {
+        planned[test.testId] = test.planned;
+        filled.push(test.testId);
+      }
+    });
+    store.updateProject(project.id, { plannedQuantities: planned });
+    return res.json({ workspace: buildWorkspace(store, project.id), filled, warnings: plan.warnings, tests: plan.tests });
+  } catch (error) {
+    console.error('Failed to refresh from Zoho', error);
+    return res.status(500).json({ message: 'Failed to read the Zoho project tasks.' });
   }
 });
 
@@ -705,4 +810,5 @@ app.use((error, _req, res, next) => {
 
 app.listen(port, host, () => {
   console.log(`ElectroReports running on http://${host}:${port}`);
+  startProjectWatch({ store });
 });

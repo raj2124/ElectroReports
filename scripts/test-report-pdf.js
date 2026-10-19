@@ -185,6 +185,20 @@ const failingClient = { messages: { create: async () => { throw new Error('529 o
     assert.ok(continuity.replace(/\s/g, '').includes('Limit(Ω)'));
   });
 
+  await check('the cover prints the Work Order only when it is filled in', async () => {
+    const cover = async (workOrder) => {
+      const payload = buildAllTestsPayload();
+      payload.project = { ...payload.project, workOrder };
+      const pdf = await generateFinalReportPdf(normalizeReportInput(payload), { status: 'approved' });
+      return (await textOf(pdf.buffer))[0].replace(/\s+/g, ' ');
+    };
+    const filled = await cover('1002-1261201769');
+    assert.ok(filled.includes('Work Order No.') && filled.includes('1002-1261201769'));
+    const empty = await cover('');
+    assert.ok(!empty.includes('Work Order No.'), 'no empty Work Order row');
+    assert.ok(empty.includes('Document No.') && empty.includes('Internal Project No.'));
+  });
+
   await check('loop observation and CAP clauses read as the standard asks', () => {
     const cap = fullPages.filter((page, i) => i >= 2 && page.includes('Corrective action')).join(' ').replace(/\s+/g, ' ');
     ['Zs 1.92 Ω on B-E exceeds 1.8 Ω (ETPL criterion)', '38.4.3', '25.6.3.4', 'ETPL criterion'].forEach((text) => assert.ok(cap.includes(text), `CAP lacks ${text}`));

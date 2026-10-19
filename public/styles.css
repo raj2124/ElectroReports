@@ -4602,3 +4602,19 @@ textarea {
 .workspace-confirm { border: 1px solid #d9a521; background: #fff8e6; border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; }
 .workspace-confirm ul { margin: 4px 0 0 18px; padding: 0; }
 .workspace-planned { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+
+/* ---- Zoho tasks in step 1, planned-quantity notes, notices (6D) ---- */
+.zoho-tasks { display: grid; gap: 8px; margin: 12px 0; padding: 14px 16px; border: 1px solid rgba(16, 36, 63, 0.12); border-radius: 14px; background: #fff; }
+.zoho-tasklist > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.zoho-task-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 6px 0; border-top: 1px solid #eef1f6; }
+.zoho-task-row.is-irt { opacity: 0.6; }
+.zoho-task-main { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.planned-cell { display: grid; gap: 4px; align-content: start; }
+.planned-note { display: grid; gap: 2px; font-size: 0.82rem; }
+.planned-note .pill { justify-self: start; }
+.planned-warning, .planned-warnings { color: #8a5a00; font-size: 0.82rem; }
+.planned-warnings { margin: 0 0 0 18px; padding: 0; }
+.notice-card { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid #d9a521; background: #fff8e6; border-radius: 14px; }
+.notice-questions { display: grid; gap: 8px; }
+.notice-question { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.notice-question legend { font-weight: 600; }

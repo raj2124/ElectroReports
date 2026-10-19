@@ -110,6 +110,49 @@ const mockProjectTasks = {
   ]
 };
 
+// A D03 project as the live portal returns it (056-D03_TS-26-CLL): the tasks are in the raw v1 shape
+// (custom fields as { column_name, label_name, value }, owners under details), so the same
+// normalisation runs in the tests and live. Empty custom fields are omitted, as Zoho does.
+const rawTask = (id, name, tasklist, { owner = anup, category = 'Offsite', start = '10-26-2026', end = '10-26-2026', extra = [] } = {}) => ({
+  id_string: id,
+  name,
+  status: { name: 'Planned' },
+  start_date: start,
+  end_date: end,
+  tasklist: { id: `tl-${tasklist.replace(/\W+/g, '').toLowerCase()}`, id_string: `tl-${tasklist.replace(/\W+/g, '').toLowerCase()}`, name: tasklist },
+  details: { owners: [owner] },
+  custom_fields: [
+    { column_name: 'UDF_CHAR86', label_name: 'Docs Rev. No.', value: 'R0' },
+    { column_name: 'UDF_CHAR81', label_name: 'Work Location', value: category },
+    ...extra
+  ]
+});
+function anupOwner() { return { id: '60007088431', zpuid: '27127000000467187', name: 'anup', email: 'anup@elegrow.com' }; }
+const anup = anupOwner();
+const ONSITE = 'Onsite Survey / Measurement Activities';
+const mockRawProjectTasks = {
+  '27127000009850033': [
+    rawTask('r1', '[IRT] Input Data Receipt &amp; Review (Plant Layout, HT/LV SLD, Feeder Loading Data)', 'Kick-off Meeting & Input Data', { owner: { id: '60007088440', zpuid: '27127000000467199', name: 'Karishma', email: 'karishma@elegrow.com' } }),
+    rawTask('r2', '[ESHA] Input Data Receipt & Review (Plot Plan, Earthing Layout, Pit Schedule, Past Reports, Threshold)', 'Kick-off Meeting & Input Data'),
+    rawTask('r3', '[ESHA] Soil Resistivity Testing - 4 Locations (Wenner 4-Pin)', ONSITE, { category: 'Onsite', extra: [{ column_name: 'UDF_CHAR90', label_name: 'ESHA Test', value: 'Soil Resistivity' }, { column_name: 'UDF_CHAR91', label_name: 'Planned Quantity', value: '4' }] }),
+    rawTask('r4', '[ESHA] Earth Pit Resistance Testing - 170 Pits (Fall-of-Potential / 3-Pole)', ONSITE, { category: 'Onsite', start: '10-19-2026', end: '10-23-2026', extra: [{ column_name: 'UDF_CHAR90', label_name: 'ESHA Test', value: 'Earth Electrode Resistance' }, { column_name: 'UDF_CHAR91', label_name: 'Planned Quantity', value: '170 pits' }] }),
+    rawTask('r5', '[ESHA] Pit Resistance Data Tabulation & Pass/Fail vs Acceptance Limit', 'Data Analysis', { start: '10-27-2026', end: '10-27-2026', extra: [{ column_name: 'UDF_CHAR90', label_name: 'ESHA Test', value: 'Earth Electrode Resistance' }] }),
+    rawTask('r6', '[ESHA] Draft Earth Pit Resistance Test Report (170 Pits)', 'Draft Report Preparation', { start: '10-28-2026', end: '10-28-2026' })
+  ]
+};
+const mockProjectsD03 = [
+  { id: '27127000009850033', name: '056-D03_TS-26-CLL', projectNumber: '056-D03_TS-26-CLL', clientName: 'CLL', workOrderNo: '', ownerName: 'Anup Parekh', ownerEmail: 'anup@elegrow.com', stage: 'Planning', createdAt: String(Date.parse('2026-10-13T08:49:46Z')) },
+  { id: '27127000009860001', name: '060-D03_TS-26-XYZ', projectNumber: '060-D03_TS-26-XYZ', clientName: 'XYZ', workOrderNo: '', ownerName: 'Nidhi Shah', ownerEmail: 'nidhi@elegrow.com', stage: 'Active', createdAt: String(Date.parse('2026-10-15T08:00:00Z')) },
+  { id: '27127000009860002', name: '024-D03_TS-26-GFL', projectNumber: '024-D03_TS-26-GFL', clientName: 'GFL', workOrderNo: '', ownerName: 'Rakesh Patel', ownerEmail: 'rakesh@elegrow.com', stage: 'Client Review', createdAt: String(Date.parse('2026-07-01T11:19:17Z')) },
+  { id: '27127000009860003', name: '011-D03_TS-25-OLD', projectNumber: '011-D03_TS-25-OLD', clientName: 'OLD', workOrderNo: '', ownerName: 'Rakesh Patel', ownerEmail: 'rakesh@elegrow.com', stage: 'Active', createdAt: String(Date.parse('2025-12-20T08:00:00Z')) }
+];
+mockProjects.push(...mockProjectsD03);
+mockProjectUsers['27127000009850033'] = [
+  { id: '60007088431', displayName: 'Anup Parekh', email: 'anup@elegrow.com', role: 'Engineer' },
+  { id: '60007088440', displayName: 'Karishma Prajapati', email: 'karishma@elegrow.com', role: 'Engineer' }
+];
+mockPortalUsers.push(...mockProjectUsers['27127000009850033']);
+
 let currentAccessToken = config.zoho.accessToken || '';
 let refreshInFlight = null;
 const GENERIC_CLIENT_LABELS = new Set(['', '-', 'allexternal', 'external', 'client', 'all external']);
@@ -501,6 +544,8 @@ function normalizeProject(project) {
     clientName: sanitizeClientName(clientName),
     workOrderNo: asText(workOrderNo),
     ownerName: asText(ownerName),
+    ownerEmail: asText(project.owner_email || project.owner?.email),
+    ownerId: asText(project.owner_id),
     stage: asText(derivedStage),
     updatedAt: asText(updatedAt),
     createdAt: asText(createdAt)
@@ -675,16 +720,29 @@ function normalizeTask(task) {
       .toLowerCase() === 'true';
   const effectiveStatus = status || (closedFlag ? 'Closed' : '');
 
+  // Owners with their ids and e-mail, so a task owner can be matched to a Zoho user, and the custom
+  // fields as the payload carries them (label, API name, value). Empty custom fields are omitted by
+  // Zoho, so a field that is not here has no value on this task.
+  const ownerList = (Array.isArray(task?.details?.owners) ? task.details.owners : Array.isArray(task?.owners) ? task.owners : [])
+    .map((owner) => ({ id: asText(owner?.id || owner?.zuid), zpuid: asText(owner?.zpuid), name: asText(owner?.name || owner?.full_name), email: asText(owner?.email).toLowerCase() }))
+    .filter((owner) => owner.id || owner.name || owner.email);
+  const customFields = (Array.isArray(task?.custom_fields) ? task.custom_fields : [])
+    .map((field) => ({ label: asText(field?.label_name), apiName: asText(field?.column_name || field?.field_name || field?.api_name), value: asText(field?.value) }))
+    .filter((field) => field.label || field.apiName);
+
   return {
     id: asText(id),
-    name: asText(name),
+    name: asText(name).replace(/&amp;/g, '&'),
+    taskListId: asText(task?.tasklist?.id_string || task?.tasklist?.id),
+    owners: ownerList,
+    customFields,
     status: asText(effectiveStatus),
-    ownerName: asText(ownerName),
+    ownerName: asText(ownerName || (ownerList[0] && ownerList[0].name)),
     dueDate: asText(dueDate),
     startDate: asText(startDate),
     percentComplete: asText(percentComplete),
     priority: asText(priority),
-    taskListName: asText(taskListName),
+    taskListName: asText(taskListName).replace(/&amp;/g, '&'),
     milestoneName: asText(milestoneName)
   };
 }
@@ -1437,6 +1495,20 @@ async function getProjectClientUsers(projectId) {
   return fetchProjectClientUsersFromZoho(resolvedId);
 }
 
+// One project (name, stage, owner), for deciding whether it is a D03 project.
+async function getProject(projectRef) {
+  const id = String(projectRef || '').trim();
+  if (!id) {
+    return null;
+  }
+  if (config.zoho.useMock) {
+    return mockProjects.find((project) => project.id === id || project.name === id) || null;
+  }
+  const resolvedId = await resolveProjectReferenceToId(id);
+  const detail = await fetchProjectDetailFromZoho(resolvedId);
+  return detail ? normalizeProject(detail) : null;
+}
+
 async function getProjectTasks(projectRef, options = {}) {
   const id = String(projectRef || '').trim();
   if (!id) {
@@ -1446,7 +1518,7 @@ async function getProjectTasks(projectRef, options = {}) {
   if (config.zoho.useMock) {
     const query = String(options.query || '').trim().toLowerCase();
     const status = String(options.status || '').trim().toLowerCase();
-    let tasks = mockProjectTasks[id] || [];
+    let tasks = mockRawProjectTasks[id] ? mockRawProjectTasks[id].map(normalizeTask) : mockProjectTasks[id] || [];
     if (status) {
       tasks = tasks.filter((task) => String(task.status || '').toLowerCase().includes(status));
     }
@@ -1495,6 +1567,8 @@ function filterProjectsForPicker(projects) {
 }
 
 module.exports = {
+  normalizeTask,
+  getProject,
   getProjects,
   getPortalUsers,
   getProjectUsers,

@@ -20,7 +20,7 @@ const DAY_ONLY_PROJECT_FIELDS = ['reportDate', 'nextDayPlan', 'groundCondition']
 const PROJECT_FIELDS = [
   'projectNo', 'clientName', 'siteLocation', 'workOrder', 'engineerName', 'clientRepresentative', 'unit', 'unitCode', 'clientId',
   'acceptanceProfile', 'soilSpacingPreset', 'assumedSoilResistivity', 'assumedSoilResistivitySource', 'plannedQuantities',
-  'zohoProjectId', 'zohoProjectName', 'zohoProjectOwner', 'zohoProjectStage'
+  'zohoProjectId', 'zohoProjectName', 'zohoProjectOwner', 'zohoProjectStage', 'dataCollectionMode', 'siteAccess'
 ];
 
 function pickProjectFields(input) {

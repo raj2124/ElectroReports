@@ -814,8 +814,8 @@ function getProjectStageMeta(value) {
 
 function builderReadiness(assessment = assessmentSummary(state.draft)) {
   const project = state.draft.project;
-  const projectComplete = ['projectNo', 'clientName', 'siteLocation', 'workOrder', 'reportDate', 'engineerName'].filter((field) => safeText(project[field], '')).length;
-  const projectScore = Math.round((projectComplete / 6) * 100);
+  const projectComplete = ['projectNo', 'clientName', 'siteLocation', 'reportDate', 'engineerName'].filter((field) => safeText(project[field], '')).length;
+  const projectScore = Math.round((projectComplete / 5) * 100);
   const selectionComplete = assessment.selected.length ? 1 : 0;
   const selectionScore = selectionComplete ? 100 : 0;
   const measurementScore = assessment.measurementCoverage.score;
@@ -1471,6 +1471,7 @@ function applyZohoProject(projectId) {
     state.draft.project.zohoProjectStage = '';
     state.zoho.users = [];
     state.zoho.clientUsers = [];
+    resetPlanUi();
     render();
     return;
   }
@@ -1485,9 +1486,8 @@ function applyZohoProject(projectId) {
   );
   state.draft.project.clientName = safeText(project.clientName, state.draft.project.clientName);
   state.draft.project.workOrder = safeText(project.workOrderNo, state.draft.project.workOrder);
-  if (!safeText(state.draft.project.engineerName, '')) {
-    state.draft.project.engineerName = safeText(project.ownerName, '');
-  }
+  // The engineer is the owner of the Onsite tasks (set from the Zoho task plan), not the project owner.
+  loadZohoPlan(project.id);
   loadZohoUsers(project.id);
   loadZohoClientUsers(project.id);
   showToast(`Synced ${safeText(project.projectNumber || project.name)} from Zoho Projects.`, 'healthy');
@@ -1590,6 +1590,8 @@ function dashboardView() {
         <strong>${reportsNeedingAction}</strong>
       </article>
     </section>
+
+    ${renderHomeNotices()}
 
     ${renderHomeProjects()}
 
@@ -1773,13 +1775,14 @@ function renderPlannedQuantities() {
       <p class="section-kicker">Planned quantities</p>
       <div class="field-grid">
         ${tests
-          .map((test) =>
-            renderField(
-              `${test.shortLabel || test.label} - planned ${test.unitLabel || 'qty'}`,
-              planned[test.id],
-              `project.plannedQuantities.${test.id}`,
-              'number'
-            )
+          .map(
+            (test) =>
+              `<div class="planned-cell">${renderField(
+                `${test.shortLabel || test.label} - planned ${test.unitLabel || 'qty'}`,
+                planned[test.id],
+                `project.plannedQuantities.${test.id}`,
+                'number'
+              )}${plannedNote(test.id)}</div>`
           )
           .join('')}
       </div>
@@ -1878,17 +1881,17 @@ function renderProjectStep() {
             ? '<div class="zoho-user-strip"><span>Loading client contacts...</span></div>'
             : ''
       }
+      ${renderZohoTaskPanel()}
       <div class="field-grid">
         ${renderField('Project Number', state.draft.project.projectNo, 'project.projectNo', 'text', 'PRJ-2026-001')}
         ${renderField('Client Name', state.draft.project.clientName, 'project.clientName', 'text', 'Client Name')}
         ${renderField('Site Location', state.draft.project.siteLocation, 'project.siteLocation', 'text', 'Main Plant, Surat')}
-        ${renderField('Work Order / Ref', state.draft.project.workOrder, 'project.workOrder', 'text', 'WO-628')}
         ${state.editing ? `<div class="field"><span>Work date</span><strong>${escapeHtml(formatDisplayDate(state.editing.workDate) || state.editing.workDate)}</strong><small class="muted">Fixed for this site day of the project.</small></div>` : renderField('Work date', state.draft.project.reportDate, 'project.reportDate', 'date')}
         ${renderField('Testing Engineer', state.draft.project.engineerName, 'project.engineerName', 'text', 'Engineer Name')}
         ${renderField('Unit / plant', state.draft.project.unit, 'project.unit', 'text', 'FI Plant')}
         ${renderField('Unit code (required for the final report)', state.draft.project.unitCode, 'project.unitCode', 'text', 'FI')}
         ${state.editing ? renderField('Plan for next day', state.draft.project.nextDayPlan, 'project.nextDayPlan', 'text', 'e.g. Earth pits EP-07 to EP-10') : ''}
-        ${state.editing ? renderField('Data collection mode', state.draft.project.dataCollectionMode, 'project.dataCollectionMode', 'text', 'Printed sheets / direct entry') : ''}
+        ${state.editing ? `<label class="field"><span>Data collection mode</span><select class="text-input" data-bind="project.dataCollectionMode">${['On-site entry', 'Printed sheets'].map((mode) => `<option value="${mode}" ${state.draft.project.dataCollectionMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}</select></label>` : ''}
       </div>
       ${renderPlannedQuantities()}
       ${renderJobHeaderFields()}
@@ -3284,7 +3287,6 @@ function validateProjectStep() {
     ['projectNo', 'Project number is required.'],
     ['clientName', 'Client name is required.'],
     ['siteLocation', 'Site location is required.'],
-    ['workOrder', 'Work order / reference is required.'],
     ['reportDate', 'Date of testing is required.'],
     ['engineerName', 'Testing engineer is required.']
   ];
@@ -3472,6 +3474,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (handleNoticeAction(action, button)) {
+    return;
+  }
+
   if (handleWorkspaceAction(action, button)) {
     return;
   }
@@ -3484,6 +3490,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'new-report') {
     closeObservationEditor();
     state.editing = null;
+    resetPlanUi();
     state.draft = createDraft();
     state.stepIndex = 0;
     state.view = 'builder';
@@ -3683,6 +3690,7 @@ document.addEventListener('input', (event) => {
       target.value = target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8);
     }
     setByPath(state.draft, target.dataset.bind, target.value);
+    planOnPlannedEdit(target.dataset.bind);
     scheduleDraftAutosave();
     if (state.view === 'builder') {
       syncDraftAssessment();
@@ -3721,6 +3729,12 @@ document.addEventListener('input', (event) => {
 document.addEventListener('change', async (event) => {
   const target = event.target;
   if (handleReviewChange(target)) {
+    return;
+  }
+  if (handlePlanChange(target)) {
+    return;
+  }
+  if (handleNoticeChange(target)) {
     return;
   }
   if (target.id === 'zohoProjectPicker') {
@@ -3824,6 +3838,8 @@ async function init() {
   await loadZohoProjects();
   await loadReports();
   await loadProjects();
+  await loadNoticeUsers();
+  await loadNotices();
 }
 
 window.addEventListener('beforeunload', () => {

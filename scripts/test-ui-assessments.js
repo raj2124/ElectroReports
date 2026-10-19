@@ -19,6 +19,8 @@ const sheetsSource = read('sheets.js');
 const printSource = read('print-sheets.js');
 const reviewSource = read('review.js');
 const workspaceSource = read('workspace.js');
+const noticesSource = read('notices.js');
+const zohoPlanSource = read('zoho-plan.js');
 let passed = 0;
 function check(name, fn) {
   return Promise.resolve(fn()).then(() => {
@@ -94,6 +96,8 @@ async function createBrowser() {
   vm.runInContext(printSource, context, { filename: 'print-sheets.js' });
   vm.runInContext(reviewSource, context, { filename: 'review.js' });
   vm.runInContext(workspaceSource, context, { filename: 'workspace.js' });
+  vm.runInContext(noticesSource, context, { filename: 'notices.js' });
+  vm.runInContext(zohoPlanSource, context, { filename: 'zoho-plan.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   const run = (code) => vm.runInContext(code, context);
   const flush = async () => {

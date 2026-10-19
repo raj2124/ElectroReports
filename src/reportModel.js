@@ -1627,7 +1627,6 @@ function normalizeReportInput(payload, options = {}) {
     ['projectNo', 'Project number is required.'],
     ['clientName', 'Client name is required.'],
     ['siteLocation', 'Site location is required.'],
-    ['workOrder', 'Work order / reference is required.'],
     ['reportDate', 'Date of testing is required.'],
     ['engineerName', 'Testing engineer is required.']
   ];

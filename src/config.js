@@ -86,7 +86,18 @@ module.exports = {
     refreshToken: process.env.ZOHO_REFRESH_TOKEN || '',
     clientId: process.env.ZOHO_CLIENT_ID || '',
     clientSecret: process.env.ZOHO_CLIENT_SECRET || '',
-    projectsEndpoint: process.env.ZOHO_PROJECTS_ENDPOINT || ''
+    projectsEndpoint: process.env.ZOHO_PROJECTS_ENDPOINT || '',
+    // New-project watch (Session 6D): how often Zoho is polled (0 turns it off) and which project
+    // statuses get a notice. D03 projects only, created on or after 2026-01-01, with no workspace yet.
+    pollMinutes: Number.parseInt(process.env.ZOHO_POLL_MINUTES || '15', 10),
+    notifyStatuses: String(process.env.ZOHO_NOTIFY_STATUSES || 'Planning,Active').split(',').map((entry) => entry.trim()).filter(Boolean),
+    // Task custom fields are found in the task payload by API name first, then by label. These
+    // overrides (API names) are used when no task of a project has a value yet.
+    taskFields: {
+      eshaTest: String(process.env.ZOHO_TASK_FIELD_ESHA_TEST || '').trim(),
+      plannedQuantity: String(process.env.ZOHO_TASK_FIELD_PLANNED_QTY || '').trim(),
+      category: String(process.env.ZOHO_TASK_FIELD_CATEGORY || 'category').trim()
+    }
   },
   claude,
   openai,

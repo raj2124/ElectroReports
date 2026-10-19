@@ -61,6 +61,7 @@ function openDatabase(dbPath) {
   migrateMultiDaySchema(db);
   migrateSheetSchema(db);
   migrateReviewSchema(db);
+  migrateNoticeSchema(db);
   return db;
 }
 
@@ -150,6 +151,28 @@ function migrateReviewSchema(db) {
       );
     `);
   }).immediate();
+}
+
+// In-app notices (ADDITIVE): "a new D03 project needs two answers". One row per project and
+// recipient, never deleted, so an answered or dismissed notice cannot come back.
+function migrateNoticeSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notices (
+      id              TEXT PRIMARY KEY,
+      kind            TEXT NOT NULL,
+      zoho_project_id TEXT NOT NULL,
+      recipient_key   TEXT NOT NULL,
+      recipient_name  TEXT,
+      status          TEXT NOT NULL,
+      payload         TEXT NOT NULL,
+      answers         TEXT,
+      created_at      TEXT NOT NULL,
+      resolved_at     TEXT,
+      resolved_by     TEXT,
+      UNIQUE (kind, zoho_project_id, recipient_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_notices_recipient ON notices(recipient_key, status);
+  `);
 }
 
 // Printed measurement sheets (ADDITIVE). Every printed page is issued with a unique sheet ID that
@@ -727,7 +750,66 @@ function createReportStore({ filePath }) {
     return db.prepare('DELETE FROM client_logos WHERE key = ?').run(String(key)).changes > 0;
   }
 
+  // ---- Notices ------------------------------------------------------------------------------
+  function rowToNotice(row) {
+    return {
+      id: row.id,
+      kind: row.kind,
+      zohoProjectId: row.zoho_project_id,
+      recipientKey: row.recipient_key,
+      recipientName: row.recipient_name || '',
+      status: row.status,
+      payload: JSON.parse(row.payload),
+      answers: row.answers ? JSON.parse(row.answers) : null,
+      createdAt: row.created_at,
+      resolvedAt: row.resolved_at || '',
+      resolvedBy: row.resolved_by || ''
+    };
+  }
+
+  // Returns the notice, or null when this recipient already has one for the project (any status).
+  function addNotice({ kind = 'new_project', zohoProjectId, recipientKey, recipientName = '', payload = {} }) {
+    const id = `NT-${buildId().replace(/^ER-/, '')}`;
+    const result = db
+      .prepare('INSERT OR IGNORE INTO notices (id, kind, zoho_project_id, recipient_key, recipient_name, status, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, kind, String(zohoProjectId), String(recipientKey).toLowerCase(), recipientName, 'open', JSON.stringify(payload), new Date().toISOString());
+    return result.changes ? getNotice(id) : null;
+  }
+
+  function getNotice(id) {
+    const row = db.prepare('SELECT * FROM notices WHERE id = ?').get(String(id));
+    return row ? rowToNotice(row) : null;
+  }
+
+  function listNotices({ recipientKey, status, zohoProjectId } = {}) {
+    const clauses = [];
+    const params = [];
+    if (recipientKey !== undefined) { clauses.push('recipient_key = ?'); params.push(String(recipientKey).toLowerCase()); }
+    if (status) { clauses.push('status = ?'); params.push(status); }
+    if (zohoProjectId) { clauses.push('zoho_project_id = ?'); params.push(String(zohoProjectId)); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    return db.prepare(`SELECT * FROM notices ${where} ORDER BY created_at, id`).all(...params).map(rowToNotice);
+  }
+
+  function resolveNotice(id, { status, answers = null, by = '' }) {
+    db.prepare("UPDATE notices SET status = ?, answers = ?, resolved_at = ?, resolved_by = ? WHERE id = ? AND status = 'open'")
+      .run(status, answers ? JSON.stringify(answers) : null, new Date().toISOString(), String(by), String(id));
+    return getNotice(id);
+  }
+
+  // When one owner answers, the other owners' open notices for the project are closed.
+  function closeOpenNotices(zohoProjectId, { exceptId = '', by = '' } = {}) {
+    return db
+      .prepare("UPDATE notices SET status = 'answered', resolved_at = ?, resolved_by = ? WHERE zoho_project_id = ? AND status = 'open' AND id != ?")
+      .run(new Date().toISOString(), String(by), String(zohoProjectId), String(exceptId)).changes;
+  }
+
   return {
+    addNotice,
+    getNotice,
+    listNotices,
+    resolveNotice,
+    closeOpenNotices,
     listReports,
     getReport,
     addReport,

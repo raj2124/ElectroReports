@@ -10,7 +10,9 @@ const workspaceUi = {
   workDate: '',
   confirmAssemble: false,
   busy: false,
-  planned: {}
+  planned: {},
+  details: { workOrder: '', dataCollectionMode: '' },
+  zohoNotes: []
 };
 
 const DAY_STATUS_LABEL = { draft: 'Draft', in_review: 'In review', checked: 'Checked', approved: 'Approved' };
@@ -68,6 +70,8 @@ async function openWorkspace(projectId) {
   try {
     workspaceUi.workspace = await api(`/api/projects/${encodeURIComponent(projectId)}`);
     workspaceUi.confirmAssemble = false;
+    workspaceUi.zohoNotes = [];
+    workspaceUi.details = { workOrder: workspaceUi.workspace.project.workOrder || '', dataCollectionMode: workspaceUi.workspace.project.dataCollectionMode || '' };
     workspaceUi.planned = Object.fromEntries(Object.entries(workspaceUi.workspace.planned || {}).map(([key, value]) => [key, String(value)]));
     if (!workspaceUi.workDate) {
       workspaceUi.workDate = todayIso();
@@ -108,6 +112,10 @@ async function openWorkspaceFromZoho(zohoProjectId) {
         }
       })
     });
+    if (result.created) {
+      // a new workspace starts with the Zoho planned quantities (best effort: it opens either way)
+      await api(`/api/projects/${encodeURIComponent(result.projectId)}/zoho-refresh`, { method: 'POST', body: '{}' }).catch(() => null);
+    }
     await loadProjects();
     await openWorkspace(result.projectId);
   } catch (error) {
@@ -150,7 +158,11 @@ function renderPlannedForm(workspace) {
       <div class="workspace-planned">
         ${tests.map((test) => `<label class="field"><span>${escapeHtml(test.shortLabel || test.label)}</span><input class="text-input" type="number" min="0" inputmode="numeric" data-workspace-planned="${escapeHtml(test.id)}" value="${escapeHtml(workspaceUi.planned[test.id] || '')}" /></label>`).join('')}
       </div>
-      <div class="button-row"><button class="button button-secondary" data-action="workspace-save-planned">Save planned quantities</button></div>
+      <div class="button-row">
+        <button class="button button-secondary" data-action="workspace-save-planned">Save planned quantities</button>
+        ${workspace.project.zohoProjectId ? '<button class="button button-ghost" data-action="workspace-zoho-refresh">Refresh from Zoho</button>' : ''}
+      </div>
+      ${workspaceUi.zohoNotes.length ? `<ul class="planned-warnings">${workspaceUi.zohoNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>` : ''}
     </details>`;
 }
 
@@ -230,6 +242,21 @@ function workspaceView() {
           ${renderPlannedForm(workspace)}
         </section>
       </div>
+
+      <section class="surface section-card">
+        <p class="section-kicker">Project details</p>
+        <h3>Defaults for new site days</h3>
+        <div class="field-grid">
+          <label class="field"><span>Work order / reference (optional; printed on the cover only when filled)</span><input class="text-input" type="text" data-workspace-detail="workOrder" value="${escapeHtml(workspaceUi.details.workOrder)}" /></label>
+          <label class="field"><span>Data collection mode</span>
+            <select class="text-input" data-workspace-detail="dataCollectionMode">
+              <option value="" ${workspaceUi.details.dataCollectionMode ? '' : 'selected'}>Not set</option>
+              ${['On-site entry', 'Printed sheets'].map((mode) => `<option value="${mode}" ${workspaceUi.details.dataCollectionMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}
+            </select></label>
+        </div>
+        ${project.siteAccess ? `<p class="muted">Site access answered by ${escapeHtml(project.siteAccess.answeredBy || '-')}: phones/tablets ${project.siteAccess.phonesAllowed ? 'allowed' : 'not allowed'}, mobile data ${project.siteAccess.mobileData ? 'available' : 'not available'}.</p>` : ''}
+        <div class="button-row"><button class="button button-secondary" data-action="workspace-save-details">Save details</button></div>
+      </section>
 
       <section class="surface section-card">
         <p class="section-kicker">Final report</p>
@@ -403,6 +430,32 @@ function handleWorkspaceAction(action, button) {
       });
     return true;
   }
+  if (action === 'workspace-save-details') {
+    const body = { workOrder: workspaceUi.details.workOrder };
+    if (workspaceUi.details.dataCollectionMode) {
+      body.dataCollectionMode = workspaceUi.details.dataCollectionMode;
+    }
+    api(`/api/projects/${encodeURIComponent(workspaceUi.workspace.project.id)}`, { method: 'PUT', body: JSON.stringify({ project: body }) })
+      .then((workspace) => {
+        workspaceUi.workspace = workspace;
+        showToast('Project details saved.', 'healthy');
+        render();
+      })
+      .catch((error) => showToast(error.message, 'critical'));
+    return true;
+  }
+  if (action === 'workspace-zoho-refresh') {
+    api(`/api/projects/${encodeURIComponent(workspaceUi.workspace.project.id)}/zoho-refresh`, { method: 'POST', body: '{}' })
+      .then((result) => {
+        workspaceUi.workspace = result.workspace;
+        workspaceUi.planned = Object.fromEntries(Object.entries(result.workspace.planned || {}).map(([key, value]) => [key, String(value)]));
+        workspaceUi.zohoNotes = [...result.warnings, ...Object.values(result.tests).filter((test) => test.planned === null && test.hint).map((test) => `${test.name}: ${test.hint} (not filled in)`)];
+        showToast(result.filled.length ? `Planned quantities read from Zoho for ${result.filled.length} test${result.filled.length === 1 ? '' : 's'}.` : 'No clear planned quantity in Zoho.', result.filled.length ? 'healthy' : 'warning');
+        render();
+      })
+      .catch((error) => showToast(error.message, 'critical'));
+    return true;
+  }
   if (action === 'workspace-save-planned') {
     api(`/api/projects/${encodeURIComponent(workspaceUi.workspace.project.id)}`, { method: 'PUT', body: JSON.stringify({ project: { plannedQuantities: workspaceUi.planned } }) })
       .then((workspace) => {
@@ -421,6 +474,10 @@ function handleWorkspaceInput(target) {
   if (target.dataset && target.dataset.workspaceField === 'workDate') {
     workspaceUi.workDate = target.value;
     render();
+    return true;
+  }
+  if (target.dataset && target.dataset.workspaceDetail) {
+    workspaceUi.details[target.dataset.workspaceDetail] = target.value;
     return true;
   }
   if (target.dataset && target.dataset.workspacePlanned) {
