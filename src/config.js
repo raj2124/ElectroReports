@@ -35,8 +35,9 @@ const referencePdfPaths = String(process.env.OPENAI_REFERENCE_PDFS || '')
 const claude = {
   apiKey: String(process.env.ANTHROPIC_API_KEY || '').trim(),
   model: String(process.env.ANTHROPIC_MODEL || 'claude-opus-5-5').trim(),
-  // Opus 5.5 defaults to medium effort (4.8 defaulted to high); keep the report writer at high.
-  effort: String(process.env.ANTHROPIC_EFFORT || 'high').trim(),
+  // Opus 5.5 defaults to medium effort and medium is intended for the report writer: it only
+  // phrases findings from computed results (6C). Raise ANTHROPIC_EFFORT only if text quality needs it.
+  effort: String(process.env.ANTHROPIC_EFFORT || 'medium').trim(),
   role: String(process.env.CLAUDE_ROLE || 'report-narrative').trim(),
   referencePdfPaths
 };
@@ -57,8 +58,8 @@ module.exports = {
   app: {
     rootDir,
     publicDir: path.join(rootDir, 'public'),
-    generatedDir: path.join(rootDir, 'generated-pdfs'),
-    dataFilePath: path.join(rootDir, 'data', 'reports.json'),
+    generatedDir: process.env.ELECTROREPORTS_GENERATED_DIR || path.join(rootDir, 'generated-pdfs'),
+    dataFilePath: process.env.ELECTROREPORTS_DATA_FILE || path.join(rootDir, 'data', 'reports.json'),
     host,
     port
   },

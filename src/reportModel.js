@@ -1560,7 +1560,7 @@ function normalizeReportInput(payload, options = {}) {
     zohoProjectStage: asTrimmedString(input?.project?.zohoProjectStage)
   };
   // Final-report fields (6C): only kept when given, so older reports normalise exactly as before.
-  ['unit', 'unitCode', 'clientId'].forEach((key) => {
+  ['unit', 'unitCode', 'clientId', 'nextDayPlan', 'dataCollectionMode'].forEach((key) => {
     const raw = asTrimmedString(input?.project?.[key]);
     const value = key === 'unitCode' ? raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) : raw;
     if (value) {
