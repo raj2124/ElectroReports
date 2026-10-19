@@ -9,6 +9,8 @@
 const { assessReport, TEST_CRITERIA } = require('../assessmentService');
 const { TEST_LIBRARY, buildTestSummaries, buildOverallStatus, buildAssessmentContext, asLooseNumber } = require('../reportModel');
 const { CONDITION_CODE_LEGEND } = require('../sheetDefinitions');
+const { resolveProfile } = require('../acceptance');
+const { instrumentCatalogue } = require('../config');
 
 const CODE_TEXT = Object.fromEntries(CONDITION_CODE_LEGEND.map((entry) => [entry.code, entry.text]));
 
@@ -37,19 +39,19 @@ const raw = (value) => (text(value) || '-');
 const rawNum = (value) => (Number.isFinite(asLooseNumber(value)) ? asLooseNumber(value).toFixed(2) : raw(value));
 const RESULT_SPECS = {
   electrodeResistance: {
-    columns: [['Sr', 3], ['Pit tag', 7], ['Location', 14], ['Type', 5], ['l (m)', 5], ['d (mm)', 5], ['Limit (ohm)', 7], ['R (ohm)', 7], ['Status', 12], ['Codes', 6], ['Priority', 6]],
-    cells: (point, row) => [point.label, row.location || '-', row.electrodeType || '-', raw(row.length), raw(row.diameter), num(point.limit), num(point.measured), point.statusLabel, codesText(point.codes), point.priority || '-'],
-    statusColumns: [8, 10]
+    columns: [['Sr', 3], ['Pit tag', 6], ['Location', 12], ['Type', 5], ['l (m)', 4], ['d (mm)', 5], ['Test condition', 8], ['Limit (ohm)', 6], ['R (ohm)', 6], ['50/70% check', 8], ['Status (R vs limit)', 9], ['Codes', 6], ['Priority', 6]],
+    cells: (point, row) => [point.label, row.location || '-', row.electrodeType || '-', raw(row.length), raw(row.diameter), point.testCondition, num(point.limit), num(point.measured), point.fopCell, point.resultLabel, codesText(point.codes), point.priority || '-'],
+    statusColumns: [10, 12]
   },
   continuityTest: {
-    columns: [['Sr', 4], ['Main location', 18], ['Tested point', 20], ['R (ohm, net of leads)', 14], ['Codes', 8], ['Status', 14]],
-    cells: (point, row) => [raw(row.mainLocation), raw(row.measurementPoint), num(point.measured), codesText(point.codes), point.statusLabel],
-    statusColumns: [5]
+    columns: [['Sr', 4], ['Main location', 17], ['Tested point', 19], ['R (ohm, net of leads)', 13], ['Limit (ohm)', 9], ['Codes', 7], ['Status', 14]],
+    cells: (point, row) => [raw(row.mainLocation), raw(row.measurementPoint), num(point.measured), num(point.limit), codesText(point.codes), point.statusLabel],
+    statusColumns: [6]
   },
   loopImpedanceTest: {
-    columns: [['Sr', 4], ['Panel', 14], ['Feeder', 14], ['Device', 10], ['Zs R / Y / B (ohm)', 22], ['Status', 14]],
-    cells: (point, row) => [raw(row.location), raw(row.feederTag), point.device || '-', point.phases.map((phase) => num(phase.measured)).join(' / '), point.statusLabel],
-    statusColumns: [5]
+    columns: [['Sr', 4], ['Panel', 13], ['Feeder', 13], ['Device', 9], ['Zs R / Y / B (ohm)', 20], ['Limit (ohm)', 9], ['Status', 14]],
+    cells: (point, row) => [raw(row.location), raw(row.feederTag), point.device || '-', point.phases.map((phase) => num(phase.measured)).join(' / '), num(point.limit), point.statusLabel],
+    statusColumns: [6]
   },
   prospectiveFaultCurrent: {
     columns: [['Sr', 4], ['Panel', 12], ['Feeder', 12], ['Device', 9], ['Br. cap. (kA)', 9], ['Governing R / Y / B (kA)', 18], ['Status', 14]],
@@ -57,9 +59,9 @@ const RESULT_SPECS = {
     statusColumns: [6]
   },
   riserIntegrityTest: {
-    columns: [['Sr', 4], ['Main location', 16], ['Point', 18], ['Towards equipment (ohm)', 14], ['Towards grid (ohm)', 12], ['Codes', 8], ['Status', 14]],
-    cells: (point, row) => [raw(row.mainLocation), raw(row.measurementPoint), rawNum(row.resistanceTowardsEquipment), rawNum(row.resistanceTowardsGrid), codesText(point.codes), point.statusLabel],
-    statusColumns: [6]
+    columns: [['Sr', 4], ['Main location', 15], ['Point', 16], ['Towards equipment (ohm)', 13], ['Towards grid (ohm)', 11], ['Limit (ohm)', 9], ['Codes', 7], ['Status', 14]],
+    cells: (point, row) => [raw(row.mainLocation), raw(row.measurementPoint), rawNum(row.resistanceTowardsEquipment), rawNum(row.resistanceTowardsGrid), num(point.limit), codesText(point.codes), point.statusLabel],
+    statusColumns: [7]
   },
   groundResistance: {
     columns: [['Sr', 4], ['Tag', 12], ['Location', 20], ['Method', 8], ['R at 61.8% (ohm)', 12], ['Limit (ohm)', 10], ['Status', 14]],
@@ -72,9 +74,14 @@ const RESULT_SPECS = {
     statusColumns: [8]
   },
   towerFootingResistance: {
-    columns: [['Sr', 4], ['Tower / location', 22], ['Zt (ohm)', 10], ['Zsat (ohm)', 10], ['Itotal (mA)', 11], ['Feet not given', 14], ['Status', 14]],
-    cells: (point, row) => [raw(row.mainLocationTower), num(point.zt), num(point.zsat), num(point.itotal), point.flags.filter((flag) => flag.code === 'FOOT_NOT_GIVEN').flatMap((flag) => flag.feet || []).join(', ') || '-', point.statusLabel],
-    statusColumns: [6]
+    columns: [['Sr', 4], ['Tower / foot', 22], ['Foot connection', 16], ['I (mA)', 11], ['Z (ohm)', 11], ['Zt (ohm)', 11], ['Zsat (ohm)', 11], ['Status', 14]],
+    // the tower row (bold) follows its four foot rows
+    cells: (point, row) => [{ text: raw(row.mainLocationTower), bold: true }, '', { text: num(point.itotal), bold: true }, '', { text: num(point.zt), bold: true }, { text: num(point.zsat), bold: true }, point.statusLabel],
+    subRows: (point, row) => arrayOf(row.readings).map((reading, i) => {
+      const given = text(reading.footToEarthingConnectionStatus).toLowerCase() !== 'not given';
+      return ['', `  ${raw(reading.measurementPointLocation) === '-' ? `Foot-${i + 1}` : raw(reading.measurementPointLocation)}`, given ? 'Given' : { text: 'Not given', color: '#B42318', bold: true }, rawNum(reading.measuredCurrentMa), rawNum(reading.measuredImpedance), '', '', ''];
+    }),
+    statusColumns: [7]
   },
   earthContinuityTest: {
     columns: [['Sr', 4], ['Tag', 14], ['Location', 24], ['Measured', 12], ['Status', 14]],
@@ -84,13 +91,13 @@ const RESULT_SPECS = {
 };
 
 const CODE_ACTION = {
-  C1: 'Repair or replace the corroded electrode/strip (IS 3043:2018 Cl. 14.2)',
-  C2: 'Reconnect the strip / restore the test link and bonding (IS 3043:2018 Cl. 25.6.3.4)',
-  C3: 'Provide a second earth connection (IS 3043:2018 Cl. 4.2)',
+  C1: 'Repair or replace the corroded electrode/strip',
+  C2: 'Reconnect the strip / restore the test link and bonding',
+  C3: 'Provide a second earth connection',
   C4: 'Expose and restore the pit chamber with a removable cover; measure and report',
   C5: 'Repair or replace the damaged electrode',
   C6: 'Clean and re-tighten the loose connection; re-test',
-  C7: 'Clean, tin and protect the joint (IS 3043:2018 Cl. 25.6.3.4)',
+  C7: 'Clean, tin and protect the joint',
   C8: 'Fix a permanent tag/label at the point',
   OTH: 'Review the engineer remark and assign action'
 };
@@ -119,6 +126,22 @@ function pointFromRow({ testId, row, index, status, extra = {} }) {
   };
 }
 
+// Numeric limit and where it comes from, for the tests whose limit comes straight from the profile.
+const PROFILE_LIMITS = { continuityTest: 'CONT-LIMIT', loopImpedanceTest: 'LOOP-LIMIT', riserIntegrityTest: 'RISER-LIMIT' };
+
+function limitInfo(testId, report) {
+  const id = PROFILE_LIMITS[testId];
+  if (!id) {
+    return { value: null, source: '' };
+  }
+  const criterion = resolveProfile(report.project && report.project.acceptanceProfile).get(id);
+  const source = criterion.basis === 'etpl_acceptance' ? 'ETPL criterion' : criterion.basis === 'client_spec' ? 'client specification' : String(criterion.source || '').split(';')[0];
+  return { value: criterion.value, source };
+}
+
+const RESULT_LABEL = { Healthy: 'Within limit', Warning: 'Warning', '>Permissible Limit': 'Above limit', 'Not Measurable': 'Not measurable' };
+const TEST_CONDITION = { without_grid: 'Isolated', with_grid: 'Grid-connected' };
+
 // Pass/fail points of one test, from the assessment rows the UI already reads.
 function collectPoints(testId, report, assessment) {
   const points = collectRawPoints(testId, report, assessment);
@@ -127,6 +150,7 @@ function collectPoints(testId, report, assessment) {
   points.forEach((point, position) => {
     const row = rows[TEST_META[testId].panel ? point.index * 3 : point.index] || {};
     point.cells = [String(position + 1), ...spec.cells(point, row)];
+    point.subRows = spec.subRows ? spec.subRows(point, row) : [];
   });
   return points;
 }
@@ -135,6 +159,7 @@ function collectRawPoints(testId, report, assessment) {
   const rows = arrayOf(report[testId]);
   const assessed = arrayOf(assessment.tests[testId] && assessment.tests[testId].rows);
   const meta = TEST_META[testId];
+  const limit = limitInfo(testId, report);
   if (meta.panel) {
     return arrayOf(assessment.tests[testId].panels).map((panel) => {
       const phaseRows = assessed.slice(panel.startIndex, panel.startIndex + 3);
@@ -147,6 +172,8 @@ function collectRawPoints(testId, report, assessment) {
         extra: {
           device: [source.deviceType, source.deviceRating].filter(Boolean).join(' '),
           breakingCapacity: asLooseNumber(source.breakingCapacity),
+          limit: limit.value,
+          limitSource: limit.source,
           phases: phaseRows.map((entry, i) => ({ phase: text(rows[panel.startIndex + i] && rows[panel.startIndex + i].measuredPoints) || ['R-E', 'Y-E', 'B-E'][i], measured: entry.measured, status: entry.status.label })),
           pscNotRecorded: phaseRows.some((entry) => entry.pscNotRecorded)
         }
@@ -162,12 +189,23 @@ function collectRawPoints(testId, report, assessment) {
       status: entry.status,
       extra: {
         measured: entry.measured ?? null,
-        limit: entry.limit ?? null,
+        limit: entry.limit ?? limit.value,
         priority: entry.priority || null,
         codes: codesOf(entry.conditionCodes),
         flags: arrayOf(entry.flags),
         comment: entry.typedRemark || entry.comment || '',
         defectText: entry.defectText || '',
+        resultLabel: RESULT_LABEL[entry.status && entry.status.label] || (entry.status && entry.status.label) || '-',
+        testCondition: TEST_CONDITION[entry.measuredBasis] || '-',
+        fopCell: entry.fop ? (entry.fop.agrees ? 'Agree' : { text: 'Disagree', color: '#B42318', bold: true }) : '-',
+        equipment: entry.equipment ?? null,
+        grid: entry.grid ?? null,
+        limitSource: limit.source,
+        surface: text(row.surface),
+        rhoS: entry.rhoS ?? null,
+        cs: entry.cs ?? null,
+        csSource: entry.csSource || '',
+        bodyWeightKg: entry.bodyWeightKg ?? null,
         zt: entry.totalImpedanceZt ?? null,
         itotal: entry.totalCurrentItotal ?? null,
         vmax: entry.vmax ?? null,
@@ -186,12 +224,20 @@ function collectRawPoints(testId, report, assessment) {
 function defectsOf(testId, point) {
   const lines = [];
   if (testId === 'electrodeResistance') {
-    if (point.priority === 'P1' || point.priority === 'P2') {
+    // The resistance sentence is a defect only when the resistance itself is at fault; a pit that
+    // is P1/P2 only because of a condition code is described by its codes below.
+    if ((point.priority === 'P1' || point.priority === 'P2') && point.statusLabel !== 'Healthy') {
       lines.push(point.comment);
     }
+  } else if (point.tone === 'critical' && point.phases && testId === 'loopImpedanceTest') {
+    const over = point.phases.filter((phase) => phase.status === '>Permissible Limit');
+    lines.push(over.map((phase) => `Zs ${fmt2(phase.measured)} ohm on ${phase.phase} exceeds ${Number(point.limit)} ohm (${point.limitSource})`).join('; ') + '.');
   } else if (point.tone === 'critical' && point.phases) {
     const over = point.phases.filter((phase) => phase.status === '>Permissible Limit');
     lines.push(`Above limit on ${over.map((phase) => `${phase.phase} (${fmt2(phase.measured)})`).join(', ') || 'at least one phase'}.`);
+  } else if (point.tone === 'critical' && testId === 'riserIntegrityTest' && Number.isFinite(point.limit)) {
+    const over = [['towards equipment', point.equipment], ['towards grid', point.grid]].filter(([, value]) => Number.isFinite(value) && value > point.limit);
+    lines.push(`${over.map(([where, value]) => `${fmt2(value)} ohm ${where}`).join(' and ')} exceed${over.length === 1 ? 's' : ''} ${Number(point.limit)} ohm (${point.limitSource}).`);
   } else if (point.tone === 'critical') {
     lines.push(point.comment || `${point.statusLabel}.`);
   } else if (point.statusLabel === 'Marginal') {
@@ -228,6 +274,19 @@ function gapsOf(testId, point) {
   return gaps;
 }
 
+const CODE_CLAUSE = {
+  C1: 'IS 3043:2018 Cl. 38.4.3',
+  C2: 'IS 3043:2018 Cl. 25.6.3.4',
+  C3: 'IS 3043:2018 Cl. 4.2',
+  C4: 'IS 3043:2018 Cl. 38.4.3',
+  C5: 'IS 3043:2018 Cl. 38.4.3',
+  C6: 'IS 3043:2018 Cl. 38.4.3',
+  C7: 'IS 3043:2018 Cl. 38.4.3',
+  C8: 'ETPL criterion',
+  OTH: 'ETPL criterion'
+};
+const REPAIR_CODES = ['C1', 'C2', 'C5'];
+
 function actionFor(testId, point) {
   const actions = point.codes.map((code) => CODE_ACTION[code]).filter(Boolean);
   if (point.flags.some((flag) => flag.code === 'FOOT_NOT_GIVEN')) {
@@ -236,7 +295,8 @@ function actionFor(testId, point) {
   if (testId === 'electrodeResistance' && point.statusLabel === 'Not Measurable' && point.codes.includes('C4')) {
     // the C4 action already says to expose the chamber and measure
   } else if (testId === 'electrodeResistance' && point.statusLabel === '>Permissible Limit') {
-    actions.push('Rectify within 30 days: repair/replace electrode and strip, restore test link and bonding; re-test');
+    // The code actions already name the repair; do not say it twice.
+    actions.push(point.codes.some((code) => REPAIR_CODES.includes(code)) ? 'Complete within 30 days; re-test after rectification' : 'Repair or replace the electrode, strip and bonding within 30 days; re-test');
   } else if (testId === 'electrodeResistance' && point.statusLabel === 'Not Measurable') {
     actions.push('Expose the pit, measure and report within 30 days');
   } else if (testId === 'electrodeResistance' && point.priority === 'P2' && !actions.length) {
@@ -247,6 +307,35 @@ function actionFor(testId, point) {
     actions.push('Improve the footing earth and re-test');
   }
   return [...new Set(actions)].join('; ') || 'Review and rectify';
+}
+
+// Clause of a CAP line: one per condition code, and the resistance clause only when the line
+// is about the resistance (electrode above limit / warning) or the test's own limit.
+function clauseFor(test, point) {
+  const clauses = [];
+  if (test.id === 'electrodeResistance') {
+    if (point.statusLabel === '>Permissible Limit' || point.statusLabel === 'Warning') {
+      clauses.push('IS 3043:2018 Cl. 14.2');
+    }
+  } else if (point.tone === 'critical' || point.statusLabel === 'Marginal') {
+    if (test.basisClause) {
+      clauses.push(test.basisClause);
+    }
+  }
+  point.codes.forEach((code) => clauses.push(CODE_CLAUSE[code] || 'ETPL criterion'));
+  if (point.flags.some((flag) => flag.code === 'FOOT_NOT_GIVEN') && test.basisClause) {
+    clauses.push(test.basisClause);
+  }
+  return joinClauses(clauses) || test.basisClause || '-';
+}
+
+// "IS 3043:2018 Cl. 14.2" + "IS 3043:2018 Cl. 25.6.3.4" -> "IS 3043:2018 Cl. 14.2, 25.6.3.4"
+function joinClauses(clauses) {
+  const unique = [...new Set(clauses)];
+  const prefix = 'IS 3043:2018 Cl. ';
+  const numbers = unique.filter((clause) => clause.startsWith(prefix)).map((clause) => clause.slice(prefix.length));
+  const others = unique.filter((clause) => !clause.startsWith(prefix));
+  return [...(numbers.length ? [`${prefix}${numbers.join(', ')}`] : []), ...others].join('; ');
 }
 
 function buildCap(tests) {
@@ -265,7 +354,7 @@ function buildCap(tests) {
         observation: defects.join(' '),
         action: actionFor(test.id, point),
         priorityOrStatus: test.id === 'electrodeResistance' ? point.priority || point.statusLabel : point.statusLabel,
-        clause: test.id === 'electrodeResistance' ? 'IS 3043:2018 Cl. 14.2' : test.basisClause
+        clause: clauseFor(test, point)
       });
     });
   });
@@ -300,13 +389,12 @@ function buildSoilLocations(report, summary) {
     const source = sources[index] || {};
     const directions = ['direction1', 'direction2', 'direction3', 'direction4'].filter((key) => arrayOf(source[key]).some((row) => text(row && row.resistivity)));
     const spacings = arrayOf(source.direction1).map((row) => asLooseNumber(row && row.spacing));
+    const isOhm = location.inputUnit === 'ohm';
     const rows = spacings.map((spacing, i) => {
-      const rhos = directions.map((key) => {
-        const value = asLooseNumber(arrayOf(source[key])[i] && arrayOf(source[key])[i].resistivity);
-        return location.inputUnit === 'ohm' && Number.isFinite(value) && Number.isFinite(spacing) ? 2 * Math.PI * spacing * value : value;
-      });
+      const reads = directions.map((key) => asLooseNumber(arrayOf(source[key])[i] && arrayOf(source[key])[i].resistivity));
+      const rhos = reads.map((value) => (isOhm && Number.isFinite(value) && Number.isFinite(spacing) ? 2 * Math.PI * spacing * value : value));
       const valid = rhos.filter((value) => Number.isFinite(value));
-      return { spacing, rhos, mean: valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null };
+      return { spacing, rs: isOhm ? reads : null, rhos, mean: valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null };
     }).filter((row) => row.rhos.some((value) => Number.isFinite(value)));
     return {
       name: location.name,
@@ -314,10 +402,58 @@ function buildSoilLocations(report, summary) {
       pendingReason: location.pendingReason,
       average: location.overallAverage,
       category: location.category && location.category.label,
+      inputUnit: location.inputUnit,
+      weather: text(source.weather),
+      probeDepthCm: text(source.probeDepthCm),
       directionLabels: directions.map((key) => `Direction ${key.slice(-1)}`),
-      rows
+      rows,
+      // rho against spacing for the first two directions (the chart)
+      series: directions.slice(0, 2).map((key, d) => ({
+        label: `Direction ${key.slice(-1)}`,
+        points: rows.map((row) => [row.spacing, row.rhos[d]]).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+      }))
     };
   });
+}
+
+// What the step & touch limits were calculated from, printed under the table: If, If/It, ts,
+// rho_s and Cs per surface, and the body weight. A final report may carry several days' headers.
+function buildStepTouchNote(report, points) {
+  const rows = arrayOf(report.stepTouchVoltage);
+  const distinct = (values) => [...new Set(values.filter((value) => value !== '' && value !== null && value !== undefined))];
+  const headerOf = (index) => (rows[index] && rows[index].dayHeader) || (report.sheetHeaders && report.sheetHeaders.stepTouchVoltage) || {};
+  const headers = points.map((point) => headerOf(point.index));
+  const withSource = (key, sourceKey, suffix) => distinct(headers.map((header) => (text(header[key]) ? `${text(header[key])} ${suffix}${text(header[sourceKey]) ? ` (${text(header[sourceKey])})` : ''}` : ''))).join(' / ');
+  const faultCurrent = withSource('faultCurrentKA', 'faultCurrentSource', 'kA');
+  const clearing = withSource('faultClearingTimeS', 'faultClearingSource', 's');
+  const profile = resolveProfile(report.project && report.project.acceptanceProfile);
+  const k = profile.params('ST-LIMIT');
+  const weights = distinct(points.map((point) => point.bodyWeightKg)).sort((a, b) => a - b).map((weight) => `${weight} kg (k = ${k[`k_${weight}kg`]})`);
+  const scalings = distinct(points.map((point, i) => {
+    const current = asLooseNumber(rows[point.index] && rows[point.index].testCurrentA);
+    const faultKA = asLooseNumber(headers[i].faultCurrentKA);
+    return Number.isFinite(current) && current > 0 && Number.isFinite(faultKA) ? `${fmt2((faultKA * 1000) / current)} (It = ${current} A)` : '';
+  }));
+  const surfaces = distinct(points.map((point) => point.surface || ''))
+    .map((surface) => {
+      const own = points.filter((point) => (point.surface || '') === surface && Number.isFinite(point.rhoS));
+      const rhos = distinct(own.map((point) => fmt2(point.rhoS)));
+      const factors = distinct(own.map((point) => (Number.isFinite(point.cs) ? fmt2(point.cs) : '')));
+      if (!own.length) {
+        return '';
+      }
+      const how = surface === 'Soil' ? ' (site soil resistivity, no surface layer)' : '';
+      return `${surface || 'surface not ticked'}: rho_s = ${rhos.join(' / ')} ohm-m${how}, Cs = ${factors.join(' / ')} (${distinct(own.map((point) => point.csSource)).join('; ')})`;
+    })
+    .filter(Boolean);
+  const parts = [
+    faultCurrent && `Earth fault current If = ${faultCurrent}`,
+    scalings.length && `scaling If/It = ${scalings.join(', ')}`,
+    clearing && `fault clearing time ts = ${clearing}`,
+    surfaces.length && `surface layers - ${surfaces.join('; ')}`,
+    weights.length && `body weight ${weights.join(' / ')}`
+  ].filter(Boolean);
+  return parts.length ? `Basis of the limits: ${parts.join('; ')}. Each point is compared with the tolerable voltage of its own surface.` : '';
 }
 
 function buildInstruments(report) {
@@ -338,6 +474,12 @@ function buildInstruments(report) {
   });
   rows.sort((a, b) => a.workDate.localeCompare(b.workDate) || a.instrument.localeCompare(b.instrument));
   rows.forEach((row) => {
+    const squashed = row.instrument.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const known = instrumentCatalogue.find((entry) => squashed.includes(entry.match));
+    row.catalogued = Boolean(known);
+    row.instrument = known ? known.name : row.instrument;
+    row.range = known ? known.range : '';
+    row.accuracy = known ? known.accuracy : '';
     row.expired = /^\d{4}-\d{2}-\d{2}$/.test(row.calibrationDue) && /^\d{4}-\d{2}-\d{2}$/.test(row.workDate) && row.calibrationDue < row.workDate;
   });
   return rows;
@@ -381,7 +523,7 @@ function buildFinalReportData(report) {
   const tests = selected.map((test) => {
     const meta = TEST_META[test.id];
     const clauseCriterion = (assessment.basisOfAssessment || []).find((entry) => (TEST_CRITERIA[test.id] || []).includes(entry.id));
-    return {
+    const built = {
       id: test.id,
       label: test.label,
       sheetCode: test.sheetCode,
@@ -391,6 +533,10 @@ function buildFinalReportData(report) {
       basisClause: clauseCriterion ? `ET-D03-REG-002 ${clauseCriterion.id}` : '',
       points: collectPoints(test.id, report, assessment)
     };
+    if (test.id === 'stepTouchVoltage') {
+      built.note = buildStepTouchNote(report, built.points);
+    }
+    return built;
   });
 
   const modelSummaries = buildTestSummaries(report, buildAssessmentContext(report));

@@ -9,7 +9,7 @@ const {
   canTransition,
   assembleFinalReport
 } = require('./reportCollectionModel');
-const { requiredAcknowledgements, currentRound, lastOf, buildReviewState } = require('./review');
+const { requiredAcknowledgements, approvalBlockers, ACK_LABEL, currentRound, lastOf, buildReviewState } = require('./review');
 const { buildFinalReportData, assertConsistent } = require('./finalReport/data');
 
 function ensureDir(dirPath) {
@@ -136,6 +136,9 @@ function migrateReviewSchema(db) {
   db.transaction(() => {
     if (!hasColumn(db, 'report_transitions', 'action')) {
       db.exec('ALTER TABLE report_transitions ADD COLUMN action TEXT');
+    }
+    if (!hasColumn(db, 'report_transitions', 'designation')) {
+      db.exec('ALTER TABLE report_transitions ADD COLUMN designation TEXT');
     }
     db.exec(`
       CREATE TABLE IF NOT EXISTS client_logos (
@@ -444,7 +447,7 @@ function createReportStore({ filePath }) {
     return Object.assign(error, extra);
   }
 
-  function writeTransition(updated, fromStatus, toStatus, action, actor, note, at) {
+  function writeTransition(updated, fromStatus, toStatus, action, actor, note, at, designation = '') {
     db.transaction(() => {
       updateStmt.run({
         id: updated.id,
@@ -454,14 +457,14 @@ function createReportStore({ filePath }) {
         data: JSON.stringify(updated)
       });
       db.prepare(
-        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at, action) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at, action);
+        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at, action, designation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at, action, String(designation || ''));
     })();
   }
 
   // acknowledgements: { calibration, sanityCheck } notes. `acknowledgement` (a single string)
   // is the older form and covers the calibration note only.
-  function transition(id, toStatus, { actor = '', note = '', acknowledgement = '', acknowledgements = {} } = {}) {
+  function transition(id, toStatus, { actor = '', designation = '', note = '', acknowledgement = '', acknowledgements = {} } = {}) {
     const current = requireWorkflow(id);
     if (!current) {
       return null;
@@ -480,13 +483,20 @@ function createReportStore({ filePath }) {
         throw failure('Mark the report as checked before approving it.', 'NOT_CHECKED');
       }
       assertConsistent(buildFinalReportData(current));
-      const given = { calibration: String(acknowledgements.calibration || acknowledgement || '').trim(), sanityCheck: String(acknowledgements.sanityCheck || '').trim() };
+      const blockers = approvalBlockers(current);
+      if (blockers.length) {
+        throw failure(blockers.map((item) => item.text).join(' '), blockers[0].code, { items: blockers });
+      }
+      const given = Object.fromEntries(Object.entries(acknowledgements || {}).map(([key, value]) => [key, String(value || '').trim()]));
+      if (!given.calibration && String(acknowledgement || '').trim()) {
+        given.calibration = String(acknowledgement).trim();
+      }
       const missing = requiredAcknowledgements(current).filter((item) => !given[item.key]);
       if (missing.length) {
         throw failure(`Acknowledge before approving: ${missing.map((item) => item.text).join(' ')}`, 'ACKNOWLEDGEMENT_REQUIRED', { items: missing });
       }
       requiredAcknowledgements(current).forEach((item) => {
-        recorded.push(`${item.key === 'calibration' ? 'Calibration acknowledged' : 'Sanity check not run - acknowledged'}: ${given[item.key]}`);
+        recorded.push(`${ACK_LABEL[item.key] || item.key}: ${given[item.key]}`);
       });
       if (String(actor || '').trim() && String(actor).trim().toLowerCase() === String(checked.actor || '').trim().toLowerCase()) {
         warnings.push(`${actor} both checked and approved this report.`);
@@ -501,7 +511,7 @@ function createReportStore({ filePath }) {
       updated.review = { ...(current.review || {}), ticks: {} };
     }
     const fullNote = [...recorded, String(note || '')].filter(Boolean).join(' | ');
-    writeTransition(updated, fromStatus, toStatus, action, actor, fullNote, at);
+    writeTransition(updated, fromStatus, toStatus, action, actor, fullNote, at, designation);
     return { report: updated, warnings };
   }
 
@@ -511,7 +521,7 @@ function createReportStore({ filePath }) {
   }
 
   // The checker's step: stays in_review, recorded as its own transition.
-  function markChecked(id, { actor = '', note = '' } = {}) {
+  function markChecked(id, { actor = '', designation = '', note = '' } = {}) {
     const current = requireWorkflow(id);
     if (!current) {
       return null;
@@ -529,7 +539,7 @@ function createReportStore({ filePath }) {
     }
     const at = new Date().toISOString();
     const updated = { ...current, updatedAt: at };
-    writeTransition(updated, 'in_review', 'in_review', 'check', actor, note, at);
+    writeTransition(updated, 'in_review', 'in_review', 'check', actor, note, at, designation);
     return updated;
   }
 
@@ -573,7 +583,7 @@ function createReportStore({ filePath }) {
 
   function listTransitions(reportId) {
     return db
-      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, note, at, action FROM report_transitions WHERE report_id = ? ORDER BY id')
+      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, designation, note, at, action FROM report_transitions WHERE report_id = ? ORDER BY id')
       .all(String(reportId));
   }
 

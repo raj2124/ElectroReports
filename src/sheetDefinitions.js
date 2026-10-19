@@ -344,7 +344,10 @@ const SHEETS = [
       { key: 'faultCurrent', label: 'Earth fault current If (kA) & source', kind: 'group', fields: [number('faultCurrentKA', 'If', { unit: 'kA', exclusiveMin: true }), text('faultCurrentSource', 'Source')] },
       { key: 'clearingTime', label: 'Fault clearing time ts (s) & source', kind: 'group', fields: [number('faultClearingTimeS', 'ts', { unit: 's', exclusiveMin: true }), text('faultClearingSource', 'Source')] },
       number('remoteElectrodeDistanceM', 'Remote current electrode distance (m)', { unit: 'm' }),
-      { key: 'surfaceLayer', label: 'Surface layer ρs (Ω·m) & thickness hs (m)', kind: 'group', fields: [number('surfaceResistivity', 'ρs', { unit: 'Ω·m', exclusiveMin: true }), number('surfaceThicknessM', 'hs', { unit: 'm', exclusiveMin: true })] },
+      {
+        key: 'surfaceLayer', label: 'Surface layer ρs (Ω·m) & thickness hs (m)', kind: 'group',
+        fields: [number('surfaceResistivity', 'Gravel ρs', { unit: 'Ω·m', exclusiveMin: true }), number('surfaceThicknessM', 'hs', { unit: 'm', exclusiveMin: true }), number('concreteResistivity', 'Concrete ρs', { unit: 'Ω·m', exclusiveMin: true }), number('concreteThicknessM', 'hs', { unit: 'm', exclusiveMin: true })]
+      },
       ticks('bodyWeightBasis', 'Body weight basis', [{ value: '50', label: '50 kg' }, { value: '70', label: '70 kg' }, { value: 'both', label: 'Both' }]),
       text('injectionPoint', 'Injection point'),
       { key: 'csOverrideGroup', label: 'Cs override (client design value) & source', kind: 'group', extra: true, fields: [number('csOverride', 'Cs', { exclusiveMin: true, max: 1 }), text('csSource', 'Source')] }

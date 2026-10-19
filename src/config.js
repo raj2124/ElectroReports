@@ -54,7 +54,19 @@ const openai = {
   referencePdfPaths
 };
 
+// Instruments that may appear in a report, with the range and accuracy printed in its Instruments
+// table. `match` is matched (case-insensitively, spaces ignored) against the instrument name
+// recorded on the sheet. Edit the range / accuracy here to match the instrument datasheets.
+const instrumentCatalogue = [
+  { match: 'mi3290', name: 'Metrel MI 3290 GX Earth Analyser', range: '0.01 Ω – 19.9 kΩ (earth resistance); 0.1 – 9999 Ω·m (soil)', accuracy: '±(2 % of reading + 3 digits)' },
+  { match: 'mi3152', name: 'Metrel MI 3152 EurotestXC', range: '0.00 Ω – 1999 Ω (earth); 0.00 Ω – 9.99 kΩ (loop)', accuracy: '±(5 % of reading + 5 digits)' },
+  { match: 'mi3295', name: 'Metrel MI 3295 Step & Contact Voltage Meter', range: '0.01 – 199.9 V (step / touch voltage)', accuracy: '±(3 % of reading + 3 digits)' },
+  { match: 'kyoritsu4105a', name: 'Kyoritsu 4105A Digital Earth Tester', range: '0 – 20 / 200 / 2000 Ω', accuracy: '±(2 % of reading + 0.1 Ω)' },
+  { match: 'kyoritsu4118a', name: 'Kyoritsu 4118A Loop / PSC Tester', range: '0 – 20 / 200 / 2000 Ω (loop); 0 – 20 kA (PSC)', accuracy: '±(2.5 % of reading + 3 digits)' }
+];
+
 module.exports = {
+  instrumentCatalogue,
   app: {
     rootDir,
     publicDir: path.join(rootDir, 'public'),

@@ -9,6 +9,7 @@ const reviewUi = {
   loading: false,
   busy: false,
   actor: '',
+  designation: '',
   note: '',
   acknowledgements: {},
   reissueReason: '',
@@ -18,8 +19,10 @@ const reviewUi = {
 
 try {
   reviewUi.actor = window.localStorage.getItem('electroreports.reviewer') || '';
+  reviewUi.designation = window.localStorage.getItem('electroreports.designation') || '';
 } catch (_error) {
   reviewUi.actor = '';
+  reviewUi.designation = '';
 }
 
 const REVIEW_STATUS_LABEL = { draft: 'Draft', in_review: 'In review', approved: 'Approved' };
@@ -120,8 +123,10 @@ function reviewView() {
 
       <section class="surface section-card review-block">
         <p class="section-kicker">Who is acting</p>
-        <label class="field"><span>Your name (recorded with each step; gives the initials on the cover)</span>
+        <label class="field"><span>Your full name (recorded with each step; gives the initials on the cover and the name in the approval block)</span>
           <input type="text" class="text-input" data-review-field="actor" value="${escapeHtml(reviewUi.actor)}" placeholder="e.g. A. S. Mahto" /></label>
+        <label class="field"><span>Your designation (printed in the approval block)</span>
+          <input type="text" class="text-input" data-review-field="designation" value="${escapeHtml(reviewUi.designation)}" placeholder="e.g. Senior Engineer – Earthing" /></label>
         <p class="muted">Cover initials: Prepared <strong>${escapeHtml(review.initials.prepared || '-')}</strong> · Checked <strong>${escapeHtml(review.initials.checked || '-')}</strong> · Approved <strong>${escapeHtml(review.initials.approved || '-')}</strong></p>
       </section>
 
@@ -134,6 +139,11 @@ function reviewView() {
         ${review.warnings.length ? `<div class="review-warnings"><strong>Warnings</strong><ul>${review.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>` : ''}
         <p class="muted">Narrative: ${review.narrative ? (review.narrative.aiWritten ? `written by Claude (${escapeHtml(review.narrative.model)}) from the computed results` : escapeHtml(review.narrative.note || 'not AI-written')) : 'not generated yet'} · Sanity check: <strong>${escapeHtml(review.sanityCheck)}</strong></p>
       </section>
+
+      ${review.blockers && review.blockers.length ? `
+      <section class="surface section-card review-block">
+        <div class="review-alert" role="alert"><strong>Approval is blocked.</strong><ul>${review.blockers.map((item) => `<li>${escapeHtml(item.text)}</li>`).join('')}</ul></div>
+      </section>` : ''}
 
       ${review.status === 'in_review' && review.acknowledgements.length ? `
       <section class="surface section-card review-block">
@@ -151,7 +161,7 @@ function reviewView() {
         <div class="button-row">
           ${available.submit ? `<button class="button button-primary" data-action="review-step" data-step="submit" ${busy}>Submit for review</button>` : ''}
           ${available.check ? `<button class="button button-primary" data-action="review-step" data-step="check" ${busy} ${blocking ? 'disabled' : ''}>Mark as checked</button>` : ''}
-          ${available.approve ? `<button class="button button-success" data-action="review-step" data-step="approve" ${busy}>Approve</button>` : ''}
+          ${available.approve ? `<button class="button button-success" data-action="review-step" data-step="approve" ${busy} ${review.blockers && review.blockers.length ? 'disabled' : ''}>Approve</button>` : ''}
           ${available.return ? `<button class="button button-ghost" data-action="review-step" data-step="return" ${busy}>Return to draft</button>` : ''}
         </div>
         ${review.status === 'in_review' && !review.checked ? '<p class="muted">Approval is blocked until a checker marks the report as checked. Tick every checklist item first.</p>' : ''}
@@ -188,7 +198,7 @@ async function runReviewStep(step) {
   try {
     const result = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/review/${step}`, {
       method: 'POST',
-      body: JSON.stringify({ actor: reviewUi.actor.trim(), note: reviewUi.note, acknowledgements: reviewUi.acknowledgements })
+      body: JSON.stringify({ actor: reviewUi.actor.trim(), designation: reviewUi.designation.trim(), note: reviewUi.note, acknowledgements: reviewUi.acknowledgements })
     });
     reviewUi.review = result;
     reviewUi.report = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}`);
@@ -298,9 +308,9 @@ function handleReviewInput(target) {
   if (target.dataset && target.dataset.reviewField) {
     const field = target.dataset.reviewField;
     reviewUi[field] = target.value;
-    if (field === 'actor') {
+    if (field === 'actor' || field === 'designation') {
       try {
-        window.localStorage.setItem('electroreports.reviewer', target.value);
+        window.localStorage.setItem(field === 'actor' ? 'electroreports.reviewer' : 'electroreports.designation', target.value);
       } catch (_error) {
         // remembering the name is a convenience only
       }

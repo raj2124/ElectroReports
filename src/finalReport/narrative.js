@@ -19,21 +19,33 @@ function deterministicNarrative(data) {
     if (P2.count) parts.push(`P2: ${list(P2.tags)}`);
     findings.push(
       P1.count + P2.count
-        ? `${P1.count + P2.count} of ${electrode.points.length} earth pits need corrective action (${parts.join('; ')})${notMeasured.length ? `; ${list(notMeasured)} could not be measured` : ''}.`
-        : `All ${electrode.points.length} earth pits are within their calculated limits (priority P3).`
+        ? `${P1.count + P2.count} of ${plural(electrode.points.length, 'earth pit')} ${P1.count + P2.count === 1 ? 'needs' : 'need'} corrective action (${parts.join('; ')})${notMeasured.length ? `; ${list(notMeasured)} could not be measured` : ''}.`
+        : electrode.points.length === 1
+          ? 'The 1 earth pit is within its calculated limit (priority P3).'
+          : `All ${electrode.points.length} earth pits are within their calculated limits (priority P3).`
     );
   }
-  data.summaryTable.filter((row) => row.testId !== 'electrodeResistance' && row.total > 0).forEach((row) => {
+  // One bullet per test: the result and, in the same sentence, any point that could not be assessed.
+  data.summaryTable.filter((row) => row.testId !== 'electrodeResistance').forEach((row) => {
     const test = data.tests.find((entry) => entry.id === row.testId);
+    const gaps = data.cap.filter((line) => line.kind === 'gap' && line.gap === 'NOT_ASSESSABLE' && line.testId === row.testId);
+    if (row.total === 0 && !gaps.length) {
+      return;
+    }
     const over = test.points.filter((point) => point.counted && !point.withinLimit).map((point) => point.label);
-    findings.push(
-      over.length
-        ? `${row.test}: ${over.length} of ${plural(row.total, row.unit.replace(/s$/, ''))} above limit (${list(over)}).`
-        : `${row.test}: all ${plural(row.total, row.unit.replace(/s$/, ''))} assessed are within limit.`
-    );
-  });
-  data.cap.filter((line) => line.kind === 'gap' && line.gap === 'NOT_ASSESSABLE').forEach((line) => {
-    findings.push(`${line.test}: ${list(line.affectedPoints)} could not be assessed because the device breaking capacity was not recorded.`);
+    const unit = row.unit.replace(/s$/, '');
+    let sentence;
+    if (row.total === 0) {
+      sentence = `${row.test}: no ${row.unit} could be assessed`;
+    } else if (row.total === 1) {
+      sentence = over.length ? `${row.test}: the 1 ${unit} assessed is above limit (${list(over)})` : `${row.test}: the 1 ${unit} assessed is within limit`;
+    } else {
+      sentence = over.length ? `${row.test}: ${over.length} of ${plural(row.total, unit)} above limit (${list(over)})` : `${row.test}: all ${plural(row.total, unit)} assessed are within limit`;
+    }
+    if (gaps.length) {
+      sentence += `; ${list(gaps.flatMap((line) => line.affectedPoints))} could not be assessed because the device breaking capacity was not recorded`;
+    }
+    findings.push(`${sentence}.`);
   });
 
   const status = data.overall.label;
@@ -64,7 +76,7 @@ function deterministicNarrative(data) {
 const SYSTEM_PROMPT = [
   'You write two parts of an earthing system health assessment report for an industrial client: the key findings (3 to 6 bullets) and the overall condition statement (2 to 3 sentences).',
   'Use ONLY the computed results in the JSON. Quote counts, tags, readings and statuses exactly as given. Do not calculate, round, estimate or add any number, tag or standard clause that is not in the JSON.',
-  'Do not change or soften any status. Mention every P1 pit, every point above limit and every data gap. No recommendations beyond pointing to the Corrective Action Plan. Plain, factual engineering English; no marketing language.'
+  'Do not change or soften any status. Write one bullet per test and do not repeat a point or a finding in more than one bullet. Mention every P1 pit, every point above limit and every data gap. No recommendations beyond pointing to the Corrective Action Plan. Plain, factual engineering English; no marketing language.'
 ].join(' ');
 
 const NARRATIVE_SCHEMA = {

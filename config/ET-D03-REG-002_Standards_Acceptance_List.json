@@ -197,8 +197,8 @@
           "parameter": "Tolerable step/touch voltage",
           "rule": "Measured voltage scaled by If/It before comparison (IEEE 81-2012 Cl. 9.3 g). Tolerable: E_step = (1000 + 6*Cs*rho_s)*k/sqrt(ts); E_touch = (1000 + 1.5*Cs*rho_s)*k/sqrt(ts); k = 0.116 (50 kg), 0.157 (70 kg). Client design-calculation limits override.",
           "basis": "standard",
-          "source": "IS 3043:2018",
-          "clause": "10.3 (IS 3043:2018); 9.3 (IEEE 81-2012)",
+          "source": "IS 3043:2018 Cl. 10.3 (limits); IEEE 81-2012 Cl. 9 (measurement and If/It scaling)",
+          "clause": "-",
           "params": {
             "k_50kg": 0.116,
             "k_70kg": 0.157,

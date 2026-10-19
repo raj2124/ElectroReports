@@ -111,7 +111,25 @@ const freePort = () => new Promise((resolve) => {
     await page.click('[data-action="review-step"][data-step="approve"]');
     await page.waitForFunction(() => /Acknowledge before approving/.test(document.querySelector('.review-message') ? document.querySelector('.review-message').textContent : ''));
     expect(await page.locator('[data-review-ack="sanityCheck"]').count() === 1, 'the sanity-check acknowledgement box is shown');
+    expect(await page.locator('[data-review-ack="p1Photos"]').count() === 1, 'the P1-photo acknowledgement box is shown');
     await page.fill('[data-review-ack="sanityCheck"]', 'Provider unavailable; narrative read against the tables.');
+    await page.fill('[data-review-ack="p1Photos"]', 'Photos to follow in Annexure B.');
+    await page.fill('[data-review-field="designation"]', 'Head - Earthing');
+    // The toast must not sit over the action buttons.
+    await page.evaluate(() => showToast('Probe toast for the overlap check.', 'warning'));
+    await page.waitForSelector('.toast');
+    const covered = () => page.evaluate(() => {
+      const toast = document.querySelector('.toast').getBoundingClientRect();
+      return [...document.querySelectorAll('.review-shell button, .review-shell textarea, .review-shell input')].filter((button) => {
+        const box = button.getBoundingClientRect();
+        return box.width && box.height && !(box.right < toast.left || box.left > toast.right || box.bottom < toast.top || box.top > toast.bottom);
+      }).map((button) => button.textContent.trim() || button.dataset.reviewField || 'field');
+    });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const overlapTop = await covered();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const overlap = [...overlapTop, ...(await covered())];
+    expect(overlap.length === 0, `the toast does not cover any button on the review screen (covers: ${overlap.join(', ')})`);
     await page.click('[data-action="review-step"][data-step="approve"]');
     await page.waitForFunction(() => /Approved/.test(document.querySelector('.detail-hero-tags') ? document.querySelector('.detail-hero-tags').textContent : ''));
     screen = await text();

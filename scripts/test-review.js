@@ -96,7 +96,7 @@ const state = (id) => buildReviewState(store, store.getReport(id));
     assert.strictEqual(review.checklist[0].auto, 'pass');
     assert.strictEqual(review.checklist[1].auto, 'warn', 'P1 pits have no photo reference in the sample');
     assert.strictEqual(review.sanityCheck, 'not run');
-    assert.deepStrictEqual(review.acknowledgements.map((item) => item.key), ['sanityCheck']);
+    assert.deepStrictEqual(review.acknowledgements.map((item) => item.key), ['p1Photos', 'sanityCheck']);
     assert.ok(review.warnings.some((warning) => /Planned quantity not set/.test(warning)));
     assert.strictEqual(review.consistency.ok, true);
     assert.strictEqual(review.documentNo, '024_FI_ESHA');
@@ -114,12 +114,13 @@ const state = (id) => buildReviewState(store, store.getReport(id));
     store.transition(final.id, 'in_review', { actor: 'H. S. Patil' });
     tickAll(final.id);
     store.markChecked(final.id, { actor: 'A. P.' });
-    assert.throws(() => store.transition(final.id, 'approved', { actor: 'J. C. Shah' }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && /Sanity check not run/.test(error.message));
-    const approved = store.transition(final.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'Provider unavailable; narrative read against the tables.' } }).report;
+    assert.throws(() => store.transition(final.id, 'approved', { actor: 'J. C. Shah' }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && /Sanity check not run/.test(error.message) && /No photo reference for P1 pits EP-03, EP-07, EP-08/.test(error.message));
+    const approved = store.transition(final.id, 'approved', { actor: 'J. C. Shah', designation: 'Head - Earthing', acknowledgements: { sanityCheck: 'Provider unavailable; narrative read against the tables.', p1Photos: 'Photos taken on site; to follow with Annexure B.' } }).report;
     assert.strictEqual(approved.reviewStatus, 'approved');
     assert.ok(approved.approvedAt);
     const note = store.listTransitions(final.id).pop().note;
-    assert.ok(note.startsWith('Sanity check not run - acknowledged: Provider unavailable'));
+    assert.ok(note.includes('Sanity check not run - acknowledged: Provider unavailable') && note.includes('P1 photo missing - acknowledged: Photos taken on site'));
+    assert.strictEqual(store.listTransitions(final.id).pop().designation, 'Head - Earthing');
     const rows = revisionRows(store, store.getReport(final.id));
     assert.deepStrictEqual(rows.map((row) => [row.revision, row.issue, row.prepared, row.checked, row.approved]), [['R0', 'First Issue', 'HSP', 'AP', 'JCS']]);
     assert.strictEqual(rows[0].date, approved.approvedAt.slice(0, 10));
@@ -140,12 +141,16 @@ const state = (id) => buildReviewState(store, store.getReport(id));
     const rows = revisionRows(store, r1);
     assert.deepStrictEqual(rows.map((row) => [row.revision, row.issue]), [['R0', 'First Issue'], ['R1', 'Corrected pit EP-07 location']]);
     assert.deepStrictEqual([rows[1].prepared, rows[1].checked, rows[1].approved], ['', '', '']);
+    // R0 keeps the initials of its own review on the R1 cover
+    assert.deepStrictEqual([rows[0].prepared, rows[0].checked, rows[0].approved], ['HSP', 'AP', 'JCS']);
+    const r1Cover = pageTextLines(await openPdf((await generateFinalReportPdf(r1, { revisions: rows, status: 'draft' })).buffer), 0).map((fragment) => fragment.text).join(' ');
+    assert.ok(/R0 \S+ First Issue HSP AP JCS/.test(r1Cover.replace(/\s+/g, ' ')), r1Cover);
 
     // R1 goes through its own review; R2 follows from R1.
     store.transition(r1.id, 'in_review', { actor: 'H. S. Patil' });
     tickAll(r1.id);
     store.markChecked(r1.id, { actor: 'A. P.' });
-    store.transition(r1.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'Read by hand.' } });
+    store.transition(r1.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'Read by hand.', p1Photos: 'Photos follow.' } });
     const r2 = store.reissueReport(r1.id, { actor: 'H. S. Patil', reason: 'Client comments' });
     assert.strictEqual(r2.revision, 2);
     const pdf = await generateFinalReportPdf(r2, { revisions: revisionRows(store, r2), status: r2.reviewStatus });
@@ -154,6 +159,57 @@ const state = (id) => buildReviewState(store, store.getReport(id));
     ['R0', 'R1', 'R2', 'First Issue', 'Corrected pit EP-07 location', 'Client comments', 'HSP', 'JCS'].forEach((text) => assert.ok(cover.includes(text), `cover lacks ${text}`));
     const header = pageTextLines(doc, 2).map((fragment) => fragment.text).join(' ');
     assert.ok(header.includes('024_FI_ESHA | R2'));
+  });
+
+  await check('a FINAL report with no instrument recorded cannot be approved (a hard block, not an acknowledgement)', () => {
+    const bare = store.addProject({ projectNo: '025-D03', clientName: 'No Instruments Ltd' });
+    const payload = buildPayload();
+    delete payload.sheetHeaders;
+    const day = store.addReport({ ...normalizeReportInput({ ...payload, project: { ...payload.project, unit: 'FI Plant', unitCode: 'FI' } }), kind: 'daily', projectId: bare.id, collectionDate: '2026-09-14' });
+    store.transition(day.id, 'in_review', { actor: 'H. S. Patil' });
+    tickAll(day.id);
+    store.markChecked(day.id, { actor: 'A. P.' });
+    assert.strictEqual(store.transition(day.id, 'approved', { actor: 'J. C. Shah' }).report.reviewStatus, 'approved', 'a daily is not blocked');
+    const { report: noInstruments } = store.assembleFinal(bare.id, {});
+    store.transition(noInstruments.id, 'in_review', { actor: 'H. S. Patil' });
+    tickAll(noInstruments.id);
+    store.markChecked(noInstruments.id, { actor: 'A. P.' });
+    const review = state(noInstruments.id);
+    assert.deepStrictEqual(review.blockers.map((item) => item.code), ['NO_INSTRUMENTS']);
+    const everything = { sanityCheck: 'x', p1Photos: 'x', calibration: 'x' };
+    assert.throws(() => store.transition(noInstruments.id, 'approved', { actor: 'J. C. Shah', acknowledgements: everything }), (error) => error.code === 'NO_INSTRUMENTS' && /No instrument is recorded/.test(error.message));
+    // recording the instrument clears the block
+    store.updateReport(noInstruments.id, (current) => ({ ...current, calibrationRecords: [{ instrument: 'mi3290', serialNo: 'MI3290-1', calibrationDue: '2027-03-31', workDate: '2026-09-14' }] }));
+    assert.deepStrictEqual(state(noInstruments.id).blockers, []);
+    assert.strictEqual(store.transition(noInstruments.id, 'approved', { actor: 'J. C. Shah', acknowledgements: everything }).report.reviewStatus, 'approved');
+  });
+
+  await check('a P1 pit without a photo needs the photo or a typed acknowledgement; with photos nothing is asked', () => {
+    const photo = store.addProject({ projectNo: '026-D03', clientName: 'Photos Ltd' });
+    const payload = buildPayload();
+    payload.electrodeResistance = payload.electrodeResistance.map((row) => ({ ...row, photoRef: ['EP-03', 'EP-07', 'EP-08'].includes(row.tag) ? `IMG_${row.tag}` : '' }));
+    store.addReport({ ...normalizeReportInput({ ...payload, project: { ...payload.project, unit: 'FI Plant', unitCode: 'FI' } }), kind: 'daily', projectId: photo.id, collectionDate: '2026-09-14' });
+    const { report: withPhotos } = store.assembleFinal(photo.id, {});
+    assert.deepStrictEqual(state(withPhotos.id).acknowledgements.map((item) => item.key), ['sanityCheck']);
+    assert.strictEqual(state(withPhotos.id).checklist.find((item) => item.id === 'p1').auto, 'pass');
+    store.updateReport(withPhotos.id, (current) => ({ ...current, electrodeResistance: current.electrodeResistance.map((row) => (row.tag === 'EP-07' ? { ...row, photoRef: '' } : row)) }));
+    const asks = state(withPhotos.id).acknowledgements;
+    assert.deepStrictEqual(asks.map((item) => item.key), ['p1Photos', 'sanityCheck']);
+    assert.ok(/EP-07/.test(asks[0].text) && !/EP-03/.test(asks[0].text));
+    store.transition(withPhotos.id, 'in_review', { actor: 'H. S. Patil' });
+    tickAll(withPhotos.id);
+    store.markChecked(withPhotos.id, { actor: 'A. P.' });
+    assert.throws(() => store.transition(withPhotos.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'x' } }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && error.items.map((item) => item.key).join() === 'p1Photos');
+    assert.throws(() => store.transition(withPhotos.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'x', p1Photos: '   ' } }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED');
+    store.transition(withPhotos.id, 'approved', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'x', p1Photos: 'Photo of EP-07 to follow.' } });
+    assert.ok(store.listTransitions(withPhotos.id).pop().note.includes('P1 photo missing - acknowledged: Photo of EP-07 to follow.'));
+  });
+
+  await check('approval block: full names, designations and dates come from the recorded steps', () => {
+    const { approvalBlock } = require('../src/review');
+    const block = approvalBlock(store, store.getReport(final.id));
+    assert.deepStrictEqual([block.prepared.name, block.checked.name, block.approved.name, block.approved.designation], ['H. S. Patil', 'A. P.', 'J. C. Shah', 'Head - Earthing']);
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(block.approved.date));
   });
 
   await check('transition rows written before the action column existed are classified from their statuses', () => {

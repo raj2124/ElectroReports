@@ -97,11 +97,32 @@ function buildChecklist(report, { consistency, data }) {
   return items;
 }
 
+const ACK_LABEL = {
+  calibration: 'Calibration acknowledged',
+  sanityCheck: 'Sanity check not run - acknowledged',
+  p1Photos: 'P1 photo missing - acknowledged'
+};
+
+// Hard stops: no note can clear these, the record itself must be fixed. A FINAL report with no
+// instrument recorded cannot be approved, because no reading could then be traced to a calibrated
+// instrument.
+function approvalBlockers(report) {
+  const blockers = [];
+  if (getReportKind(report) === REPORT_KINDS.FINAL && !buildFinalReportData(report).instruments.length) {
+    blockers.push({ code: 'NO_INSTRUMENTS', text: 'No instrument is recorded on the measurement sheets. Record the instrument, serial number and calibration date before approving.' });
+  }
+  return blockers;
+}
+
 // Notes the approver must write before approval. `provided` is filled by the caller.
 function requiredAcknowledgements(report) {
   const items = [];
   const calibration = assessReport(report).reviewItems.filter((item) => item.blocksApproval);
   if (getReportKind(report) === REPORT_KINDS.FINAL) {
+    const photoGaps = report.tests && report.tests.electrodeResistance ? p1PitPhotoGaps(report) : [];
+    if (photoGaps.length) {
+      items.push({ key: 'p1Photos', text: `No photo reference for P1 pit${photoGaps.length === 1 ? '' : 's'} ${photoGaps.join(', ')}: attach the photo, or acknowledge that the report is issued without it.`, required: true });
+    }
     if (calibration.length) {
       items.push({ key: 'calibration', text: calibration.map((item) => item.text).join(' '), required: true });
     }
@@ -144,6 +165,16 @@ function revisionRows(store, report) {
   });
 }
 
+// Full names, designations and dates of the latest revision's review, for the document control page.
+function approvalBlock(store, report) {
+  const rows = (store.listTransitions(report.id) || []).map((row) => ({ ...row, action: transitionAction(row) }));
+  const entry = (action) => {
+    const row = lastOf(rows, action);
+    return row ? { name: row.actor || '', designation: row.designation || '', date: String(row.at || '').slice(0, 10) } : {};
+  };
+  return { prepared: entry('submit'), checked: entry('check'), approved: entry('approve') };
+}
+
 function buildReviewState(store, report) {
   const transitions = store.listTransitions(report.id).map((row) => ({ ...row, action: transitionAction(row) }));
   const round = currentRound(transitions);
@@ -170,6 +201,7 @@ function buildReviewState(store, report) {
     checked: status === 'in_review' && checkedRow ? { by: checkedRow.actor, at: checkedRow.at, note: checkedRow.note } : null,
     checklist,
     acknowledgements,
+    blockers: status === 'approved' ? [] : approvalBlockers(report),
     consistency,
     warnings: reviewWarnings(report, data),
     narrative: report.reportNarrative ? { aiWritten: Boolean(report.reportNarrative.aiWritten), model: report.reportNarrative.model || '', note: report.reportNarrative.note || '' } : null,
@@ -190,4 +222,4 @@ function buildReviewState(store, report) {
   };
 }
 
-module.exports = { transitionAction, initialsOf, currentRound, lastOf, buildChecklist, requiredAcknowledgements, buildReviewState, revisionRows };
+module.exports = { ACK_LABEL, approvalBlockers, approvalBlock, transitionAction, initialsOf, currentRound, lastOf, buildChecklist, requiredAcknowledgements, buildReviewState, revisionRows };

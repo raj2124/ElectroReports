@@ -437,9 +437,9 @@ app.post('/api/reports/:id/review/:action', (req, res) => {
   try {
     let warnings = [];
     if (action === 'check') {
-      store.markChecked(req.params.id, { actor, note: body.note });
+      store.markChecked(req.params.id, { actor, designation: body.designation, note: body.note });
     } else if (REVIEW_ACTIONS[action]) {
-      const result = store.transition(req.params.id, REVIEW_ACTIONS[action], { actor, note: body.note, acknowledgements: body.acknowledgements || {} });
+      const result = store.transition(req.params.id, REVIEW_ACTIONS[action], { actor, designation: body.designation, note: body.note, acknowledgements: body.acknowledgements || {} });
       warnings = result.warnings;
     } else {
       return res.status(404).json({ message: 'Unknown review step.' });
@@ -465,6 +465,7 @@ app.post('/api/reports/:id/reissue', (req, res) => {
     return reviewError(res, error);
   }
 });
+
 
 // ---- Client logos ------------------------------------------------------------------------------
 app.get('/api/client-logo', (req, res) => {

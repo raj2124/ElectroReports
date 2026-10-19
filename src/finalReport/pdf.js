@@ -34,6 +34,16 @@ const ANNEXURES = [
   ['D', 'Daily progress reports issued during the survey']
 ];
 
+const STANDARDS = [
+  'IS 3043:2018 – Code of practice for earthing',
+  'IEEE 80-2013 – Guide for safety in AC substation grounding',
+  'IEEE 81-2012 – Guide for measuring earth resistivity, ground impedance and earth surface potentials of a grounding system',
+  'IS/IEC 60364 – Electrical installations of buildings (protection against electric shock; fault-loop and protective-device requirements)',
+  'CEA (Measures relating to Safety and Electric Supply) Regulations, 2023'
+];
+
+const APPROVAL_ROLES = [['prepared', 'Prepared by'], ['checked', 'Checked by'], ['approved', 'Approved by']];
+
 function resolveRevisions(options, status) {
   if (Array.isArray(options.revisions) && options.revisions.length) {
     return options.revisions;
@@ -59,11 +69,9 @@ function drawCover(doc, data, revisions, clientLogo) {
         pdf.image(box.logo, box.x + 10, top + 10, { fit: [30, 30] });
       } else if (box.logoBuffer) {
         pdf.image(box.logoBuffer, box.x + 10, top + 10, { fit: [120, 40] });
-      } else if (!box.logo) {
-        pdf.font('Body').fontSize(7).fillColor(COLORS.grey).text('[client logo]', box.x + 10, top + 20, { lineBreak: false });
       }
     } catch (_error) {
-      pdf.font('Body').fontSize(7).fillColor(COLORS.grey).text('[client logo unreadable]', box.x + 10, top + 20, { lineBreak: false });
+      // an unreadable logo leaves the box empty
     }
     pdf.font('Bold').fontSize(10).fillColor(COLORS.navy).text(box.head, box.x + 10, top + 62, { lineBreak: false });
     pdf.font('Body').fontSize(8.5).fillColor(COLORS.ink).text(box.lines.join('\n'), box.x + 10, top + 78, { width: boxW - 20, lineGap: 2 });
@@ -120,7 +128,7 @@ function summaryRows(data) {
     String(row.unhealthy),
     String(row.notAssessed),
     row.passPct === null ? '-' : `${row.passPct.toFixed(1)}%`,
-    row.status
+    { text: row.notAssessed > 0 ? `${row.status} (${row.notAssessed} not assessed)` : row.status, color: statusColor(row.status), bold: true }
   ]);
 }
 
@@ -129,12 +137,12 @@ function drawExecutiveSummary(doc, data, narrative) {
   doc.heading('A. Overall summary of tests', 2);
   if (data.summaryTable.length) {
     doc.table({
-      columns: [['Sr.', 4], ['Test', 20], ['Unit', 7], ['Total', 6], ['Within limit', 7], ['Above limit', 7], ['Not assessed', 8], ['Pass %', 7], ['Overall status', 14]],
+      columns: [['Sr.', 4], ['Test', 20], ['Unit', 7], ['Assessed', 8], ['Within limit', 7], ['Above limit', 7], ['Not assessed', 8], ['Pass %', 7], ['Overall status', 17]],
       rows: summaryRows(data),
       statusColumns: [8],
       alignRight: [3, 4, 5, 6, 7]
     });
-    doc.note('Pass % = points within limit ÷ assessed points (Warning-band points are within limit but carry priority P2). Not measurable / not assessable points are excluded and counted separately. Overall status: 0 unhealthy = Healthy; pass rate ≥ 90% = Healthy – Minor Actions; otherwise >Attention Required (ET-D03-REG-002, OVERALL).');
+    doc.note('Assessed = points with a reading that could be compared with a limit. Pass % = points within limit ÷ assessed points (Warning-band points are within limit but carry priority P2). Not measurable / not assessable points are excluded and counted separately. Overall status: 0 unhealthy = Healthy; pass rate ≥ 90% = Healthy – Minor Actions; otherwise >Attention Required (ET-D03-REG-002, OVERALL).');
   } else {
     doc.paragraph('No pass/fail tests were selected for this report.');
   }
@@ -162,6 +170,15 @@ function drawExecutiveSummary(doc, data, narrative) {
 function drawIntroduction(doc, data, report) {
   doc.section('Introduction & Scope of Work');
   const project = data.project;
+  const tests = data.tests.map((test) => test.label.toLowerCase());
+  if (report.tests && report.tests.soilResistivity) {
+    tests.unshift('soil resistivity');
+  }
+  doc.heading('Purpose', 2);
+  doc.paragraph(
+    `Elegrow Technology Pvt. Ltd. (ETPL) was engaged by ${project.clientName || 'the client'} to assess the health of the earthing system${project.unit ? ` of ${project.unit}` : ''}${project.siteLocation ? `, ${project.siteLocation}` : ''}. The survey measured ${tests.join(', ') || 'the selected tests'} and compared each result with the acceptance criteria listed in the Basis of Assessment, so that the condition of the earthing system is known and every deficiency has a corrective action and a priority.`
+  );
+  const team = [...new Set([project.engineerName, project.zohoProjectOwner].map((name) => String(name || '').trim()).filter(Boolean))];
   doc.table({
     columns: [['Item', 25], ['Detail', 75]],
     rows: [
@@ -169,11 +186,13 @@ function drawIntroduction(doc, data, report) {
       ['Site location', project.siteLocation || '-'],
       ['Unit', project.unit || '-'],
       ['Survey dates', data.surveyDates.length ? `${data.surveyDates.map(formatDate).join(', ')}  (${data.surveyDates.length} site day${data.surveyDates.length === 1 ? '' : 's'})` : '-'],
-      ['ETPL engineer', project.engineerName || '-'],
+      ['ETPL team', team.join(', ') || '-'],
       ['Client representative', project.clientRepresentative || '-']
     ],
     boldFirstColumn: true
   });
+  doc.heading('Applicable standards', 2);
+  doc.bullets(STANDARDS);
   doc.heading('Scope – planned vs completed', 2);
   const rows = data.scope.map((row) => [
     row.test,
@@ -189,12 +208,22 @@ function drawIntroduction(doc, data, report) {
   doc.table({ columns: [['Test', 34], ['Unit', 10], ['Planned', 14], ['Completed', 14], ['Remark', 28]], rows, alignRight: [2, 3] });
 }
 
+// "Cl." is added only to a bare clause number; a clause that already names its own standard or
+// clause ("IS 3043:2018 Cl. 42 (method)") is printed as it stands.
+function citeSource(criterion) {
+  const clause = String(criterion.clause || '').trim();
+  if (!clause || clause === '-') {
+    return criterion.source;
+  }
+  return /^(?:\d|Table)/.test(clause) ? `${criterion.source}, Cl. ${clause}` : `${criterion.source}; ${clause}`;
+}
+
 function drawBasis(doc, data) {
   doc.section('Basis of Assessment');
   doc.paragraph("Every limit, formula and classification used in this report is listed below with its source. Values are taken from the project's acceptance profile (ET-D03-REG-002); where a value is an ETPL acceptance criterion or a client specification rather than a clause of the standard, it is labelled as such.");
   doc.table({
     columns: [['Criterion', 20], ['Rule / value used', 40], ['Basis', 14], ['Source & clause', 26]],
-    rows: data.basis.criteria.map((criterion) => [criterion.parameter, criterion.ruleUsed, criterion.basisLabel, `${criterion.source}${criterion.clause && criterion.clause !== '-' ? `, Cl. ${criterion.clause}` : ''}`])
+    rows: data.basis.criteria.map((criterion) => [criterion.parameter, criterion.ruleUsed, criterion.basisLabel, citeSource(criterion)])
   });
   doc.heading('Declared assumptions', 2);
   const assumptions = [];
@@ -202,22 +231,22 @@ function drawBasis(doc, data) {
     assumptions.push(
       data.basis.rhoAssumed
         ? `Soil resistivity ρ = ${data.basis.rho} Ω·m was ASSUMED for the electrode limits (${data.basis.rhoSource}).`
-        : `Soil resistivity used for the electrode limits: ρ = ${data.basis.rho} Ω·m, ${String(data.basis.rhoSource || 'measured').toLowerCase()}. No assumed values were used.`
+        : `Soil resistivity used for the electrode limits: ρ = ${data.basis.rho} Ω·m (${data.basis.rhoSource || 'measured'}). No assumed values were used.`
     );
   }
   assumptions.push('Statuses are computed by the application from the recorded readings against the criteria above; no value is typed into this report by hand.');
   doc.bullets(assumptions);
 }
 
-function drawInstruments(doc, data) {
+function drawInstruments(doc, data, annexures) {
   doc.section('Instruments Used');
   doc.table({
-    columns: [['Work date', 14], ['Instrument', 38], ['Serial No.', 16], ['Calibration due', 16], ['Validity', 16]],
+    columns: [['Work date', 10], ['Instrument', 22], ['Serial No.', 12], ['Range', 20], ['Accuracy', 14], ['Calibration due', 11], ['Validity', 11]],
     rows: data.instruments.length
-      ? data.instruments.map((row) => [formatDate(row.workDate) || '-', row.instrument || '-', row.serialNo || '-', formatDate(row.calibrationDue) || '-', row.expired ? { text: 'Expired on work date', color: COLORS.red, bold: true } : row.calibrationDue ? { text: 'Valid', color: COLORS.green, bold: true } : { text: 'Not recorded', color: COLORS.neutral, bold: true }])
-      : [['-', 'No instrument details were recorded on the sheets', '-', '-', { text: 'Not recorded', color: COLORS.neutral, bold: true }]]
+      ? data.instruments.map((row) => [formatDate(row.workDate) || '-', row.instrument || '-', row.serialNo || '-', row.range || '-', row.accuracy || '-', formatDate(row.calibrationDue) || '-', row.expired ? { text: 'Expired on work date', color: COLORS.red, bold: true } : row.calibrationDue ? { text: 'Valid', color: COLORS.green, bold: true } : { text: 'Not recorded', color: COLORS.neutral, bold: true }])
+      : [['-', 'No instrument details were recorded on the sheets', '-', '-', '-', '-', { text: 'Not recorded', color: COLORS.red, bold: true }]]
   });
-  doc.note('Calibration certificates are attached as Annexure C.');
+  doc.note(`Range and accuracy are the manufacturer's figures for the instrument model. Calibration certificates: ${annexures.has('C') ? 'attached as Annexure C' : 'provided separately (Annexure C)'}.`);
 }
 
 function drawMethodology(doc, report, data) {
@@ -228,24 +257,47 @@ function drawMethodology(doc, report, data) {
     doc.heading(head, 2);
     doc.paragraph(body);
   });
+  doc.heading('Current-probe distance, lead nulling and safety', 2);
+  doc.bullets([
+    'Current-probe distance: for fall-of-potential tests the current probe is placed far enough from the electrode (or grid) under test for the 61.8% potential reading to lie on the flat part of the resistance curve, typically not less than 5 times the longest dimension of the electrode system. The distance used is recorded on each sheet; readings at 50% and 70% confirm the 61.8% value within the tolerance in the Basis of Assessment, otherwise the point is re-tested.',
+    'Test-lead nulling: before each series of low-resistance measurements the leads are shorted and the instrument nulled. The lead resistance recorded in the sheet header is subtracted from every reading before it is compared with a limit (IEEE 81-2012 Cl. 10.2).',
+    'Safety: ETPL procedure requires a valid client work permit, isolation and lock-out/tag-out (LOTO) of any equipment whose earth connection is opened for a test, PPE (safety helmet, safety shoes, insulated gloves) for every member of the team, and the earth connection restored and checked before leaving the point.'
+  ]);
 }
 
 function drawSoil(doc, data) {
-  doc.heading('Soil Resistivity', 2);
+  doc.heading('Soil Resistivity', 2, { indexed: true });
+  const ground = String(data.project.groundCondition || '').trim();
   data.soil.locations.forEach((location) => {
     doc.heading(`Location: ${location.name}`, 2);
     if (location.pending) {
       doc.paragraph(`Not assessed: ${location.pendingReason || 'reading unit not selected'}.`);
       return;
     }
-    doc.table({
-      columns: [['Spacing a (m)', 14], ...location.directionLabels.map((label) => [`ρ ${label} (Ω·m)`, 18]), ['Mean ρ (Ω·m)', 16]],
-      rows: [
-        ...location.rows.map((row) => [row.spacing === null ? '-' : row.spacing.toFixed(1), ...row.rhos.map((value) => (Number.isFinite(value) ? value.toFixed(2) : '-')), row.mean === null ? '-' : row.mean.toFixed(2)]),
-        [{ text: 'Location average', bold: true }, ...location.directionLabels.map(() => ''), { text: location.average === null ? '-' : location.average.toFixed(2), bold: true }]
-      ],
-      alignRight: [1, 2, 3, 4]
+    const conditions = [location.weather ? `weather: ${location.weather}` : '', ground ? `ground condition: ${ground}` : '', location.probeDepthCm ? `probe depth: ${location.probeDepthCm} cm` : ''].filter(Boolean);
+    if (conditions.length) {
+      doc.note(`Test conditions – ${conditions.join('; ')}.`);
+    }
+    const showR = location.inputUnit === 'ohm';
+    const columns = [['Spacing a (m)', 12]];
+    location.directionLabels.forEach((label) => {
+      if (showR) columns.push([`R ${label} (Ω)`, 11]);
+      columns.push([`ρ ${label} (Ω·m)`, 12]);
     });
+    columns.push(['Mean ρ (Ω·m)', 12]);
+    const cellsOf = (row) => [row.spacing === null ? '-' : row.spacing.toFixed(1), ...row.rhos.flatMap((value, d) => [...(showR ? [Number.isFinite(row.rs[d]) ? row.rs[d].toFixed(2) : '-'] : []), Number.isFinite(value) ? value.toFixed(2) : '-']), row.mean === null ? '-' : row.mean.toFixed(2)];
+    const filler = columns.length - 2;
+    doc.table({
+      columns,
+      rows: [
+        ...location.rows.map(cellsOf),
+        [{ text: 'Location average', bold: true }, ...Array(filler).fill(''), { text: location.average === null ? '-' : location.average.toFixed(2), bold: true }]
+      ],
+      alignRight: columns.map((_column, i) => i).slice(1)
+    });
+    if (location.series.length && location.series[0].points.length > 1) {
+      doc.lineChart({ title: `Apparent resistivity ρ against probe spacing – ${location.name}`, series: location.series, xLabel: 'Spacing a (m)', yLabel: 'ρ (Ω·m)' });
+    }
   });
   doc.table({
     columns: [['Site average ρ (Ω·m)', 25], ['Corrosivity class (IS 3043:2018 Table 4)', 40], ['Steel corrosion allowance', 35]],
@@ -260,9 +312,9 @@ function drawResults(doc, data, report) {
   }
   data.tests.forEach((test) => {
     const row = data.summaryTable.find((entry) => entry.testId === test.id);
-    doc.heading(`${test.label}${test.sheetCode && test.sheetCode !== 'legacy' ? ` (${test.sheetCode})` : ''}`, 2);
+    doc.heading(`${test.label}${test.sheetCode && test.sheetCode !== 'legacy' ? ` (${test.sheetCode})` : ''}`, 2, { indexed: true });
     doc.paragraph(
-      `${row.total} of ${test.points.length} ${test.unit} assessed: ${row.healthy} within limit, ${row.unhealthy} above limit${row.notAssessed ? `, ${row.notAssessed} not measured / not assessed` : ''}. Overall status: ${row.status}.`,
+      `${row.total} of ${test.points.length} ${test.points.length === 1 ? test.unit.replace(/s$/, '') : test.unit} assessed: ${row.healthy} within limit, ${row.unhealthy} above limit${row.notAssessed ? `, ${row.notAssessed} not measured / not assessed` : ''}. Overall status: ${row.status}.`,
       { align: 'left', gap: 4 }
     );
     if (!test.points.length) {
@@ -271,12 +323,15 @@ function drawResults(doc, data, report) {
     }
     doc.table({
       columns: test.columns,
-      rows: test.points.map((point) => point.cells),
+      rows: test.points.flatMap((point) => [...(point.subRows || []), point.cells]),
       statusColumns: test.statusColumns || [],
       fontSize: test.columns.length > 9 ? 7.2 : 7.8
     });
+    if (test.note) {
+      doc.note(test.note);
+    }
     if (test.id === 'electrodeResistance') {
-      doc.note('Limits: rod R = (100ρ/2πl)·ln(2l/d) (IS 3043:2018 Cl. 14.2.2); strip R = (100ρ/2πl)·ln(4l/d), d = strip width (Cl. 14.2.3); plate per Cl. 14.2.1. Warning band: above 90% of the limit. Priority: P1 above limit, not measurable or safety defect; P2 warning band or maintenance defect; P3 healthy.');
+      doc.note('Limits: rod R = (100ρ/2πl)·ln(2l/d) (IS 3043:2018 Cl. 14.2.2); strip R = (100ρ/2πl)·ln(4l/d), d = strip width (Cl. 14.2.3); plate per Cl. 14.2.1. Status compares the resistance with the limit only (Within limit; Warning above 90% of the limit; Above limit; Not measurable); Priority carries the verdict. Test condition: Isolated = electrode disconnected from the grid, Grid-connected = bonded. 50/70% check: the 61.8% value is confirmed when the 50% and 70% readings agree within tolerance. Priority: P1 above limit, not measurable or safety defect; P2 warning band or maintenance defect; P3 healthy.');
       doc.electrodeChart(test.points);
     }
   });
@@ -289,7 +344,7 @@ function drawCap(doc, data) {
     return;
   }
   doc.table({
-    columns: [['Sr', 4], ['Test / point', 17], ['Observation', 31], ['Corrective action', 29], ['Priority / status', 9], ['Clause', 10]],
+    columns: [['Sr', 4], ['Test / point', 14], ['Observation', 28], ['Corrective action', 25], ['Priority / status', 12], ['Clause', 17]],
     rows: data.cap.map((line, i) => [String(i + 1), `${line.test}\n${line.point}`, line.observation, line.action, { text: line.priorityOrStatus, color: statusColor(line.priorityOrStatus), bold: true }, line.clause || '-'])
   });
   doc.note('Generated from the same per-point records as the summary and the results sections; counts cannot differ between them. Data-gap lines list the affected points of one test together.');
@@ -305,12 +360,16 @@ function drawMaintenance(doc) {
   ]);
 }
 
-function drawAnnexures(doc) {
+function drawAnnexures(doc, annexures) {
   doc.section('Annexures');
-  doc.table({ columns: [['Annexure', 15], ['Content', 85]], rows: ANNEXURES, boldFirstColumn: true });
+  doc.table({
+    columns: [['Annexure', 13], ['Content', 67], ['Status', 20]],
+    rows: ANNEXURES.map(([letter, content]) => [letter, content, annexures.has(letter) ? { text: 'Attached', color: COLORS.green, bold: true } : { text: 'Provided separately', color: COLORS.neutral, bold: true }]),
+    boldFirstColumn: true
+  });
 }
 
-function drawControlAndIndex(doc, data, revisions, sections) {
+function drawControlAndIndex(doc, data, revisions, sections, approvals) {
   const pdf = doc.doc;
   pdf.switchToPage(1);
   doc.y = PAGE.top;
@@ -325,22 +384,33 @@ function drawControlAndIndex(doc, data, revisions, sections) {
     ],
     boldFirstColumn: true
   });
+  doc.heading('Approval', 2);
+  doc.table({
+    columns: [['Role', 16], ['Name', 34], ['Designation', 30], ['Date', 20]],
+    rows: APPROVAL_ROLES.map(([key, label]) => {
+      const entry = (approvals && approvals[key]) || {};
+      return [label, entry.name || '-', entry.designation || '-', entry.date ? formatDate(entry.date) : '-'];
+    }),
+    boldFirstColumn: true
+  });
   doc.heading('Index', 1);
   doc.table({
     columns: [['Section', 88], ['Page', 12]],
-    rows: sections.map((section) => [section.title, String(section.page + 1)]),
+    rows: sections.map((section) => [section.sub ? { text: `      ${section.title}` } : section.title, String(section.page + 1)]),
     alignRight: [1]
   });
   doc.note('The index lists only the sections and tests present in this report; it is generated from the site records.');
 }
 
-// Builds the final report. options: { narrative, revisions, clientLogo (Buffer), status }.
+// Builds the final report. options: { narrative, revisions, clientLogo (Buffer), status,
+// approvals: { prepared|checked|approved: { name, designation, date } }, annexures: ['A', ...] attached }.
 async function generateFinalReportPdf(report, options = {}) {
   const data = options.data || buildFinalReportData(report);
   const consistency = assertConsistent(data);
   const narrative = options.narrative || deterministicNarrative(data);
   const revisions = resolveRevisions(options);
   const status = options.status || 'draft';
+  const annexures = new Set(options.annexures || []);
 
   const doc = new ReportDoc({
     title: 'Earthing System Health Assessment',
@@ -357,13 +427,13 @@ async function generateFinalReportPdf(report, options = {}) {
   drawExecutiveSummary(doc, data, narrative);
   drawIntroduction(doc, data, report);
   drawBasis(doc, data);
-  drawInstruments(doc, data);
+  drawInstruments(doc, data, annexures);
   drawMethodology(doc, report, data);
   drawResults(doc, data, report);
   drawCap(doc, data);
   drawMaintenance(doc);
-  drawAnnexures(doc);
-  drawControlAndIndex(doc, data, revisions, doc.sections);
+  drawAnnexures(doc, annexures);
+  drawControlAndIndex(doc, data, revisions, doc.sections, options.approvals);
   const pageCount = doc.pageIndex + 1;
   doc.finish({ coverPages: 1 });
   const buffer = await doc.toBuffer();

@@ -110,12 +110,13 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
       assert.strictEqual(checked.body.checked.by, 'A. P.');
       const noAck = await step('approve', { actor: 'J. C. Shah' });
       assert.deepStrictEqual([noAck.status, noAck.body.code], [409, 'ACKNOWLEDGEMENT_REQUIRED']);
-      assert.ok(/Sanity check not run/.test(noAck.body.message));
-      const approved = await step('approve', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'Provider unavailable; narrative read by the reviewer.' } });
+      assert.ok(/Sanity check not run/.test(noAck.body.message) && /No photo reference for P1 pits/.test(noAck.body.message));
+      const approved = await step('approve', { actor: 'J. C. Shah', designation: 'Head - Earthing', acknowledgements: { sanityCheck: 'Provider unavailable; narrative read by the reviewer.', p1Photos: 'Photos to follow in Annexure B.' } });
       assert.strictEqual(approved.status, 200);
       assert.strictEqual(approved.body.status, 'approved');
       assert.deepStrictEqual(approved.body.initials, { prepared: 'HSP', checked: 'AP', approved: 'JCS' });
       assert.deepStrictEqual(approved.body.transitions.map((row) => row.action), ['submit', 'check', 'approve']);
+      assert.strictEqual(approved.body.transitions[2].designation, 'Head - Earthing');
     });
 
     await check('final export: deterministic narrative note without Claude, cover initials, approved (no draft marker); reused on re-export', async () => {

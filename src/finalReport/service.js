@@ -8,7 +8,7 @@ const { generateNarrative, narrativeInput } = require('./narrative');
 const { generateFinalReportPdf } = require('./pdf');
 const { generateDailyProgressPdf } = require('./dailyPdf');
 const { resolveClientLogo } = require('./logos');
-const { revisionRows } = require('../review');
+const { revisionRows, approvalBlock } = require('../review');
 
 const sanitize = (value) => String(value || 'report').replace(/[^A-Za-z0-9._-]+/g, '_');
 
@@ -37,7 +37,7 @@ async function exportReportPdf(store, report, { generatedDir, publicPathPrefix =
   if (kind === REPORT_KINDS.FINAL) {
     const data = buildFinalReportData(report);
     const narrative = await narrativeFor(store, report, data, options);
-    result = await generateFinalReportPdf(report, { narrative, revisions: revisionRows(store, report), clientLogo: resolveClientLogo(store, report), status });
+    result = await generateFinalReportPdf(report, { narrative, revisions: revisionRows(store, report), clientLogo: resolveClientLogo(store, report), status, approvals: approvalBlock(store, report) });
     name = `${result.data.project.documentNo}_R${Number.isInteger(report.revision) ? report.revision : 0}`;
   } else if (kind === REPORT_KINDS.DAILY) {
     const siblings = store.listProjectReports(report.projectId, { kind: REPORT_KINDS.DAILY });

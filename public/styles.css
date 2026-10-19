@@ -2751,6 +2751,16 @@ textarea {
   background: linear-gradient(135deg, #53657b, #6f8196);
 }
 
+/* On the review screen the toast goes to the top left, where there is no button, and never
+   takes a click: the step buttons (bottom right of a long page, top right in the header) stay free. */
+[data-view='review'] .toast {
+  top: 18px;
+  left: 18px;
+  right: auto;
+  bottom: auto;
+  pointer-events: none;
+}
+
 @keyframes hero-mark-float {
   0%, 100% {
     transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
@@ -4567,3 +4577,4 @@ textarea {
 .review-message { margin-top: 10px; font-weight: 600; }
 .review-reissue { margin-top: 16px; border-top: 1px solid var(--line, #d7deea); padding-top: 12px; }
 .review-shell textarea.text-input { width: 100%; resize: vertical; }
+

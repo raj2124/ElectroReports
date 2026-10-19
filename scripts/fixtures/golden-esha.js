@@ -69,6 +69,13 @@ function buildPayload() {
       reportDate: '2026-09-14',
       engineerName: 'H. S. Patil'
     },
+    // Instruments recorded on the sheet headers (a FINAL report cannot be approved without them).
+    sheetHeaders: {
+      electrodeResistance: { instrument: 'mi3290', serialNo: 'MI3290-0412', calibrationDue: '2027-03-31' },
+      loopImpedanceTest: { instrument: 'kyoritsu4118a', serialNo: 'KY4118-7731', calibrationDue: '2027-01-15' },
+      prospectiveFaultCurrent: { instrument: 'kyoritsu4118a', serialNo: 'KY4118-7731', calibrationDue: '2027-01-15' },
+      riserIntegrityTest: { instrument: 'mi3152', serialNo: 'MI3152-2208', calibrationDue: '2027-03-31' }
+    },
     tests: {
       soilResistivity: true,
       electrodeResistance: true,

@@ -6,6 +6,10 @@ const { ReportDoc, PAGE, COLORS, statusColor, formatDate } = require('./layout')
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
+// Soil locations that were actually measured (a day with no soil still reports the model's
+// empty placeholder location, which is not a measurement).
+const measuredSoil = (data) => data.soil.locations.filter((location) => !location.pending && location.average !== null && location.average !== undefined);
+
 // Distinct points per test measured up to and including the given daily report.
 function cumulativeCounts(datas, upToIndex) {
   const seen = {};
@@ -15,7 +19,7 @@ function cumulativeCounts(datas, upToIndex) {
       test.points.forEach((point) => seen[test.id].add(point.label));
     });
     seen.soilResistivity = seen.soilResistivity || new Set();
-    data.soil.locations.forEach((location) => seen.soilResistivity.add(location.name));
+    measuredSoil(data).forEach((location) => seen.soilResistivity.add(location.name));
   });
   return Object.fromEntries(Object.entries(seen).map(([id, set]) => [id, set.size]));
 }
@@ -23,7 +27,7 @@ function cumulativeCounts(datas, upToIndex) {
 function progressRows(data, cumulative, planned, report) {
   const rows = [];
   if (report.tests && report.tests.soilResistivity) {
-    rows.push({ id: 'soilResistivity', test: 'Soil resistivity', unit: 'locations', today: data.soil.locations.length });
+    rows.push({ id: 'soilResistivity', test: 'Soil resistivity', unit: 'locations', today: measuredSoil(data).length });
   }
   data.tests.forEach((test) => rows.push({ id: test.id, test: test.label, unit: test.unit, today: test.points.length }));
   return rows.map((row) => {
@@ -40,6 +44,29 @@ function progressRows(data, cumulative, planned, report) {
   });
 }
 
+const f2 = (value) => (Number.isFinite(value) ? value.toFixed(2) : '-');
+
+// The reading of a point, so an observation never stands without its number. Left out when the
+// defect text already quotes it (an electrode above its limit, for example).
+function readingOf(testId, point) {
+  if (testId === 'electrodeResistance') {
+    return Number.isFinite(point.measured) ? `Resistance ${f2(point.measured)} Ω${Number.isFinite(point.limit) ? ` (limit ${f2(point.limit)} Ω)` : ''}.` : 'Not measured.';
+  }
+  if (point.phases) {
+    return `Readings ${point.phases.map((phase) => `${phase.phase} ${f2(phase.measured)}`).join(', ')}${Number.isFinite(point.limit) ? ` (limit ${f2(point.limit)})` : ''}.`;
+  }
+  if (testId === 'riserIntegrityTest') {
+    return `Towards equipment ${f2(point.equipment)} Ω, towards grid ${f2(point.grid)} Ω (limit ${f2(point.limit)} Ω).`;
+  }
+  if (testId === 'stepTouchVoltage') {
+    return `Scaled ${f2(point.scaledVolts)} V (limit ${f2(point.limit)} V).`;
+  }
+  if (testId === 'towerFootingResistance') {
+    return `Zt ${f2(point.zt)} Ω (Zsat ${f2(point.zsat)} Ω).`;
+  }
+  return Number.isFinite(point.measured) ? `Reading ${f2(point.measured)} Ω${Number.isFinite(point.limit) ? ` (limit ${f2(point.limit)} Ω)` : ''}.` : '';
+}
+
 function notableRows(data) {
   const rows = [];
   data.tests.forEach((test) => {
@@ -47,7 +74,10 @@ function notableRows(data) {
       const defects = defectsOf(test.id, point);
       if (defects.length) {
         const status = test.id === 'electrodeResistance' ? point.priority || point.statusLabel : point.statusLabel;
-        rows.push([point.label, defects.join(' '), { text: status, color: statusColor(status), bold: true }]);
+        const body = defects.join(' ');
+        const reading = readingOf(test.id, point);
+        const quoted = Number.isFinite(point.measured) && body.includes(f2(point.measured));
+        rows.push([point.label, quoted || !reading ? body : `${reading} ${body}`, { text: status, color: statusColor(status), bold: true }]);
       }
     });
   });
@@ -87,9 +117,9 @@ function withEarlierSoil(report, sortedReports) {
   const merged = { ...report, soilResistivity: { locations: [...byLocation.values()] } };
   const rho = calculateSoilSummary(merged).overallAverage;
   const source = `preliminary – ρ from ${formatDate(latestDate)}`;
-  // The borrowed rho enters as the report's assumed value, so every limit, comment and flag
-  // that depends on it carries the source; the day's own soil figures stay empty.
-  const effective = { ...report, project: { ...report.project, assumedSoilResistivity: rho, assumedSoilResistivitySource: source } };
+  // The borrowed rho is a measured value of an earlier day (not an assumption): every limit and
+  // remark that uses it says "measured on <date>". The day's own soil figures stay empty.
+  const effective = { ...report, project: { ...report.project, borrowedSoilResistivity: { value: rho, date: formatDate(latestDate) } } };
   return { report: effective, fallback: { rho, date: latestDate, source } };
 }
 
@@ -124,7 +154,7 @@ function drawDay(doc, report, data, index, total, cumulative, planned, fallback)
     doc.paragraph('No defects or points above limit were found today.');
   }
   if (fallback) {
-    doc.note(`Electrode limits are preliminary – ρ from ${formatDate(fallback.date)} (${fallback.rho.toFixed(2)} Ω·m, project soil data of the same or an earlier day). No soil resistivity was measured today. Statuses are preliminary until the final report is reviewed and approved.`);
+    doc.note(`Electrode limits are preliminary – ρ from ${formatDate(fallback.date)} (${fallback.rho.toFixed(2)} Ω·m; none was measured today). Statuses are preliminary until the final report is reviewed and approved.`);
   } else if (data.soil.locations.length && data.soil.average !== null) {
     doc.note(`Soil resistivity measured at ${data.soil.locations.length} location${data.soil.locations.length === 1 ? '' : 's'}; site average ${data.soil.average.toFixed(2)} Ω·m. Statuses are preliminary until the final report is reviewed and approved.`);
   } else {
@@ -135,7 +165,7 @@ function drawDay(doc, report, data, index, total, cumulative, planned, fallback)
   doc.space(10);
   doc.table({
     columns: [['Prepared by (ETPL engineer)', 50], ['Acknowledged by (client representative)', 50]],
-    rows: [['\n\n\n', '\n\n\n']]
+    rows: [['Name:\n\nSignature:\n\nDate:\n', 'Name:\n\nSignature:\n\nDate:\n']]
   });
 }
 
@@ -166,4 +196,4 @@ async function generateDailyProgressPdf(reports, options = {}) {
   return { buffer: await doc.toBuffer(), pageCount, datas, fallbacks: resolved.map((entry) => entry.fallback) };
 }
 
-module.exports = { generateDailyProgressPdf, withEarlierSoil };
+module.exports = { generateDailyProgressPdf, withEarlierSoil, cumulativeCounts };

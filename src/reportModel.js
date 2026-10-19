@@ -484,12 +484,20 @@ function buildAssessmentContext(report) {
   const profile = resolveProfile(report?.project?.acceptanceProfile);
   const measured = calculateSoilSummary(report).overallAverage;
   const assumed = asLooseNumber(report?.project?.assumedSoilResistivity);
+  // A daily report with no soil of its own may use the project's soil data of the same or an
+  // earlier day (never a later one): { value, date }. It is a measured value, from that day.
+  const borrowed = report?.project?.borrowedSoilResistivity;
   let rho = null;
   let rhoAssumed = false;
   let rhoSource = '';
+  let rhoMeasuredOn = '';
   if (Number.isFinite(measured) && measured > 0) {
     rho = measured;
     rhoSource = 'Measured site average (Wenner 4-probe)';
+  } else if (borrowed && asLooseNumber(borrowed.value) > 0) {
+    rho = asLooseNumber(borrowed.value);
+    rhoMeasuredOn = asTrimmedString(borrowed.date);
+    rhoSource = `Soil resistivity measured on ${rhoMeasuredOn}`;
   } else if (Number.isFinite(assumed) && assumed > 0) {
     rho = assumed;
     rhoAssumed = true;
@@ -507,7 +515,7 @@ function buildAssessmentContext(report) {
       pitLimits.set(tag, result.limit);
     }
   });
-  return { profile, rho, rhoAssumed, rhoSource, headers: report?.sheetHeaders || {}, pitLimits };
+  return { profile, rho, rhoAssumed, rhoSource, rhoMeasuredOn, headers: report?.sheetHeaders || {}, pitLimits };
 }
 
 function resolveContext(contextOrReport) {
@@ -712,6 +720,10 @@ function deriveElectrodePriority(status, conditionCodes) {
   return label === 'Healthy' ? 'P3' : null;
 }
 
+function percentOf(value, limit) {
+  return Number.isFinite(value) && Number.isFinite(limit) && limit > 0 ? Math.round((100 * value) / limit) : 0;
+}
+
 function deriveElectrodeAssessment(row, contextOrReport) {
   const context = resolveContext(contextOrReport);
   const standard = getStandardGuidance(context.profile).electrodeResistance;
@@ -751,12 +763,14 @@ function deriveElectrodeAssessment(row, contextOrReport) {
   } else if (status.label === '>Permissible Limit') {
     comment = `Resistance ${fmt2(reading.value)} ohm exceeds the calculated limit of ${limitText}.`;
   } else if (status.label === 'Warning') {
-    comment = `Resistance ${fmt2(reading.value)} ohm is above 90% of the calculated limit of ${limitText} but within it; monitor at the next test.`;
+    comment = `Resistance ${fmt2(reading.value)} ohm = ${percentOf(reading.value, limit)}% of the ${fmt2(limit)} ohm limit (${limitResult.criterion.source}, Cl. ${limitResult.criterion.clause}): within it but above the 90% warning band; monitor at the next test.`;
   } else if (status.label === 'Healthy') {
-    comment = `Resistance ${fmt2(reading.value)} ohm is within 90% of the calculated limit of ${limitText}.`;
+    comment = `Resistance ${fmt2(reading.value)} ohm = ${percentOf(reading.value, limit)}% of the ${fmt2(limit)} ohm limit (${limitResult.criterion.source}, Cl. ${limitResult.criterion.clause}).`;
   }
   if (context.rhoAssumed && limit !== null) {
     comment += ` The limit uses an assumed soil resistivity of ${fmt2(context.rho)} ohm-m (${context.rhoSource}).`;
+  } else if (context.rhoMeasuredOn && limit !== null) {
+    comment += ` The limit uses the soil resistivity of ${fmt2(context.rho)} ohm-m measured on ${context.rhoMeasuredOn}.`;
   }
   if (flags.length) {
     comment += ` ${flags[0].message}.`;
@@ -936,7 +950,7 @@ function deriveRiserAssessment(row, contextOrReport) {
     comment += ` Readings are net of ${fmt2(lead)} ohm test-lead resistance.`;
   }
 
-  return { status, standard, conditionCodes: normalizeConditionCodes(row?.conditionCodes), comment };
+  return { status, standard, equipment, grid, conditionCodes: normalizeConditionCodes(row?.conditionCodes), comment };
 }
 
 function deriveEarthContinuityAssessment(row, contextOrReport) {
@@ -1124,18 +1138,31 @@ function assessStepTouchReading({ kind, measuredVolts, testCurrent, faultCurrent
     status: scaledVolts < limit ? healthyStatus() : overLimitStatus(),
     scaledVolts,
     limit,
-    limitSource: hasClientLimit ? `${criterion.source}, Cl. ${criterion.clause}` : 'IS 3043:2018 Cl. 10.3'
+    limitSource: hasClientLimit ? (criterion.clause && criterion.clause !== '-' ? `${criterion.source}, Cl. ${criterion.clause}` : criterion.source) : 'IS 3043:2018 Cl. 10.3'
   };
 }
 
-// Surface layer derating factor Cs. A client design value (header override) wins and is
-// printed as client-specified; with no surface layer Cs = 1; otherwise the IEEE 80-2013
-// formula named on ST-LIMIT params: Cs = 1 - 0.09 (1 - rho/rho_s) / (2 h_s + 0.09).
-function resolveSurfaceFactor(header, siteRho, profile) {
+// Surface layer derating factor Cs of one point, from the layer of ITS OWN surface:
+//   Gravel (or no surface ticked, older sheets): the header's surface layer rho_s and h_s;
+//   Concrete: the header's concrete rho_s and h_s (never the gravel values);
+//   Soil: no surface layer, rho_s = site rho and Cs = 1.
+// A client design value (header override) wins for a surface layer and is printed as
+// client-specified; with no thickness Cs = 1; otherwise the IEEE 80-2013 formula named on ST-LIMIT
+// params: Cs = 1 - 0.09 (1 - rho/rho_s) / (2 h_s + 0.09).
+function resolveSurfaceFactor(header, siteRho, profile, surface = '') {
   const params = profile.params('ST-LIMIT');
+  const surfaceName = asTrimmedString(surface);
+  const plain = { cs: 1, rhoS: Number.isFinite(siteRho) ? siteRho : null, source: 'no surface layer (Cs = 1)', missing: Number.isFinite(siteRho) ? [] : ['site soil resistivity (rho_s = rho without a surface layer)'] };
+  if (surfaceName === 'Soil') {
+    return plain;
+  }
+  const concrete = surfaceName === 'Concrete';
+  const surfaceRho = asLooseNumber(header?.[concrete ? 'concreteResistivity' : 'surfaceResistivity']);
+  const thickness = asLooseNumber(header?.[concrete ? 'concreteThicknessM' : 'surfaceThicknessM']);
+  if (concrete && !(Number.isFinite(surfaceRho) && surfaceRho > 0)) {
+    return { cs: null, rhoS: null, source: 'concrete resistivity not recorded', missing: ['concrete resistivity rho_s (header)'] };
+  }
   const override = asLooseNumber(header && header[params.cs_override_field]);
-  const surfaceRho = asLooseNumber(header?.surfaceResistivity);
-  const thickness = asLooseNumber(header?.surfaceThicknessM);
   const rhoS = Number.isFinite(surfaceRho) && surfaceRho > 0 ? surfaceRho : Number.isFinite(siteRho) ? siteRho : null;
   if (Number.isFinite(override) && override > 0) {
     const source = asTrimmedString(header?.csSource);
@@ -1147,7 +1174,7 @@ function resolveSurfaceFactor(header, siteRho, profile) {
     }
     return { cs: 1 - (0.09 * (1 - siteRho / surfaceRho)) / (2 * thickness + 0.09), rhoS, source: params.cs_formula_reference, missing: [] };
   }
-  return { cs: 1, rhoS, source: 'no surface layer (Cs = 1)', missing: rhoS === null ? ['site soil resistivity (rho_s = rho without a surface layer)'] : [] };
+  return { ...plain, rhoS, missing: rhoS === null ? plain.missing : [] };
 }
 
 // ---- Step & touch voltage, MS-08 ----------------------------------------------
@@ -1169,7 +1196,8 @@ function deriveStepTouchAssessment(row, contextOrReport) {
   const basis = asTrimmedString(header.bodyWeightBasis);
   const weights = basis === 'both' ? [50, 70] : basis === '50' ? [50] : basis === '70' ? [70] : [];
 
-  const surface = resolveSurfaceFactor(header, context.rho, context.profile);
+  const surfaceType = asTrimmedString(row?.surface);
+  const surface = resolveSurfaceFactor(header, context.rho, context.profile, surfaceType);
   const missing = [];
   if (!kind) missing.push('measurement type');
   if (!Number.isFinite(vmax)) missing.push('voltage reading');
@@ -1179,7 +1207,7 @@ function deriveStepTouchAssessment(row, contextOrReport) {
   if (!weights.length) missing.push('body weight basis (header)');
   missing.push(...surface.missing);
 
-  const base = { standard, vmax: Number.isFinite(vmax) ? vmax : null, cs: surface.cs, csSource: surface.source, rhoS: surface.rhoS, missing, conditionCodes: [] };
+  const base = { standard, vmax: Number.isFinite(vmax) ? vmax : null, surface: surfaceType, cs: surface.cs, csSource: surface.source, rhoS: surface.rhoS, missing, conditionCodes: [] };
   if (missing.length) {
     return {
       ...base,
@@ -1200,8 +1228,8 @@ function deriveStepTouchAssessment(row, contextOrReport) {
   const result = assessStepTouchReading({ kind, measuredVolts: vmax, testCurrent, faultCurrent, tolerable: governing.tolerable }, context);
   const comment =
     result.status.label === 'Healthy'
-      ? `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; Cs ${fmt2(surface.cs)}, ${surface.source}).`
-      : `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, which is not below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; Cs ${fmt2(surface.cs)}, ${surface.source}).`;
+      ? `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; ${surfaceType ? `${surfaceType}: ` : ''}rho_s ${fmt2(surface.rhoS)} ohm-m, Cs ${fmt2(surface.cs)}, ${surface.source}).`
+      : `${vmax} V scaled by If/It is ${fmt2(result.scaledVolts)} V, which is not below the ${fmt2(result.limit)} V ${kind} limit (${result.limitSource}; ${governing.weight} kg; ${surfaceType ? `${surfaceType}: ` : ''}rho_s ${fmt2(surface.rhoS)} ohm-m, Cs ${fmt2(surface.cs)}, ${surface.source}).`;
   return {
     ...base,
     status: result.status,

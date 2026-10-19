@@ -247,6 +247,33 @@ check('step & touch (MS-08): scaled by If/It, Cs by the IEEE 80 formula, client 
   near(stitched.scaledVolts, 0.05 * (20000 / 5), 1e-9);
 });
 
+check('step & touch: each point is compared with the limit of ITS OWN surface (gravel, concrete, soil)', () => {
+  const header = { faultCurrentKA: '10', faultClearingTimeS: '0.5', bodyWeightBasis: '70', surfaceResistivity: '3000', surfaceThicknessM: '0.1', concreteResistivity: '5000', concreteThicknessM: '0.15' };
+  const run = (surface, headerExtra = {}) => deriveStepTouchAssessment({ measurementType: 'Touch-mesh', surface, testCurrentA: '5', vmax: '0.1' }, { profile, rho: 30, headers: { stepTouchVoltage: { ...header, ...headerExtra } } });
+  const gravel = run('Gravel');
+  const concrete = run('Concrete');
+  const soil = run('Soil');
+  const expected = (rhoS, cs) => ((1000 + 1.5 * cs * rhoS) * 0.157) / Math.sqrt(0.5);
+  const csOf = (rhoS, h) => 1 - (0.09 * (1 - 30 / rhoS)) / (2 * h + 0.09);
+  near(gravel.limit, expected(3000, csOf(3000, 0.1)), 0.005);
+  near(concrete.limit, expected(5000, csOf(5000, 0.15)), 0.005);
+  near(soil.limit, expected(30, 1), 0.005);
+  assert.ok(new Set([gravel.limit, concrete.limit, soil.limit]).size === 3, 'three surfaces, three different limits');
+  assert.deepStrictEqual([gravel.rhoS, concrete.rhoS, soil.rhoS], [3000, 5000, 30]);
+  assert.deepStrictEqual([gravel.surface, concrete.surface, soil.surface], ['Gravel', 'Concrete', 'Soil']);
+  assert.strictEqual(soil.csSource, 'no surface layer (Cs = 1)', 'a soil point has no surface layer even when the header lists gravel');
+  assert.ok(gravel.comment.includes('Gravel: rho_s 3000.00 ohm-m') && concrete.comment.includes('Concrete: rho_s 5000.00 ohm-m'));
+  // concrete never borrows the gravel values
+  const noConcrete = run('Concrete', { concreteResistivity: '', concreteThicknessM: '' });
+  assert.strictEqual(noConcrete.status.label, 'Pending');
+  assert.ok(noConcrete.missing.includes('concrete resistivity rho_s (header)'));
+  // a client Cs applies to a surface layer, not to soil
+  assert.strictEqual(run('Gravel', { csOverride: '0.8' }).cs, 0.8);
+  assert.strictEqual(run('Soil', { csOverride: '0.8' }).cs, 1);
+  // sheets from before the surface was ticked keep the header's (gravel) layer
+  near(run('').limit, gravel.limit, 1e-9);
+});
+
 check("tower: a 'Not given' foot is a defect flag with a remark; the status stays on Zt", () => {
   const groups = (status) => [{ groupId: 'g1', mainLocationTower: 'T1', readings: [1, 2, 3, 4].map((n) => ({ footToEarthingConnectionStatus: n === 2 ? status : 'Given', measuredCurrentMa: '10', measuredImpedance: '2' })) }];
   const run = (status) => {

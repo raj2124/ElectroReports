@@ -4,6 +4,7 @@
 const assert = require('assert');
 const { normalizeReportInput } = require('../src/reportModel');
 const { buildPayload } = require('./fixtures/golden-esha');
+const { buildAllTestsPayload } = require('./fixtures/golden-all-tests');
 const { buildFinalReportData, ConsistencyError } = require('../src/finalReport/data');
 const { generateFinalReportPdf } = require('../src/finalReport/pdf');
 const { generateDailyProgressPdf } = require('../src/finalReport/dailyPdf');
@@ -85,7 +86,7 @@ const failingClient = { messages: { create: async () => { throw new Error('529 o
   });
 
   await check('results show every pit, panel and riser with its status; EP-08 is not measured; limits are the golden ones', () => {
-    ['EP-07', 'EP-08', '>Permissible Limit', 'Not Measurable', 'Warning', '6.83', '4.21', '7.12', 'not measured', 'PMCC-1', 'APDB-2', 'Not Assessable', 'R-202 (R1)', '1.42', '25.68'].forEach((text) => assert.ok(all.includes(text), `results lack ${text}`));
+    ['EP-07', 'EP-08', '>Permissible Limit', 'Above limit', 'Within limit', 'Not measurable', 'Warning', '6.83', '4.21', '7.12', 'not measured', 'PMCC-1', 'APDB-2', 'Not Assessable', 'R-202 (R1)', '1.42', '25.68'].forEach((text) => assert.ok(all.includes(text), `results lack ${text}`));
     assert.ok(all.includes('Moderately corrosive'));
   });
 
@@ -105,6 +106,88 @@ const failingClient = { messages: { create: async () => { throw new Error('529 o
 
   await check('electrode chart is present and there are no pie charts', () => {
     assert.ok(all.includes('Measured R (navy) vs calculated limit (grey)'));
+  });
+
+  // ---- Session 6C.2b report fixes, rendered from the all-tests fixture ---------------------------
+  const allReport = normalizeReportInput(buildAllTestsPayload());
+  const full = await generateFinalReportPdf(allReport, {
+    status: 'approved',
+    approvals: { prepared: { name: 'H. S. Patil', designation: 'Site Engineer', date: '2026-09-18' }, checked: { name: 'A. S. Mahto', designation: 'Senior Engineer', date: '2026-09-19' }, approved: { name: 'J. C. Shah', designation: 'Head - Earthing Services', date: '2026-09-20' } }
+  });
+  const fullPages = await textOf(full.buffer);
+  const fullText = fullPages.join('\n').replace(/\s+/g, ' ');
+
+  await check('all nine sheets render in one report with every section', () => {
+    ['Soil Resistivity', 'MS-02', 'MS-03', 'MS-04', 'MS-05', 'MS-06', 'MS-07', 'MS-08', 'MS-09'].forEach((text) => assert.ok(fullText.includes(text), `lacks ${text}`));
+  });
+
+  await check('cover has no "[client logo]" placeholder, with or without a logo', async () => {
+    assert.ok(!fullText.includes('[client logo'));
+    assert.ok(!all.includes('[client logo'));
+  });
+
+  await check('executive summary: "Assessed" column and "(n not assessed)" in the status', () => {
+    const summary = fullPages.find((page) => page.includes('A. Overall summary of tests')).replace(/\s+/g, ' ');
+    assert.ok(summary.includes('Assessed') && !/\bTotal\b/.test(summary.split('B. Earth electrode')[0]));
+    assert.ok(summary.includes('>Attention Required (1 not assessed)') && summary.includes('Healthy (1 not assessed)'));
+  });
+
+  await check('instruments table has Range and Accuracy; annexures say "provided separately" unless attached', async () => {
+    const instruments = fullPages.find((page, i) => i >= 2 && page.includes('4. Instruments Used')).replace(/\s+/g, ' ');
+    ['Range', 'Accuracy', 'Metrel MI 3290 GX Earth Analyser', '0.01 Ω – 19.9 kΩ', 'Kyoritsu 4118A'].forEach((text) => assert.ok(instruments.includes(text), `instruments lack ${text}`));
+    const annexures = fullPages.find((page, i) => i >= 2 && page.includes('9. Annexures')).replace(/\s+/g, ' ');
+    assert.strictEqual((annexures.match(/Provided separately/g) || []).length, 4);
+    const attached = await textOf((await generateFinalReportPdf(allReport, { status: 'approved', annexures: ['C', 'D'] })).buffer);
+    const attachedPage = attached.find((page, i) => i >= 2 && page.includes('9. Annexures')).replace(/\s+/g, ' ');
+    assert.strictEqual((attachedPage.match(/Attached/g) || []).length, 2);
+    assert.strictEqual((attachedPage.match(/Provided separately/g) || []).length, 2);
+  });
+
+  await check('introduction: purpose, client representative, ETPL team and applicable standards', () => {
+    ['Purpose', 'was engaged by Gujarat Fluorochemicals Ltd', 'ETPL team', 'H. S. Patil', 'R. K. Shah', 'Applicable standards', 'IS 3043:2018', 'IEEE 80-2013', 'IEEE 81-2012', 'IS/IEC 60364', 'CEA (Measures relating to Safety and Electric Supply) Regulations, 2023'].forEach((text) => assert.ok(fullText.includes(text), `intro lacks ${text}`));
+  });
+
+  await check('methodology: current-probe distance, lead nulling and safety (LOTO, PPE, permit)', () => {
+    ['Current-probe distance', 'Test-lead nulling', 'lock-out/tag-out (LOTO)', 'PPE', 'work permit'].forEach((text) => assert.ok(fullText.includes(text), `methodology lacks ${text}`));
+  });
+
+  await check('basis: the loop row source is readable (no "Cl. IS 3043")', () => {
+    assert.ok(!fullText.includes('Cl. IS 3043'));
+    assert.ok(fullText.includes('IS 3043:2018 Cl. 42 (method)'));
+  });
+
+  await check('soil results: R beside rho, test conditions and a rho-vs-spacing chart per location', () => {
+    ['R Direction 1', 'ρ Direction 1', 'weather: Sunny', 'ground condition: Dry', 'Apparent resistivity ρ against probe spacing – Utility Yard', 'Apparent resistivity ρ against probe spacing – Reactor Bay'].forEach((text) => assert.ok(fullText.includes(text), `soil lacks ${text}`));
+  });
+
+  await check('electrode results: test condition, 50/70% check, Status vs Priority', () => {
+    ['Test condition', 'Isolated', '50/70% check', 'Agree', 'Disagree', 'Status (R vs limit)', 'Within limit', 'Above limit', 'Priority'].forEach((text) => assert.ok(fullText.includes(text), `electrodes lack ${text}`));
+  });
+
+  await check('document control: approval block with names, designations and dates; index has a sub-entry per test', () => {
+    const control = fullPages[1].replace(/\s+/g, ' ');
+    ['Approval', 'H. S. Patil', 'Site Engineer', '18-09-2026', 'A. S. Mahto', 'Senior Engineer', 'J. C. Shah', 'Head - Earthing Services', '20-09-2026'].forEach((text) => assert.ok(control.includes(text), `control lacks ${text}`));
+    ['Soil Resistivity', 'Earth Electrode Resistance Test (MS-02)', 'Loop Impedance Test (MS-04)', 'Tower Footing Resistance Measurement & Analysis (MS-09)'].forEach((text) => assert.ok(control.includes(text), `index lacks ${text}`));
+    const resultsLine = fullPages.findIndex((page, i) => i >= 2 && page.includes('6. Results')) + 1;
+    assert.ok(fullPages[1].split('\n').includes(String(resultsLine)));
+  });
+
+  await check('step & touch note, tower feet and the new basis source text are printed', () => {
+    ['Basis of the limits: Earth fault current If = 20 kA', 'Gravel: rho_s = 3000.00', 'Concrete: rho_s = 5000.00', 'Soil: rho_s = 25.68', 'Foot-1', 'Foot-4', 'Foot connection', 'Tower T1', 'the 1 tower assessed is within limit', '1 of 1 tower assessed'].forEach((text) => assert.ok(fullText.replace(/ρ/g, '').includes(text.replace(/ρ/g, '')), `lacks ${text}`));
+    // the cell wraps across lines, so spaces are ignored
+    assert.ok(fullText.replace(/\s/g, '').includes('IS3043:2018Cl.10.3(limits);IEEE81-2012Cl.9(measurementandIf/Itscaling)'));
+    assert.strictEqual(allReport.stepTouchVoltage.length > 0 && require('../src/acceptance').resolveProfile().get('ST-LIMIT').source, 'IS 3043:2018 Cl. 10.3 (limits); IEEE 81-2012 Cl. 9 (measurement and If/It scaling)');
+    assert.ok(!fullText.includes('Cl. 10.3 (IS 3043:2018); 9.3'));
+  });
+
+  await check('continuity results carry the limit', () => {
+    const continuity = fullPages.find((page, i) => i >= 2 && page.includes('Earth Continuity & Bonding Test (MS-03)'));
+    assert.ok(continuity.replace(/\s/g, '').includes('Limit(Ω)'));
+  });
+
+  await check('loop observation and CAP clauses read as the standard asks', () => {
+    const cap = fullPages.filter((page, i) => i >= 2 && page.includes('Corrective action')).join(' ').replace(/\s+/g, ' ');
+    ['Zs 1.92 Ω on B-E exceeds 1.8 Ω (ETPL criterion)', '38.4.3', '25.6.3.4', 'ETPL criterion'].forEach((text) => assert.ok(cap.includes(text), `CAP lacks ${text}`));
   });
 
   await check('unapproved report is marked as a draft on every page after the cover', async () => {
@@ -187,6 +270,16 @@ const failingClient = { messages: { create: async () => { throw new Error('529 o
     assert.ok(dailyPages[0].includes('60%'), '6 of 10 pits on day 1');
   });
 
+  await check('daily: every observation carries its reading; the soil footnote does not repeat itself; sign-off has Name / Signature / Date', async () => {
+    const daily = await generateDailyProgressPdf([day1, day2]);
+    const pages = await textOf(daily.buffer);
+    const first = pages[0].replace(/\s+/g, ' ');
+    assert.ok(/EP-03 Resistance 1\.45 Ω \(limit 6\.83 Ω\)\. C1: Corroded/.test(first), first);
+    assert.ok(/EP-05 Resistance 1\.30 Ω \(limit 6\.83 Ω\)\. C8/.test(first), 'every defect row has its reading');
+    assert.ok(!/EP-07 Resistance 7\.12 Ω \(limit[^.]*\)\. Resistance 7\.12/.test(first), 'a reading already quoted is not repeated');
+    pages.forEach((page) => ['Name:', 'Signature:', 'Date:'].forEach((label) => assert.ok(page.includes(label), `sign-off lacks ${label}`)));
+  });
+
   await check('a single daily report can be rendered alone while its cumulative counts use the earlier days', async () => {
     day1.id = 'D1';
     day2.id = 'D2';
@@ -205,6 +298,8 @@ const failingClient = { messages: { create: async () => { throw new Error('529 o
     assert.ok(withLaterSoil.fallbacks[1] && withLaterSoil.fallbacks[1].date === '2026-09-14', 'uses the 14th, not the later 20th');
     const text = (await textOf(withLaterSoil.buffer)).join('\n').replace(/\s+/g, ' ');
     assert.ok(text.includes('preliminary – ρ from 14-09-2026'), 'daily prints the source day');
+    const footnote = text.slice(text.indexOf('Electrode limits are preliminary'), text.indexOf('Statuses are preliminary'));
+    assert.ok(!/measured on/.test(footnote) && (footnote.match(/14-09-2026/g) || []).length === 1, `footnote says the date once: ${footnote}`);
     assert.ok(withLaterSoil.datas[1].tests.find((test) => test.id === 'electrodeResistance').points.every((point) => Number.isFinite(point.limit)), 'limits are calculated');
     const onlyLater = await generateDailyProgressPdf([middle, late], { onlyReportId: 'E2' });
     assert.strictEqual(onlyLater.fallbacks[0], null, 'a later day is never used');

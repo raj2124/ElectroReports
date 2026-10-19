@@ -32,7 +32,7 @@ function pretty(value) {
 
 function statusColor(label) {
   const value = String(label || '');
-  if (['Healthy', 'P3'].includes(value)) return COLORS.green;
+  if (['Healthy', 'P3', 'Within limit', 'Agree'].includes(value)) return COLORS.green;
   if (['Warning', 'Marginal', 'Healthy - Minor Actions', 'Healthy – Minor Actions', 'P2', 'Data gap', 'Review'].includes(value)) return COLORS.amber;
   if (['Not Assessable', 'Pending', 'Incomplete', 'Not set'].includes(value)) return COLORS.neutral;
   return COLORS.red;
@@ -95,14 +95,18 @@ class ReportDoc {
     } else {
       this.ensure(60);
     }
-    const numbered = `${this.sections.length + 1}. ${title}`;
+    const numbered = `${this.sections.filter((entry) => !entry.sub).length + 1}. ${title}`;
     this.sections.push({ title: numbered, page: this.pageIndex });
     this.heading(numbered, 1);
   }
 
-  heading(value, level = 1) {
+  // `indexed` adds a level-2 heading to the document index, under the section above it.
+  heading(value, level = 1, { indexed = false } = {}) {
     const size = level === 1 ? 14 : 11;
     this.ensure(size + 40);
+    if (indexed) {
+      this.sections.push({ title: pretty(value), page: this.pageIndex, sub: true });
+    }
     this.y += level === 1 ? 2 : 6;
     this.doc.font('Bold').fontSize(size).fillColor(COLORS.navy).text(pretty(value), PAGE.margin, this.y, { width: PAGE.contentWidth });
     this.y = this.doc.y + (level === 1 ? 8 : 5);
@@ -210,6 +214,47 @@ class ReportDoc {
       }
     });
     this.y = top + plotH + 26;
+  }
+
+  // Line chart with markers: series = [{ label, points: [[x, y], ...] }]. Used for rho against spacing.
+  lineChart({ title, series, xLabel, yLabel }) {
+    const height = 190;
+    this.ensure(height + 10);
+    const doc = this.doc;
+    const x0 = PAGE.margin + 40;
+    const width = PAGE.contentWidth - 60;
+    const top = this.y + 16;
+    const plotH = 122;
+    const xs = series.flatMap((entry) => entry.points.map((point) => point[0]));
+    const ys = series.flatMap((entry) => entry.points.map((point) => point[1]));
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...xs);
+    const yMax = Math.max(1, ...ys) * 1.1;
+    const xAt = (x) => x0 + (xMax === xMin ? width / 2 : ((x - xMin) / (xMax - xMin)) * width);
+    const yAt = (y) => top + plotH - (y / yMax) * plotH;
+    const colors = [COLORS.navy, '#D97706'];
+    doc.font('Bold').fontSize(8).fillColor(COLORS.navy).text(pretty(title), PAGE.margin, this.y, { width: PAGE.contentWidth });
+    const step = niceStep(yMax);
+    for (let tick = 0; tick <= yMax; tick += step) {
+      doc.moveTo(x0, yAt(tick)).lineTo(x0 + width, yAt(tick)).lineWidth(0.3).strokeColor('#D0D5DD').stroke();
+      doc.font('Body').fontSize(6.5).fillColor(COLORS.note).text(String(Math.round(tick * 100) / 100), PAGE.margin, yAt(tick) - 3, { width: 34, align: 'right' });
+    }
+    doc.moveTo(x0, top + plotH).lineTo(x0 + width, top + plotH).lineWidth(0.6).strokeColor(COLORS.grey).stroke();
+    const uniqueX = [...new Set(xs)].sort((a, b) => a - b);
+    uniqueX.forEach((x) => doc.font('Body').fontSize(6.5).fillColor(COLORS.ink).text(String(x), xAt(x) - 12, top + plotH + 3, { width: 24, align: 'center' }));
+    series.forEach((entry, index) => {
+      const color = colors[index % colors.length];
+      entry.points.forEach(([x, y], i) => {
+        if (i === 0) doc.moveTo(xAt(x), yAt(y)); else doc.lineTo(xAt(x), yAt(y));
+      });
+      doc.lineWidth(1.1).strokeColor(color).stroke();
+      entry.points.forEach(([x, y]) => doc.circle(xAt(x), yAt(y), 1.9).fillColor(color).fill());
+      const lx = x0 + 6 + index * 110;
+      doc.rect(lx, top + plotH + 17, 8, 3).fillColor(color).fill();
+      doc.font('Body').fontSize(7).fillColor(COLORS.ink).text(entry.label, lx + 12, top + plotH + 14, { lineBreak: false });
+    });
+    doc.font('Body').fontSize(6.5).fillColor(COLORS.note).text(pretty(`${xLabel}  ·  ${yLabel}`), x0 + width - 160, top + plotH + 14, { width: 160, align: 'right', lineBreak: false });
+    this.y = top + plotH + 32;
   }
 
   // Header and footer on every page except the cover, and "Page x of y".
