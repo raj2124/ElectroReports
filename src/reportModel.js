@@ -14,6 +14,7 @@ const PRIORITY_P2_CODES = new Set(['C3', 'C6', 'C7', 'C8']);
 const TEST_LIBRARY = [
   {
     id: 'soilResistivity',
+    unitLabel: 'locations',
     sheetCode: 'MS-01',
     label: 'Soil Resistivity Test',
     shortLabel: 'Soil',
@@ -21,6 +22,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'electrodeResistance',
+    unitLabel: 'pits',
     sheetCode: 'MS-02',
     label: 'Earth Electrode Resistance Test',
     shortLabel: 'Electrode',
@@ -28,6 +30,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'continuityTest',
+    unitLabel: 'points',
     sheetCode: 'MS-03',
     label: 'Earth Continuity & Bonding Test',
     shortLabel: 'Continuity',
@@ -35,6 +38,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'loopImpedanceTest',
+    unitLabel: 'panels',
     sheetCode: 'MS-04',
     label: 'Loop Impedance Test',
     shortLabel: 'Loop',
@@ -42,6 +46,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'prospectiveFaultCurrent',
+    unitLabel: 'panels',
     sheetCode: 'MS-05',
     label: 'Prospective Fault Current',
     shortLabel: 'PFC',
@@ -49,6 +54,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'riserIntegrityTest',
+    unitLabel: 'points',
     sheetCode: 'MS-06',
     label: 'Riser / Grid Integrity Test',
     shortLabel: 'Riser',
@@ -56,6 +62,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'groundResistance',
+    unitLabel: 'points',
     sheetCode: 'MS-07',
     label: 'Ground (Grid) Resistance Test',
     shortLabel: 'Ground',
@@ -63,6 +70,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'stepTouchVoltage',
+    unitLabel: 'points',
     sheetCode: 'MS-08',
     label: 'Step & Touch Voltage Test',
     shortLabel: 'Step & Touch',
@@ -70,6 +78,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'towerFootingResistance',
+    unitLabel: 'towers',
     sheetCode: 'MS-09',
     label: 'Tower Footing Resistance Measurement & Analysis',
     shortLabel: 'Tower Footing',
@@ -77,6 +86,7 @@ const TEST_LIBRARY = [
   },
   {
     id: 'earthContinuityTest',
+    unitLabel: 'points',
     sheetCode: 'legacy',
     retired: true,
     label: 'Earth Continuity Test',
@@ -378,7 +388,10 @@ function buildDefaultDraft() {
       zohoProjectId: '',
       zohoProjectName: '',
       zohoProjectOwner: '',
-      zohoProjectStage: ''
+      zohoProjectStage: '',
+      unit: '',
+      unitCode: '',
+      plannedQuantities: {}
     },
     tests: {
       soilResistivity: true,
@@ -1546,6 +1559,24 @@ function normalizeReportInput(payload, options = {}) {
     zohoProjectOwner: asTrimmedString(input?.project?.zohoProjectOwner),
     zohoProjectStage: asTrimmedString(input?.project?.zohoProjectStage)
   };
+  // Final-report fields (6C): only kept when given, so older reports normalise exactly as before.
+  ['unit', 'unitCode', 'clientId'].forEach((key) => {
+    const raw = asTrimmedString(input?.project?.[key]);
+    const value = key === 'unitCode' ? raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) : raw;
+    if (value) {
+      project[key] = value;
+    }
+  });
+  const planned = {};
+  Object.entries(input?.project?.plannedQuantities || {}).forEach(([testId, value]) => {
+    const count = Number.parseInt(value, 10);
+    if (TEST_LIBRARY.some((test) => test.id === testId) && Number.isFinite(count) && count >= 0) {
+      planned[testId] = count;
+    }
+  });
+  if (Object.keys(planned).length) {
+    project.plannedQuantities = planned;
+  }
 
   if (!project.equipmentSelections.length) {
     project.equipmentSelections = [...draft.project.equipmentSelections];

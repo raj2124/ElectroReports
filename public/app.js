@@ -1751,6 +1751,32 @@ function renderZohoProjectCards() {
   `;
 }
 
+// Planned quantity per selected test (the denominator of "planned vs completed" in the
+// reports). Entered by hand for now.
+function renderPlannedQuantities() {
+  const tests = state.catalog.filter((test) => state.draft.tests[test.id]);
+  if (!tests.length) {
+    return '';
+  }
+  const planned = state.draft.project.plannedQuantities || {};
+  return `
+    <div class="planned-qty">
+      <p class="section-kicker">Planned quantities</p>
+      <div class="field-grid">
+        ${tests
+          .map((test) =>
+            renderField(
+              `${test.shortLabel || test.label} - planned ${test.unitLabel || 'qty'}`,
+              planned[test.id],
+              `project.plannedQuantities.${test.id}`,
+              'number'
+            )
+          )
+          .join('')}
+      </div>
+    </div>`;
+}
+
 function renderProjectStep() {
   const zohoProjectOptions = state.zoho.projects
     .map((project) => {
@@ -1850,7 +1876,10 @@ function renderProjectStep() {
         ${renderField('Work Order / Ref', state.draft.project.workOrder, 'project.workOrder', 'text', 'WO-628')}
         ${renderField('Work date', state.draft.project.reportDate, 'project.reportDate', 'date')}
         ${renderField('Testing Engineer', state.draft.project.engineerName, 'project.engineerName', 'text', 'Engineer Name')}
+        ${renderField('Unit / plant', state.draft.project.unit, 'project.unit', 'text', 'FI Plant')}
+        ${renderField('Unit code (required for the final report)', state.draft.project.unitCode, 'project.unitCode', 'text', 'FI')}
       </div>
+      ${renderPlannedQuantities()}
       ${renderJobHeaderFields()}
     `
   );
@@ -3165,6 +3194,9 @@ function setByPath(target, bind, value) {
   const segments = getPathSegments(bind);
   let cursor = target;
   for (let i = 0; i < segments.length - 1; i += 1) {
+    if (cursor[segments[i]] === undefined || cursor[segments[i]] === null) {
+      cursor[segments[i]] = {};
+    }
     cursor = cursor[segments[i]];
   }
   cursor[segments[segments.length - 1]] = value;
@@ -3612,6 +3644,9 @@ document.addEventListener('input', (event) => {
   }
 
   if (target.matches('[data-bind]')) {
+    if (target.dataset.bind === 'project.unitCode') {
+      target.value = target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8);
+    }
     setByPath(state.draft, target.dataset.bind, target.value);
     scheduleDraftAutosave();
     if (state.view === 'builder') {
