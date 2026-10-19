@@ -9,6 +9,7 @@ const path = require('path');
 const net = require('net');
 const { spawn } = require('child_process');
 const { buildPayload } = require('./fixtures/golden-esha');
+const { devEnv, createCaller } = require('./lib/dev-auth');
 
 let passed = 0;
 async function check(name, fn) {
@@ -45,7 +46,7 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-'));
   const port = await freePort();
   const server = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'reports.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'reports.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -53,14 +54,14 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
     server.on('exit', (code) => reject(new Error(`server exited early (${code})`)));
     setTimeout(() => reject(new Error('server did not start')), 15000);
   });
-  const call = async (method, url, body) => {
-    const response = await fetch(`http://127.0.0.1:${port}${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    return { status: response.status, body: await response.json().catch(() => null) };
-  };
-  const step = async (id, name, body) => (await call('POST', `/api/reports/${id}/review/${name}`, body)).body;
+  // The engineer records the days and prepares; the reviewer checks; the approver approves.
+  const caller = createCaller(`http://127.0.0.1:${port}`);
+  const call = (method, url, body, as = 'engineer@elegrow.com') => caller(method, url, body, as).then(({ status, body: data }) => ({ status, body: data }));
+  const WHO = { submit: 'engineer@elegrow.com', check: 'reviewer@elegrow.com', approve: 'approver@elegrow.com' };
+  const step = async (id, name, body) => (await call('POST', `/api/reports/${id}/review/${name}`, body, WHO[name])).body;
   const tickAll = async (id) => {
     const ticks = Object.fromEntries((await call('GET', `/api/reports/${id}/review`)).body.checklist.map((item) => [item.id, true]));
-    await call('PUT', `/api/reports/${id}/review/ticks`, { ticks });
+    await call('PUT', `/api/reports/${id}/review/ticks`, { ticks }, 'reviewer@elegrow.com');
   };
 
   try {
@@ -131,12 +132,12 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
     await check('statuses follow the review: draft, in review, checked, approved', async () => {
       const status = async (id) => (await call('GET', `/api/projects/${projectId}`)).body.days.find((day) => day.reportId === id).status;
       assert.strictEqual(await status(day1.id), 'draft');
-      await step(day1.id, 'submit', { actor: 'H. S. Patil' });
+      await step(day1.id, 'submit', {});
       assert.strictEqual(await status(day1.id), 'in_review');
       await tickAll(day1.id);
-      await step(day1.id, 'check', { actor: 'A. P.' });
+      await step(day1.id, 'check', {});
       assert.strictEqual(await status(day1.id), 'checked');
-      await step(day1.id, 'approve', { actor: 'J. C. Shah' });
+      await step(day1.id, 'approve', {});
       assert.strictEqual(await status(day1.id), 'approved');
       assert.strictEqual(await status(day2.id), 'draft');
     });
@@ -159,7 +160,7 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
     await check('assemble: every day is stitched, the days not yet approved are listed and flagged, the result is a draft', async () => {
       const { body: before } = await call('GET', `/api/projects/${projectId}`);
       assert.deepStrictEqual([before.assembly.includedDates, before.assembly.flaggedDates, before.assembly.hasUnapproved], [['2026-09-14', '2026-09-15'], ['2026-09-15'], true]);
-      const result = await call('POST', `/api/projects/${projectId}/final/assemble`, { actor: 'H. S. Patil' });
+      const result = await call('POST', `/api/projects/${projectId}/final/assemble`, {});
       assert.strictEqual(result.status, 201, JSON.stringify(result.body));
       assert.deepStrictEqual([result.body.includedDates, result.body.flaggedDates, result.body.hasUnapproved], [['2026-09-14', '2026-09-15'], ['2026-09-15'], true]);
       assert.deepStrictEqual([result.body.report.kind, result.body.report.reviewStatus, result.body.report.projectId], ['final', 'draft', projectId]);
@@ -169,7 +170,7 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
     });
 
     await check('re-assemble makes a NEW draft final and keeps the old one', async () => {
-      const again = await call('POST', `/api/projects/${projectId}/final/assemble`, { actor: 'H. S. Patil' });
+      const again = await call('POST', `/api/projects/${projectId}/final/assemble`, {});
       assert.strictEqual(again.status, 201);
       assert.notStrictEqual(again.body.report.id, firstFinal.id);
       const { body } = await call('GET', `/api/projects/${projectId}`);
@@ -189,18 +190,18 @@ function draftFor(pits, { soil = true, nextDayPlan = '' } = {}) {
       const summary = async () => (await call('GET', '/api/projects')).body.find((entry) => entry.id === projectId);
       assert.deepStrictEqual([(await summary()).state, (await summary()).days, (await summary()).approvedDays, (await summary()).finalStatus], ['active', 2, 1, 'draft']);
       // approve the second day, re-assemble, approve that final
-      await step(day2.id, 'submit', { actor: 'H. S. Patil' });
+      await step(day2.id, 'submit', {});
       await tickAll(day2.id);
-      await step(day2.id, 'check', { actor: 'A. P.' });
-      await step(day2.id, 'approve', { actor: 'J. C. Shah' });
-      const { body: assembled } = await call('POST', `/api/projects/${projectId}/final/assemble`, { actor: 'H. S. Patil' });
+      await step(day2.id, 'check', {});
+      await step(day2.id, 'approve', {});
+      const { body: assembled } = await call('POST', `/api/projects/${projectId}/final/assemble`, {});
       assert.strictEqual(assembled.hasUnapproved, false);
       const final = assembled.report;
       assert.strictEqual((await call('PUT', `/api/reports/${final.id}`, draftFor([0, 2]))).status, 400, 'a final report is assembled, never edited by hand');
-      await step(final.id, 'submit', { actor: 'H. S. Patil' });
+      await step(final.id, 'submit', {});
       await tickAll(final.id);
-      await step(final.id, 'check', { actor: 'A. P.' });
-      const approval = await step(final.id, 'approve', { actor: 'J. C. Shah', acknowledgements: { sanityCheck: 'Read by hand.', p1Photos: 'Photos follow.' } });
+      await step(final.id, 'check', {});
+      const approval = await step(final.id, 'approve', { acknowledgements: { sanityCheck: 'Read by hand.', p1Photos: 'Photos follow.' } });
       assert.strictEqual(approval.status, 'approved', JSON.stringify(approval));
       assert.deepStrictEqual([(await summary()).state, (await summary()).finalStatus], ['completed', 'approved']);
       const third = await call('POST', `/api/projects/${projectId}/days`, { workDate: '2026-09-22', report: draftFor([0, 2], { soil: false }) });

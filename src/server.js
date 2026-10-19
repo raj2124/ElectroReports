@@ -27,6 +27,8 @@ const { LogoError, parseLogoDataUrl, clientKeys } = require('./finalReport/logos
 const { getProjects, getProject, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const { isD03Name, buildTaskPlan, nameOwners } = require('./zohoTasks');
 const { pollNewProjects, answerNotice, dismissNotice, startProjectWatch } = require('./projectWatch');
+const { createAuth } = require('./auth');
+const { reviewGate, reviewAccess, mayEditReport, hasRole } = require('./permissions');
 const {
   previewSoilSheetWithGemini,
   previewElectrodeSheetWithGemini,
@@ -68,7 +70,11 @@ if (!fs.existsSync(generatedDir)) {
 }
 
 app.use(express.json({ limit: '25mb' }));
-app.use('/generated-pdfs', express.static(generatedDir));
+
+// Sign-in (Session 6E): the session user on every API / auth / PDF request, then the route rules.
+const auth = createAuth({ store, config, zoho: require('./zohoClient') });
+app.use(['/api', '/auth', '/generated-pdfs'], auth.attachUser, auth.sameOrigin);
+app.use('/generated-pdfs', auth.requireSignIn, express.static(generatedDir));
 app.use(
   express.static(publicDir, {
     setHeaders(res, filePath) {
@@ -78,6 +84,9 @@ app.use(
     }
   })
 );
+auth.register(app);
+app.use('/api', auth.requireSignIn, auth.authorize);
+auth.registerProtected(app); // profile and admin routes: behind the guard
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -327,7 +336,7 @@ app.post('/api/assessments', (req, res) => {
 app.post('/api/reports', (req, res) => {
   try {
     const normalized = normalizeReportInput(req.body);
-    const created = store.addReport(normalized);
+    const created = store.addReport({ ...normalized, createdBy: req.user.id });
     return res.status(201).json(presentReport(created));
   } catch (error) {
     return res.status(400).json({
@@ -379,6 +388,10 @@ app.post('/api/reports/:id/ai/generate', async (req, res) => {
 });
 
 app.delete('/api/reports/:id', (req, res) => {
+  const existing = store.getReport(req.params.id);
+  if (existing && !mayEditReport(req.user, existing)) {
+    return res.status(403).json({ message: existing.createdBy ? 'Only the engineer who created this report (or an admin) can delete it.' : 'This report has no creator: only an admin can delete it.', code: 'NOT_OWNER' });
+  }
   const result = store.deleteReport(req.params.id);
   if (!result.deleted) {
     return res.status(404).json({ message: 'Report not found.' });
@@ -432,18 +445,33 @@ function requireWorkflowReport(req, res) {
   return report;
 }
 
+// The review state plus what this user may do with it (the screen shows only those buttons).
+function reviewPayload(req, report, extra = {}) {
+  return { ...buildReviewState(store, report), access: reviewAccess(store, req.user, report), ...extra };
+}
+
+// A step the gate refuses: 403 with the reason, and whether an admin could override it.
+function refuse(res, gate) {
+  return res.status(403).json({ message: gate.message, code: gate.code, canOverride: gate.canOverride });
+}
+
 app.get('/api/reports/:id/review', (req, res) => {
   const report = requireWorkflowReport(req, res);
-  return report ? res.json(buildReviewState(store, report)) : undefined;
+  return report ? res.json(reviewPayload(req, report)) : undefined;
 });
 
 app.put('/api/reports/:id/review/ticks', (req, res) => {
-  if (!requireWorkflowReport(req, res)) {
+  const report = requireWorkflowReport(req, res);
+  if (!report) {
     return undefined;
+  }
+  const gate = reviewGate(store, req.user, 'ticks', report, { overrideReason: req.body && req.body.overrideReason });
+  if (!gate.allowed) {
+    return refuse(res, gate);
   }
   try {
     store.setReviewTicks(req.params.id, req.body && req.body.ticks);
-    return res.json(buildReviewState(store, loadReport(req.params.id)));
+    return res.json(reviewPayload(req, loadReport(req.params.id)));
   } catch (error) {
     return reviewError(res, error);
   }
@@ -452,26 +480,33 @@ app.put('/api/reports/:id/review/ticks', (req, res) => {
 const REVIEW_ACTIONS = { submit: 'in_review', approve: 'approved', return: 'draft' };
 
 app.post('/api/reports/:id/review/:action', (req, res) => {
-  if (!requireWorkflowReport(req, res)) {
+  const report = requireWorkflowReport(req, res);
+  if (!report) {
     return undefined;
   }
   const { action } = req.params;
   const body = req.body || {};
-  const actor = String(body.actor || '').trim();
-  if (!actor) {
-    return res.status(400).json({ message: 'Enter your name: it is recorded with this step and gives the initials on the cover.' });
+  // The step is recorded against the signed-in person; their profile gives the name and designation.
+  const who = { actor: req.user.name, designation: req.user.designation, userId: req.user.id };
+  const gate = reviewGate(store, req.user, action, report, { overrideReason: body.overrideReason });
+  if (!gate.allowed) {
+    return refuse(res, gate);
   }
+  const note = gate.overridden ? [`Admin override by ${req.user.name}: ${gate.reason}`, String(body.note || '')].filter(Boolean).join(' | ') : body.note;
   try {
     let warnings = [];
     if (action === 'check') {
-      store.markChecked(req.params.id, { actor, designation: body.designation, note: body.note });
+      store.markChecked(req.params.id, { ...who, note });
     } else if (REVIEW_ACTIONS[action]) {
-      const result = store.transition(req.params.id, REVIEW_ACTIONS[action], { actor, designation: body.designation, note: body.note, acknowledgements: body.acknowledgements || {} });
+      const result = store.transition(req.params.id, REVIEW_ACTIONS[action], { ...who, note, acknowledgements: body.acknowledgements || {} });
       warnings = result.warnings;
     } else {
       return res.status(404).json({ message: 'Unknown review step.' });
     }
-    return res.json({ ...buildReviewState(store, loadReport(req.params.id)), stepWarnings: warnings });
+    if (gate.overridden) {
+      auth.audit(req.user, 'review.override', 'report', req.params.id, { step: action, reason: gate.reason });
+    }
+    return res.json(reviewPayload(req, loadReport(req.params.id), { stepWarnings: warnings }));
   } catch (error) {
     return reviewError(res, error);
   }
@@ -482,11 +517,8 @@ app.post('/api/reports/:id/reissue', (req, res) => {
     return undefined;
   }
   const body = req.body || {};
-  if (!String(body.actor || '').trim()) {
-    return res.status(400).json({ message: 'Enter your name to re-issue.' });
-  }
   try {
-    const copy = store.reissueReport(req.params.id, { actor: body.actor, reason: body.reason });
+    const copy = store.reissueReport(req.params.id, { actor: req.user.name, userId: req.user.id, reason: body.reason });
     return res.status(201).json(presentReport(copy));
   } catch (error) {
     return reviewError(res, error);
@@ -563,7 +595,7 @@ app.post('/api/projects/:id/days', (req, res) => {
   try {
     const draft = body.report || {};
     const normalized = normalizeReportInput({ ...draft, project: { ...(draft.project || {}), reportDate: workDate } });
-    const created = store.addReport({ ...normalized, kind: 'daily', projectId: project.id, collectionDate: workDate });
+    const created = store.addReport({ ...normalized, kind: 'daily', projectId: project.id, collectionDate: workDate, createdBy: req.user.id });
     if (!project.plannedQuantities && normalized.project.plannedQuantities) {
       store.updateProject(project.id, { plannedQuantities: normalized.project.plannedQuantities });
     }
@@ -583,7 +615,7 @@ app.post('/api/projects/:id/final/assemble', (req, res) => {
     return res.status(404).json({ message: 'Project not found.' });
   }
   try {
-    const result = assembleFor(store, req.params.id, { actor: String((req.body && req.body.actor) || '').trim() });
+    const result = assembleFor(store, req.params.id, { actor: req.user.name, userId: req.user.id });
     return res.status(201).json({ ...result, report: presentReport(result.report) });
   } catch (error) {
     return res.status(400).json({ message: error instanceof Error ? error.message : 'Could not assemble the final report.' });
@@ -598,6 +630,9 @@ app.put('/api/reports/:id', (req, res) => {
   }
   if (getReportKind(current) !== 'daily') {
     return res.status(400).json({ message: 'Only a daily report can be edited. A final report is assembled from the daily reports.' });
+  }
+  if (!mayEditReport(req.user, current)) {
+    return res.status(403).json({ message: current.createdBy ? 'Only the engineer who created this daily report (or an admin) can edit it.' : 'This report has no creator: only an admin can edit it.', code: 'NOT_OWNER' });
   }
   if (getReviewStatus(current) !== 'draft') {
     return res.status(409).json({ message: 'Only a draft daily report can be edited. Return it to draft from the review screen first.', code: 'NOT_DRAFT' });
@@ -622,9 +657,12 @@ app.put('/api/reports/:id', (req, res) => {
 // Who is asking is the "I am ..." choice on Home for now (no logins yet). This is the ONE place the
 // server reads it; per-engineer logins will replace it.
 function noticeRecipientFrom(req) {
-  const email = String(req.query.email || (req.body && req.body.email) || '').trim().toLowerCase();
-  const name = String(req.query.name || (req.body && req.body.name) || '').trim().toLowerCase();
-  return { keys: [email, name].filter(Boolean), label: String(req.query.name || (req.body && req.body.name) || email) };
+  return { keys: [req.user.email.toLowerCase(), req.user.name.toLowerCase()], label: req.user.name };
+}
+
+// A notice is for its recipient (an admin may answer on someone's behalf).
+function mayAnswerNotice(req, notice) {
+  return hasRole(req.user, 'admin') || noticeRecipientFrom(req).keys.includes(notice.recipientKey);
 }
 
 app.get('/api/notices', (req, res) => {
@@ -635,17 +673,25 @@ app.get('/api/notices', (req, res) => {
 });
 
 app.post('/api/notices/:id/answer', (req, res) => {
+  const notice = store.getNotice(req.params.id);
+  if (notice && !mayAnswerNotice(req, notice)) {
+    return res.status(403).json({ message: 'This notice is addressed to someone else.', code: 'NOT_RECIPIENT' });
+  }
   try {
     const body = req.body || {};
-    return res.json(answerNotice(store, req.params.id, { phonesAllowed: body.phonesAllowed, mobileData: body.mobileData, by: noticeRecipientFrom(req).label }));
+    return res.json(answerNotice(store, req.params.id, { phonesAllowed: body.phonesAllowed, mobileData: body.mobileData, by: req.user.name, userId: req.user.id }));
   } catch (error) {
     return res.status(error.code === 'NOT_FOUND' ? 404 : error.code === 'ANSWERS_REQUIRED' ? 400 : 409).json({ message: error.message, code: error.code });
   }
 });
 
 app.post('/api/notices/:id/dismiss', (req, res) => {
+  const notice = store.getNotice(req.params.id);
+  if (notice && !mayAnswerNotice(req, notice)) {
+    return res.status(403).json({ message: 'This notice is addressed to someone else.', code: 'NOT_RECIPIENT' });
+  }
   try {
-    dismissNotice(store, req.params.id, noticeRecipientFrom(req).label);
+    dismissNotice(store, req.params.id, req.user.id);
     return res.json({ dismissed: true });
   } catch (error) {
     return res.status(error.code === 'NOT_FOUND' ? 404 : 409).json({ message: error.message, code: error.code });

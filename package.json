@@ -10,6 +10,7 @@
     "test:multiday": "node scripts/test-multiday.js && node scripts/test-report-collection.js",
     "test:report": "node scripts/test-report-data.js && node scripts/test-report-pdf.js && node scripts/test-review.js && node scripts/test-review-routes.js",
     "test:review-ui": "node scripts/test-review-ui.js",
+    "test:auth": "node scripts/test-auth.js && node scripts/test-auth-ui.js",
     "test:zoho": "node scripts/test-zoho-tasks.js && node scripts/test-project-watch.js && node scripts/test-zoho-ui.js",
     "test:workspace": "node scripts/test-workspace.js && node scripts/test-workspace-ui.js",
     "test:layout": "node scripts/test-layout.js",

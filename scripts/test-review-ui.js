@@ -12,6 +12,7 @@ const { chromium } = require('@playwright/test');
 const { createReportStore } = require('../src/reportStore');
 const { normalizeReportInput } = require('../src/reportModel');
 const { buildPayload } = require('./fixtures/golden-esha');
+const { devEnv, browserLogin } = require('./lib/dev-auth');
 
 const ROOT = path.join(__dirname, '..');
 const SHOTS = path.join(ROOT, 'reference', 'screenshots');
@@ -45,7 +46,7 @@ const freePort = () => new Promise((resolve) => {
   const port = await freePort();
   const server = spawn(process.execPath, ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -58,7 +59,9 @@ const freePort = () => new Promise((resolve) => {
     fs.mkdirSync(SHOTS, { recursive: true });
     const context = await browser.newContext({ viewport: { width: 1288, height: 900 } });
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${port}/`);
+    const base = `http://127.0.0.1:${port}`;
+    await browserLogin(context, base, 'admin@elegrow.com'); // H. S. Patil: prepares
+    await page.goto(`${base}/`);
 
     // Project step: planned quantities and unit code.
     await page.click('[data-action="new-report"]');
@@ -78,22 +81,31 @@ const freePort = () => new Promise((resolve) => {
     await page.locator(`[data-action="open-review"][data-id="${finalId}"]`).click();
     await page.waitForSelector('.review-shell');
     const text = () => page.innerText('.review-shell');
+    // Signs in as another user (a new session cookie) and comes back to this review screen.
+    const switchTo = async (email) => {
+      await browserLogin(context, base, email);
+      await page.goto(`${base}/`);
+      await page.waitForSelector(`[data-action="open-review"][data-id="${finalId}"]`);
+      await page.locator(`[data-action="open-review"][data-id="${finalId}"]`).click();
+      await page.waitForSelector('.review-shell');
+    };
     let screen = await text();
     ['Reviewer checklist', 'Counts match across scope', 'Every P1 has a photo', 'Sanity check: not run', 'Narrative:', 'Transitions', 'Draft', 'Client logo'].forEach((expected) => expect(screen.includes(expected) || screen.toLowerCase().includes(expected.toLowerCase()), `review screen shows "${expected}"`));
     expect(await page.locator('[data-action="review-step"][data-step="submit"]').count() === 1, 'a draft offers Submit for review');
     expect(await page.locator('[data-action="review-step"][data-step="approve"]').count() === 0, 'Approve is not offered before the report is checked');
 
-    await page.click('[data-action="review-step"][data-step="submit"]');
-    await page.waitForSelector('.toast, [role="status"]', { timeout: 3000 }).catch(() => {});
-    expect(await page.locator('[data-action="review-step"][data-step="submit"]').count() === 1, 'submit without a name is refused (still a draft)');
-    await page.fill('[data-review-field="actor"]', 'H. S. Patil');
+    expect((await text()).includes('Signed in as H. S. Patil'), 'the review screen shows who is signed in (no name to type)');
+    expect(await page.locator('[data-review-field="actor"]').count() === 0, 'there is no name or designation field any more');
     await page.click('[data-action="review-step"][data-step="submit"]');
     await page.waitForSelector('[data-action="review-step"][data-step="check"]');
     screen = await text();
     expect(screen.includes('In review'), 'status becomes In review');
     expect(await page.locator('[data-action="review-step"][data-step="approve"]').count() === 0, 'still no Approve: it is blocked until checked');
 
-    await page.fill('[data-review-field="actor"]', 'A. P.');
+    // the preparer (an admin) is offered an override, not a plain check
+    expect(await page.locator('[data-review-field="overrideReason"]').count() === 1, 'the preparer sees that they cannot check their own report (admin: override with a reason)');
+    await switchTo('reviewer@elegrow.com'); // A. P.: checks
+    expect(await page.locator('[data-action="review-step"][data-step="submit"]').count() === 0 && await page.locator('[data-action="review-step"][data-step="approve"]').count() === 0, 'a reviewer is offered Check and Return, not Submit or Approve');
     await page.click('[data-action="review-step"][data-step="check"]');
     await page.waitForFunction(() => document.querySelector('.review-message'));
     expect((await text()).includes('Tick every checklist item'), 'marking as checked before ticking the checklist is refused with the reason');
@@ -104,17 +116,18 @@ const freePort = () => new Promise((resolve) => {
     expect(await page.locator('[data-review-tick]:checked').count() === 5, 'all five checklist items can be ticked and are kept');
     await page.screenshot({ path: path.join(SHOTS, 'Review_1288.png'), fullPage: true });
     await page.click('[data-action="review-step"][data-step="check"]');
-    await page.waitForSelector('[data-action="review-step"][data-step="approve"]');
+    await page.waitForFunction(() => /checked by A\. P\./.test(document.querySelector('.review-shell').innerText));
     expect((await text()).includes('checked by A. P.'), 'the checker is shown');
+    expect(await page.locator('[data-action="review-step"][data-step="approve"]').count() === 0, 'a reviewer who is not an approver is not offered Approve');
 
-    await page.fill('[data-review-field="actor"]', 'J. C. Shah');
+    await switchTo('approver@elegrow.com'); // J. C. Shah: approves
+    await page.waitForSelector('[data-action="review-step"][data-step="approve"]');
     await page.click('[data-action="review-step"][data-step="approve"]');
     await page.waitForFunction(() => /Acknowledge before approving/.test(document.querySelector('.review-message') ? document.querySelector('.review-message').textContent : ''));
     expect(await page.locator('[data-review-ack="sanityCheck"]').count() === 1, 'the sanity-check acknowledgement box is shown');
     expect(await page.locator('[data-review-ack="p1Photos"]').count() === 1, 'the P1-photo acknowledgement box is shown');
     await page.fill('[data-review-ack="sanityCheck"]', 'Provider unavailable; narrative read against the tables.');
     await page.fill('[data-review-ack="p1Photos"]', 'Photos to follow in Annexure B.');
-    await page.fill('[data-review-field="designation"]', 'Head - Earthing');
     // The toast must not sit over the action buttons.
     await page.evaluate(() => showToast('Probe toast for the overlap check.', 'warning'));
     await page.waitForSelector('.toast');

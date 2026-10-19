@@ -4618,3 +4618,10 @@ textarea {
 .notice-questions { display: grid; gap: 8px; }
 .notice-question { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
 .notice-question legend { font-weight: 600; }
+
+/* ---- Sign-in and users (6E) ---- */
+.user-bar { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: flex-end; }
+.signin-card { max-width: 520px; margin: 40px auto; }
+.profile-card, .admin-card { display: grid; gap: 12px; }
+.role-box { display: inline-flex; gap: 4px; margin-right: 10px; white-space: nowrap; }
+.admin-users td, .admin-users th { text-align: left; padding: 8px 10px; vertical-align: top; }

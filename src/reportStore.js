@@ -62,6 +62,7 @@ function openDatabase(dbPath) {
   migrateSheetSchema(db);
   migrateReviewSchema(db);
   migrateNoticeSchema(db);
+  migrateAuthSchema(db);
   return db;
 }
 
@@ -173,6 +174,47 @@ function migrateNoticeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_notices_recipient ON notices(recipient_key, status);
   `);
+}
+
+// Sign-in (ADDITIVE): the people who sign in, their sessions, and the audit log. Every transition
+// also records the user id; the name and designation stay as a snapshot of that moment.
+function migrateAuthSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            TEXT PRIMARY KEY,
+      email         TEXT NOT NULL UNIQUE,
+      name          TEXT NOT NULL,
+      designation   TEXT NOT NULL DEFAULT '',
+      roles         TEXT NOT NULL,
+      zuid          TEXT,
+      active        INTEGER NOT NULL DEFAULT 1,
+      created_at    TEXT NOT NULL,
+      last_login_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      id_hash      TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      checked_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      at          TEXT NOT NULL,
+      user_id     TEXT,
+      user_email  TEXT,
+      user_name   TEXT,
+      action      TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id   TEXT,
+      detail      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
+  `);
+  if (!hasColumn(db, 'report_transitions', 'user_id')) {
+    db.exec('ALTER TABLE report_transitions ADD COLUMN user_id TEXT');
+  }
 }
 
 // Printed measurement sheets (ADDITIVE). Every printed page is issued with a unique sheet ID that
@@ -352,7 +394,7 @@ function createReportStore({ filePath }) {
     };
     // kind / project link / review status are lifecycle fields: only addReport and
     // transitionReport may set them, never a generic update.
-    ['kind', 'projectId', 'reviewStatus', 'dailyStatus'].forEach((field) => {
+    ['kind', 'projectId', 'reviewStatus', 'dailyStatus', 'createdBy'].forEach((field) => {
       if (current[field] === undefined) {
         delete updated[field];
       } else {
@@ -470,7 +512,7 @@ function createReportStore({ filePath }) {
     return Object.assign(error, extra);
   }
 
-  function writeTransition(updated, fromStatus, toStatus, action, actor, note, at, designation = '') {
+  function writeTransition(updated, fromStatus, toStatus, action, actor, note, at, designation = '', userId = '') {
     db.transaction(() => {
       updateStmt.run({
         id: updated.id,
@@ -480,14 +522,14 @@ function createReportStore({ filePath }) {
         data: JSON.stringify(updated)
       });
       db.prepare(
-        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at, action, designation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at, action, String(designation || ''));
+        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at, action, designation, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at, action, String(designation || ''), String(userId || ''));
     })();
   }
 
   // acknowledgements: { calibration, sanityCheck } notes. `acknowledgement` (a single string)
   // is the older form and covers the calibration note only.
-  function transition(id, toStatus, { actor = '', designation = '', note = '', acknowledgement = '', acknowledgements = {} } = {}) {
+  function transition(id, toStatus, { actor = '', designation = '', userId = '', note = '', acknowledgement = '', acknowledgements = {} } = {}) {
     const current = requireWorkflow(id);
     if (!current) {
       return null;
@@ -534,7 +576,7 @@ function createReportStore({ filePath }) {
       updated.review = { ...(current.review || {}), ticks: {} };
     }
     const fullNote = [...recorded, String(note || '')].filter(Boolean).join(' | ');
-    writeTransition(updated, fromStatus, toStatus, action, actor, fullNote, at, designation);
+    writeTransition(updated, fromStatus, toStatus, action, actor, fullNote, at, designation, userId);
     return { report: updated, warnings };
   }
 
@@ -544,7 +586,7 @@ function createReportStore({ filePath }) {
   }
 
   // The checker's step: stays in_review, recorded as its own transition.
-  function markChecked(id, { actor = '', designation = '', note = '' } = {}) {
+  function markChecked(id, { actor = '', designation = '', userId = '', note = '' } = {}) {
     const current = requireWorkflow(id);
     if (!current) {
       return null;
@@ -562,7 +604,7 @@ function createReportStore({ filePath }) {
     }
     const at = new Date().toISOString();
     const updated = { ...current, updatedAt: at };
-    writeTransition(updated, 'in_review', 'in_review', 'check', actor, note, at, designation);
+    writeTransition(updated, 'in_review', 'in_review', 'check', actor, note, at, designation, userId);
     return updated;
   }
 
@@ -580,7 +622,7 @@ function createReportStore({ filePath }) {
 
   // Re-issue after approval: the approved report stays as issued; a copy becomes the next
   // revision in draft, with its own review round.
-  function reissueReport(id, { actor = '', reason = '' } = {}) {
+  function reissueReport(id, { actor = '', userId = '', reason = '' } = {}) {
     const current = requireWorkflow(id);
     if (!current) {
       return null;
@@ -599,14 +641,15 @@ function createReportStore({ filePath }) {
       revision: (Number.isInteger(current.revision) ? current.revision : 0) + 1,
       revisionOf: current.id,
       revisionReason: String(reason || '').trim() || 'Re-issue',
-      revisedBy: String(actor || '')
+      revisedBy: String(actor || ''),
+      createdBy: userId ? String(userId) : current.createdBy
     });
     return copy;
   }
 
   function listTransitions(reportId) {
     return db
-      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, designation, note, at, action FROM report_transitions WHERE report_id = ? ORDER BY id')
+      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, designation, user_id AS userId, note, at, action FROM report_transitions WHERE report_id = ? ORDER BY id')
       .all(String(reportId));
   }
 
@@ -634,7 +677,7 @@ function createReportStore({ filePath }) {
   // Stitch ALL daily reports of a project into one final report (draft). Superseded
   // re-test readings are persisted to assembly_provenance, never discarded.
   // options.overrides: { 'sheet::pointKey': dailyReportId } (engineer override).
-  function assembleFinal(projectId, { overrides = {}, actor = '' } = {}) {
+  function assembleFinal(projectId, { overrides = {}, actor = '', userId = '' } = {}) {
     const project = getProject(projectId);
     if (!project) {
       throw new Error('Project not found.');
@@ -647,7 +690,7 @@ function createReportStore({ filePath }) {
     const { assemblyProvenance, ...reportBody } = assembled;
     const now = new Date().toISOString();
     return db.transaction(() => {
-      const final = addReport({ ...reportBody, projectId: project.id });
+      const final = addReport({ ...reportBody, projectId: project.id, ...(userId ? { createdBy: String(userId) } : {}) });
       const insert = db.prepare(`INSERT INTO assembly_provenance
         (final_report_id, sheet, point_key, kept_report_id, kept_collection_date, superseded_report_id,
          superseded_collection_date, superseded_row, resolution, overridden_by, created_at)
@@ -750,6 +793,79 @@ function createReportStore({ filePath }) {
     return db.prepare('DELETE FROM client_logos WHERE key = ?').run(String(key)).changes > 0;
   }
 
+  // ---- Users, sessions, audit ---------------------------------------------------------------
+  function rowToUser(row) {
+    return row
+      ? { id: row.id, email: row.email, name: row.name, designation: row.designation || '', roles: JSON.parse(row.roles), zuid: row.zuid || '', active: Boolean(row.active), createdAt: row.created_at, lastLoginAt: row.last_login_at || '' }
+      : null;
+  }
+
+  function getUser(id) {
+    return rowToUser(db.prepare('SELECT * FROM users WHERE id = ?').get(String(id)));
+  }
+
+  function getUserByEmail(email) {
+    return rowToUser(db.prepare('SELECT * FROM users WHERE email = ?').get(String(email).trim().toLowerCase()));
+  }
+
+  function listUsers() {
+    return db.prepare('SELECT * FROM users ORDER BY name COLLATE NOCASE').all().map(rowToUser);
+  }
+
+  function addUser({ email, name, designation = '', roles = ['engineer'], zuid = '' }) {
+    const id = `U-${buildId().replace(/^ER-/, '')}`;
+    db.prepare('INSERT INTO users (id, email, name, designation, roles, zuid, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)').run(id, String(email).trim().toLowerCase(), name, designation, JSON.stringify(roles), zuid || null, new Date().toISOString());
+    return getUser(id);
+  }
+
+  function updateUser(id, patch) {
+    const current = getUser(id);
+    if (!current) return null;
+    const next = { ...current, ...patch };
+    db.prepare('UPDATE users SET name = ?, designation = ?, roles = ?, zuid = ?, active = ?, last_login_at = ? WHERE id = ?')
+      .run(next.name, next.designation || '', JSON.stringify(next.roles), next.zuid || null, next.active ? 1 : 0, next.lastLoginAt || null, String(id));
+    return getUser(id);
+  }
+
+  function createSession(idHash, userId) {
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, checked_at) VALUES (?, ?, ?, ?, ?)').run(idHash, String(userId), now, now, now);
+  }
+
+  function getSession(idHash) {
+    const row = db.prepare('SELECT * FROM sessions WHERE id_hash = ?').get(String(idHash));
+    return row ? { idHash: row.id_hash, userId: row.user_id, createdAt: row.created_at, lastSeenAt: row.last_seen_at, checkedAt: row.checked_at } : null;
+  }
+
+  function touchSession(idHash, { checked = false } = {}) {
+    const now = new Date().toISOString();
+    db.prepare(`UPDATE sessions SET last_seen_at = ?${checked ? ', checked_at = ?' : ''} WHERE id_hash = ?`).run(...(checked ? [now, now, String(idHash)] : [now, String(idHash)]));
+  }
+
+  function deleteSession(idHash) {
+    db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(String(idHash));
+  }
+
+  function deleteUserSessions(userId) {
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(String(userId));
+  }
+
+  function addAudit({ user = null, action, entityType = '', entityId = '', detail = null }) {
+    db.prepare('INSERT INTO audit_log (at, user_id, user_email, user_name, action, entity_type, entity_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(new Date().toISOString(), user ? user.id : null, user ? user.email : null, user ? user.name : null, action, entityType || null, entityId ? String(entityId) : null, detail ? JSON.stringify(detail) : null);
+  }
+
+  function listAudit({ userId = '', action = '', limit = 100, offset = 0 } = {}) {
+    const clauses = [];
+    const params = [];
+    if (userId) { clauses.push('user_id = ?'); params.push(String(userId)); }
+    if (action) { clauses.push('action LIKE ?'); params.push(`${String(action).replace(/[%_]/g, '')}%`); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM audit_log ${where}`).get(...params).n;
+    const rows = db.prepare(`SELECT * FROM audit_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...params, Math.min(500, Math.max(1, limit)), Math.max(0, offset));
+    return { total, entries: rows.map((row) => ({ id: row.id, at: row.at, userId: row.user_id || '', userEmail: row.user_email || '', userName: row.user_name || '', action: row.action, entityType: row.entity_type || '', entityId: row.entity_id || '', detail: row.detail ? JSON.parse(row.detail) : null })) };
+  }
+
   // ---- Notices ------------------------------------------------------------------------------
   function rowToNotice(row) {
     return {
@@ -805,6 +921,18 @@ function createReportStore({ filePath }) {
   }
 
   return {
+    getUser,
+    getUserByEmail,
+    listUsers,
+    addUser,
+    updateUser,
+    createSession,
+    getSession,
+    touchSession,
+    deleteSession,
+    deleteUserSessions,
+    addAudit,
+    listAudit,
     addNotice,
     getNotice,
     listNotices,

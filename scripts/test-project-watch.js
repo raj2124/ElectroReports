@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { createReportStore } = require('../src/reportStore');
+const { devEnv, createCaller } = require('./lib/dev-auth');
 const { pollNewProjects, answerNotice, dismissNotice, dataCollectionModeFor } = require('../src/projectWatch');
 
 let passed = 0;
@@ -119,7 +120,7 @@ const freePort = () => new Promise((resolve) => {
   // ---- over HTTP on the mock portal -----------------------------------------------------------
   const port = await freePort();
   const server = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'http.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ZOHO_POLL_MINUTES: '0', ANTHROPIC_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'http.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -127,44 +128,48 @@ const freePort = () => new Promise((resolve) => {
     server.on('exit', (code) => reject(new Error(`server exited early (${code})`)));
     setTimeout(() => reject(new Error('server did not start')), 15000);
   });
-  const call = async (method, url, body) => {
-    const response = await fetch(`http://127.0.0.1:${port}${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    return { status: response.status, body: await response.json().catch(() => null) };
-  };
+  const caller = createCaller(`http://127.0.0.1:${port}`);
+  const call = (method, url, body, as = 'engineer@elegrow.com') => caller(method, url, body, as).then(({ status, body: data }) => ({ status, body: data }));
+  const notices = (as) => call('GET', '/api/notices', undefined, as);
   try {
     await check('HTTP: the poll finds the mock D03 projects; notices are listed for the person (by e-mail or name) and only for them', async () => {
-      const poll = await call('POST', '/api/zoho/poll');
+      assert.strictEqual((await call('POST', '/api/zoho/poll')).status, 403, 'only an admin runs the check by hand');
+      const poll = await call('POST', '/api/zoho/poll', undefined, 'admin@elegrow.com');
       assert.strictEqual(poll.status, 200);
       assert.deepStrictEqual(poll.body.candidates, ['056-D03_TS-26-CLL', '060-D03_TS-26-XYZ']);
       assert.strictEqual(poll.body.created.length, 2);
-      assert.strictEqual((await call('POST', '/api/zoho/poll')).body.created.length, 0);
-      assert.strictEqual((await call('GET', '/api/notices?email=anup@elegrow.com')).body.length, 1);
-      assert.strictEqual((await call('GET', '/api/notices?name=Anup%20Parekh')).body.length, 0, 'matched by the key it was addressed to (the e-mail)');
-      assert.strictEqual((await call('GET', '/api/notices?email=karishma@elegrow.com')).body.length, 0, 'she owns only an IRT task');
-      assert.strictEqual((await call('GET', '/api/notices')).body.length, 0);
+      assert.strictEqual((await call('POST', '/api/zoho/poll', undefined, 'admin@elegrow.com')).body.created.length, 0);
+      assert.strictEqual((await notices('anup@elegrow.com')).body.length, 1);
+      assert.strictEqual((await notices('karishma@elegrow.com')).body.length, 0, 'she owns only an IRT task');
+      assert.strictEqual((await notices('engineer@elegrow.com')).body.length, 0, 'a notice is only for the person it is addressed to');
+      assert.strictEqual((await call('GET', '/api/notices?email=anup@elegrow.com', undefined, 'engineer@elegrow.com')).body.length, 0, 'asking for someone else\'s notices gives nothing: the session decides');
     });
 
     let projectId;
     await check('HTTP: answering opens the workspace with the default mode, which new site days start from', async () => {
-      const [notice] = (await call('GET', '/api/notices?email=anup@elegrow.com')).body;
-      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/answer?email=anup@elegrow.com`, { phonesAllowed: true })).status, 400);
-      const answered = await call('POST', `/api/notices/${notice.id}/answer?email=anup@elegrow.com&name=Anup%20Parekh`, { phonesAllowed: true, mobileData: true });
+      const [notice] = (await notices('anup@elegrow.com')).body;
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/answer`, { phonesAllowed: true, mobileData: true }, 'engineer@elegrow.com')).status, 403, 'someone else cannot answer it');
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/answer`, { phonesAllowed: true }, 'anup@elegrow.com')).status, 400);
+      const answered = await call('POST', `/api/notices/${notice.id}/answer`, { phonesAllowed: true, mobileData: true }, 'anup@elegrow.com');
       assert.deepStrictEqual([answered.status, answered.body.dataCollectionMode], [200, 'On-site entry']);
       projectId = answered.body.projectId;
       const workspace = (await call('GET', `/api/projects/${projectId}`)).body;
       assert.strictEqual(workspace.project.dataCollectionMode, 'On-site entry');
       assert.strictEqual(workspace.dayTemplate.project.dataCollectionMode, 'On-site entry');
       assert.strictEqual(workspace.project.siteAccess.answeredBy, 'Anup Parekh');
-      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/answer?email=anup@elegrow.com`, { phonesAllowed: true, mobileData: true })).status, 409);
-      assert.strictEqual((await call('GET', '/api/notices?email=anup@elegrow.com')).body.length, 0);
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/answer`, { phonesAllowed: true, mobileData: true }, 'anup@elegrow.com')).status, 409);
+      assert.strictEqual((await notices('anup@elegrow.com')).body.length, 0);
+      const me = (await call('GET', '/api/auth/me', undefined, 'anup@elegrow.com')).body.user;
+      assert.strictEqual(workspace.project.siteAccess.answeredById, me.id, 'the answer records the user id');
     });
 
     await check('HTTP: dismissing removes the notice for good', async () => {
-      const [notice] = (await call('GET', '/api/notices?email=nidhi@elegrow.com')).body;
-      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/dismiss?email=nidhi@elegrow.com`, {})).status, 200);
-      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/dismiss?email=nidhi@elegrow.com`, {})).status, 409);
-      await call('POST', '/api/zoho/poll');
-      assert.strictEqual((await call('GET', '/api/notices?email=nidhi@elegrow.com')).body.length, 0);
+      const [notice] = (await notices('nidhi@elegrow.com')).body;
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/dismiss`, {}, 'anup@elegrow.com')).status, 403);
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/dismiss`, {}, 'nidhi@elegrow.com')).status, 200);
+      assert.strictEqual((await call('POST', `/api/notices/${notice.id}/dismiss`, {}, 'nidhi@elegrow.com')).status, 409);
+      await call('POST', '/api/zoho/poll', undefined, 'admin@elegrow.com');
+      assert.strictEqual((await notices('nidhi@elegrow.com')).body.length, 0);
     });
 
     await check('HTTP: the task plan of a D03 project (mock) and "Refresh from Zoho" fills only clear quantities', async () => {

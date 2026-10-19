@@ -8,22 +8,13 @@ const reviewUi = {
   report: null,
   loading: false,
   busy: false,
-  actor: '',
-  designation: '',
   note: '',
+  overrideReason: '',
   acknowledgements: {},
   reissueReason: '',
   message: '',
   logoMessage: ''
 };
-
-try {
-  reviewUi.actor = window.localStorage.getItem('electroreports.reviewer') || '';
-  reviewUi.designation = window.localStorage.getItem('electroreports.designation') || '';
-} catch (_error) {
-  reviewUi.actor = '';
-  reviewUi.designation = '';
-}
 
 const REVIEW_STATUS_LABEL = { draft: 'Draft', in_review: 'In review', approved: 'Approved' };
 const REVIEW_STATUS_TONE = { draft: 'neutral', in_review: 'warning', approved: 'healthy' };
@@ -102,7 +93,14 @@ function reviewView() {
   const locked = review.status === 'approved';
   const kindLabel = review.kind === 'final' ? 'Final report' : 'Daily report';
   const date = report.collectionDate || (report.project && report.project.reportDate) || '';
-  const available = review.available;
+  const access = review.access || {};
+  const available = {
+    submit: review.available.submit && access.submit,
+    check: review.available.check && access.check,
+    approve: review.available.approve && access.approve,
+    return: review.available.return && access.return,
+    reissue: review.available.reissue && access.reissue
+  };
   const busy = reviewUi.busy ? 'disabled' : '';
   const blocking = review.checklist.some((item) => item.blocking && item.auto === 'fail');
   return `
@@ -124,11 +122,10 @@ function reviewView() {
 
       <section class="surface section-card review-block">
         <p class="section-kicker">Who is acting</p>
-        <label class="field"><span>Your full name (recorded with each step; gives the initials on the cover and the name in the approval block)</span>
-          <input type="text" class="text-input" data-review-field="actor" value="${escapeHtml(reviewUi.actor)}" placeholder="e.g. A. S. Mahto" /></label>
-        <label class="field"><span>Your designation (printed in the approval block)</span>
-          <input type="text" class="text-input" data-review-field="designation" value="${escapeHtml(reviewUi.designation)}" placeholder="e.g. Senior Engineer – Earthing" /></label>
+        <p>Signed in as <strong>${escapeHtml(authUi.user ? authUi.user.name : '')}</strong>${authUi.user && authUi.user.designation ? `, ${escapeHtml(authUi.user.designation)}` : ' <span class="muted">(add your designation in My profile: it is printed in the approval block)</span>'}. Each step is recorded against you.</p>
         <p class="muted">Cover initials: Prepared <strong>${escapeHtml(review.initials.prepared || '-')}</strong> · Checked <strong>${escapeHtml(review.initials.checked || '-')}</strong> · Approved <strong>${escapeHtml(review.initials.approved || '-')}</strong></p>
+        ${access.needsOverride ? `<div class="review-warnings"><strong>You prepared this report.</strong> Nobody can check or approve their own report. As an admin you can override, with a reason that is recorded on the step.
+          <label class="field"><span>Override reason (at least 10 characters)</span><input type="text" class="text-input" data-review-field="overrideReason" value="${escapeHtml(reviewUi.overrideReason)}" /></label></div>` : access.isPreparer ? '<p class="muted">You prepared this report, so someone else has to check and approve it.</p>' : ''}
       </section>
 
       <section class="surface section-card review-block">
@@ -189,17 +186,13 @@ function reviewView() {
 }
 
 async function runReviewStep(step) {
-  if (!reviewUi.actor.trim()) {
-    showToast('Enter your name first: it is recorded with this step.', 'warning');
-    return;
-  }
   reviewUi.busy = true;
   reviewUi.message = '';
   render();
   try {
     const result = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/review/${step}`, {
       method: 'POST',
-      body: JSON.stringify({ actor: reviewUi.actor.trim(), designation: reviewUi.designation.trim(), note: reviewUi.note, acknowledgements: reviewUi.acknowledgements })
+      body: JSON.stringify({ note: reviewUi.note, acknowledgements: reviewUi.acknowledgements, overrideReason: reviewUi.overrideReason })
     });
     reviewUi.review = result;
     reviewUi.report = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}`);
@@ -220,7 +213,7 @@ async function runReviewStep(step) {
 async function saveReviewTick(id, ticked) {
   const ticks = Object.fromEntries(reviewUi.review.checklist.map((item) => [item.id, item.id === id ? ticked : item.ticked]));
   try {
-    reviewUi.review = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/review/ticks`, { method: 'PUT', body: JSON.stringify({ ticks }) });
+    reviewUi.review = await api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/review/ticks`, { method: 'PUT', body: JSON.stringify({ ticks, overrideReason: reviewUi.overrideReason }) });
   } catch (error) {
     showToast(error.message, 'critical');
   }
@@ -273,13 +266,9 @@ function handleReviewAction(action, button) {
     return true;
   }
   if (action === 'review-reissue') {
-    if (!reviewUi.actor.trim()) {
-      showToast('Enter your name first.', 'warning');
-      return true;
-    }
     reviewUi.busy = true;
     render();
-    api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/reissue`, { method: 'POST', body: JSON.stringify({ actor: reviewUi.actor.trim(), reason: reviewUi.reissueReason }) })
+    api(`/api/reports/${encodeURIComponent(reviewUi.report.id)}/reissue`, { method: 'POST', body: JSON.stringify({ reason: reviewUi.reissueReason }) })
       .then((copy) => {
         showToast(`Re-issued as R${copy.revision}. Opening the new draft.`, 'healthy');
         return openReview(copy.id);
@@ -309,13 +298,6 @@ function handleReviewInput(target) {
   if (target.dataset && target.dataset.reviewField) {
     const field = target.dataset.reviewField;
     reviewUi[field] = target.value;
-    if (field === 'actor' || field === 'designation') {
-      try {
-        window.localStorage.setItem(field === 'actor' ? 'electroreports.reviewer' : 'electroreports.designation', target.value);
-      } catch (_error) {
-        // remembering the name is a convenience only
-      }
-    }
     return true;
   }
   if (target.dataset && target.dataset.reviewAck) {

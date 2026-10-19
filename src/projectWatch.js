@@ -79,7 +79,7 @@ function answerError(message, code) {
 
 // Records the two answers: creates the project's workspace if it has none, stores the answers and the
 // default mode on it, and closes the other owners' open notices for the project.
-function answerNotice(store, id, { phonesAllowed, mobileData, by = '' }) {
+function answerNotice(store, id, { phonesAllowed, mobileData, by = '', userId = '' }) {
   const notice = store.getNotice(id);
   if (!notice) throw answerError('Notice not found.', 'NOT_FOUND');
   if (notice.status !== 'open') throw answerError('This notice has already been answered or dismissed.', 'NOT_OPEN');
@@ -97,13 +97,13 @@ function answerNotice(store, id, { phonesAllowed, mobileData, by = '' }) {
   });
   const mode = dataCollectionModeFor({ phonesAllowed, mobileData });
   const answeredAt = new Date().toISOString();
-  store.updateProject(project.id, { siteAccess: { phonesAllowed, mobileData, answeredBy: by || notice.recipientName, answeredAt }, dataCollectionMode: mode });
-  store.resolveNotice(id, { status: 'answered', answers: { phonesAllowed, mobileData }, by: by || notice.recipientName });
-  store.closeOpenNotices(info.zohoProjectId, { exceptId: id, by: by || notice.recipientName });
+  store.updateProject(project.id, { siteAccess: { phonesAllowed, mobileData, answeredBy: by || notice.recipientName, answeredById: userId, answeredAt }, dataCollectionMode: mode });
+  store.resolveNotice(id, { status: 'answered', answers: { phonesAllowed, mobileData }, by: userId || by || notice.recipientName });
+  store.closeOpenNotices(info.zohoProjectId, { exceptId: id, by: userId || by || notice.recipientName });
   return { projectId: project.id, dataCollectionMode: mode };
 }
 
-function dismissNotice(store, id, by = '') {
+function dismissNotice(store, id, by = '') { // `by`: the user id
   const notice = store.getNotice(id);
   if (!notice) throw answerError('Notice not found.', 'NOT_FOUND');
   if (notice.status !== 'open') throw answerError('This notice has already been answered or dismissed.', 'NOT_OPEN');

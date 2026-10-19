@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { chromium } = require('@playwright/test');
+const { devEnv, browserLogin, createCaller } = require('./lib/dev-auth');
 
 const ROOT = path.join(__dirname, '..');
 const SHOTS = path.join(ROOT, 'reference', 'screenshots');
@@ -32,7 +33,7 @@ const freePort = () => new Promise((resolve) => {
   const port = await freePort();
   const server = spawn(process.execPath, ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'reports.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ZOHO_POLL_MINUTES: '0', ANTHROPIC_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: path.join(dir, 'reports.json'), ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -42,21 +43,26 @@ const freePort = () => new Promise((resolve) => {
   const browser = await chromium.launch();
   try {
     fs.mkdirSync(SHOTS, { recursive: true });
-    const page = await (await browser.newContext({ viewport: { width: 1288, height: 900 } })).newPage();
+    const base = `http://127.0.0.1:${port}`;
+    const context = await browser.newContext({ viewport: { width: 1288, height: 900 } });
+    const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${port}/`);
+    // an admin runs the new-project check; Anup (an Onsite task owner) is the signed-in user
+    await createCaller(base)('POST', '/api/zoho/poll', undefined, 'admin@elegrow.com');
 
-    // ---- Notices ---------------------------------------------------------------------------
-    await page.waitForSelector('[data-notice-user]');
-    expect(await page.locator('[data-notice-user]').count() === 1, 'Home asks who you are before showing notices');
-    await page.request.post(`http://127.0.0.1:${port}/api/zoho/poll`);
-    await page.selectOption('[data-notice-user]', { label: 'Anup Parekh' });
+    // ---- Signed out, then notices for the signed-in user ----------------------------------------
+    await page.goto(`${base}/`);
+    await page.waitForSelector('.signin-card');
+    expect(await page.locator('[data-dev-user]').count() === 1 && (await page.locator('.project-card').count()) === 0, 'signed out, only the sign-in screen is shown');
+    await browserLogin(context, base, 'anup@elegrow.com');
+    await page.goto(`${base}/`);
     await page.waitForSelector('.notice-card');
+    expect(await page.locator('[data-notice-user]').count() === 0, 'there is no "I am ..." picker: the notice is for the signed-in user');
+    expect((await page.innerText('.user-bar')).includes('Anup Parekh'), 'the header shows who is signed in');
     let notice = await page.innerText('.notice-card');
     expect(notice.includes('056-D03_TS-26-CLL') && /Phones\/tablets allowed on site\?/.test(notice) && /Mobile data available\?/.test(notice), 'the notice names the project and asks the two questions');
     expect(/You own an ESHA Onsite task/.test(notice), 'the notice says why it is for this person');
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('electroreports.iam')).name) === 'Anup Parekh', 'who you are is remembered');
     await page.screenshot({ path: path.join(SHOTS, 'Home_notice_1288.png'), fullPage: true });
     await page.click('[data-action="notice-answer"]');
     await page.waitForTimeout(300);

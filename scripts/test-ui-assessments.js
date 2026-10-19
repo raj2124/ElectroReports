@@ -17,6 +17,7 @@ const read = (file) => fs.readFileSync(path.join(__dirname, '..', 'public', file
 const appSource = read('app.js');
 const sheetsSource = read('sheets.js');
 const printSource = read('print-sheets.js');
+const authSource = read('auth.js');
 const reviewSource = read('review.js');
 const workspaceSource = read('workspace.js');
 const noticesSource = read('notices.js');
@@ -74,6 +75,7 @@ async function createBrowser() {
     calls.push({ url, method: options.method || 'GET', body: options.body });
     const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
     if (url === '/api/sheets/print') return { ok: true, status: 200, headers: { get: (name) => (name === 'X-Sheet-Ids' ? 'ER-AAAA-AAAAA,ER-BBBB-BBBBB' : '') }, blob: async () => ({}) };
+    if (url === '/api/auth/me') return reply({ mode: 'dev', ready: true, user: { id: 'U-1', email: 'admin@elegrow.com', name: 'Test Admin', designation: '', roles: ['admin'], active: true }, errors: {} });
     if (url === '/api/sheets') return reply(JSON.parse(JSON.stringify(publicDefinitions())));
     if (url === '/api/acceptance/profiles') return reply(listProfiles());
     if (url === '/api/assessments') {
@@ -88,12 +90,13 @@ async function createBrowser() {
     return reply({});
   };
   const context = vm.createContext({
-    window, document, localStorage: window.localStorage, fetch: fetchStub, console, JSON, Math, Date, Intl, Promise, WeakMap, Map, Set, Array, Object, String, Number, RegExp, Error, Boolean,
+    window, document, localStorage: window.localStorage, fetch: fetchStub, console, JSON, Math, Date, Intl, Promise, WeakMap, Map, Set, Array, Object, String, Number, RegExp, Error, Boolean, URLSearchParams,
     setTimeout: window.setTimeout, clearTimeout: () => {}, requestAnimationFrame: () => 0, FormData: class {}, FileReader: class {},
     Image: class {}, URL: { createObjectURL: () => '', revokeObjectURL: () => {} }, structuredClone: (value) => JSON.parse(JSON.stringify(value)), navigator: {}
   });
   vm.runInContext(sheetsSource, context, { filename: 'sheets.js' });
   vm.runInContext(printSource, context, { filename: 'print-sheets.js' });
+  vm.runInContext(authSource, context, { filename: 'auth.js' });
   vm.runInContext(reviewSource, context, { filename: 'review.js' });
   vm.runInContext(workspaceSource, context, { filename: 'workspace.js' });
   vm.runInContext(noticesSource, context, { filename: 'notices.js' });

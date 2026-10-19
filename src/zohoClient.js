@@ -153,6 +153,13 @@ mockProjectUsers['27127000009850033'] = [
 ];
 mockPortalUsers.push(...mockProjectUsers['27127000009850033']);
 
+mockPortalUsers.push(
+  { id: 'u901', displayName: 'Former Colleague', email: 'former@elegrow.com', role: 'Engineer', active: false },
+  { id: 'u902', displayName: 'Engineer One', email: 'engineer.one@elegrow.com', role: 'Engineer' },
+  { id: 'u903', displayName: 'Reviewer One', email: 'reviewer.one@elegrow.com', role: 'Engineer' },
+  { id: 'u904', displayName: 'Shivam Agrawal', email: 'shivam@elegrow.com', role: 'Admin' }
+);
+
 let currentAccessToken = config.zoho.accessToken || '';
 let refreshInFlight = null;
 const GENERIC_CLIENT_LABELS = new Set(['', '-', 'allexternal', 'external', 'client', 'all external']);
@@ -1017,6 +1024,8 @@ function normalizeUser(user) {
     role: asText(role),
     companyName: asText(companyName),
     userType: asText(userType),
+    // Zoho marks the active members of the portal with active: true (clients carry no flag)
+    active: user.active === true || String(user.active).toLowerCase() === 'true',
     isClient
   };
 }
@@ -1481,6 +1490,27 @@ async function getPortalUsers() {
   return fetchPortalUsersFromZoho();
 }
 
+// Who may sign in: a user of the Zoho Projects portal. Returns { found, active, name, id }. The list
+// is cached for ten minutes, so sign-ins and the hourly re-check do not each call Zoho.
+let portalUserCache = { at: 0, users: [] };
+async function lookupPortalUser(email, { maxAgeMs = 10 * 60 * 1000 } = {}) {
+  const wanted = String(email || '').trim().toLowerCase();
+  if (!wanted) {
+    return { found: false, active: false, name: '', id: '' };
+  }
+  let users;
+  if (config.zoho.useMock) {
+    users = mockPortalUsers.map((user) => ({ ...user, active: user.active !== false }));
+  } else {
+    if (Date.now() - portalUserCache.at > maxAgeMs) {
+      portalUserCache = { at: Date.now(), users: await fetchPortalUsersFromZoho() };
+    }
+    users = portalUserCache.users;
+  }
+  const user = users.find((entry) => String(entry.email || '').trim().toLowerCase() === wanted);
+  return user ? { found: true, active: user.active === true, name: asText(user.displayName), id: asText(user.id) } : { found: false, active: false, name: '', id: '' };
+}
+
 async function getProjectClientUsers(projectId) {
   const id = String(projectId || '').trim();
   if (!id) {
@@ -1567,6 +1597,7 @@ function filterProjectsForPicker(projects) {
 }
 
 module.exports = {
+  lookupPortalUser,
   normalizeTask,
   getProject,
   getProjects,

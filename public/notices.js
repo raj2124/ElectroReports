@@ -1,57 +1,18 @@
 // In-app notices on Home (6D): "a new D03 project needs two answers". Notices are addressed to the
-// owners of the project's ESHA Onsite tasks (or the project owner). There are no logins yet, so who
-// the person is comes from an "I am ..." choice from the Zoho users, remembered in this browser.
-// currentUser() / setCurrentUser() are the ONLY identity code on the client: per-engineer logins
-// replace them (and noticeRecipientFrom in src/server.js on the server).
+// owners of the project's ESHA Onsite tasks (or the project owner), and since 6E they go to the
+// signed-in user: the server matches them to the session, nothing is chosen here.
 
-const noticeUi = { notices: [], users: [], answers: {}, busy: false };
-const IAM_KEY = 'electroreports.iam';
-
-function currentUser() {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(IAM_KEY) || 'null');
-    return stored && (stored.email || stored.name) ? stored : null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-function setCurrentUser(user) {
-  try {
-    if (user) {
-      window.localStorage.setItem(IAM_KEY, JSON.stringify(user));
-    } else {
-      window.localStorage.removeItem(IAM_KEY);
-    }
-  } catch (_error) {
-    // remembering who you are is a convenience only
-  }
-}
-
-function noticeQuery() {
-  const me = currentUser();
-  return me ? `email=${encodeURIComponent(me.email || '')}&name=${encodeURIComponent(me.name || '')}` : '';
-}
+const noticeUi = { notices: [], answers: {}, busy: false };
 
 async function loadNotices() {
-  const query = noticeQuery();
   try {
-    const list = query ? await api(`/api/notices?${query}`) : [];
+    const list = authUi.user ? await api('/api/notices') : [];
     noticeUi.notices = Array.isArray(list) ? list : [];
   } catch (_error) {
     noticeUi.notices = [];
   }
   if (state.view === 'dashboard') {
     render();
-  }
-}
-
-async function loadNoticeUsers() {
-  try {
-    const users = await api('/api/zoho/users');
-    noticeUi.users = Array.isArray(users) ? users : [];
-  } catch (_error) {
-    noticeUi.users = [];
   }
 }
 
@@ -79,27 +40,14 @@ function noticeCard(notice) {
 }
 
 function renderHomeNotices() {
-  const me = currentUser();
-  if (!me) {
-    return `
-      <section class="surface zoho-overview" aria-label="Who are you">
-        <div class="dashboard-section-copy">
-          <p class="section-kicker">Notices</p>
-          <h3>Who are you?</h3>
-          <p class="muted">Pick your name to see the notices addressed to you, for example a new project that needs two answers about the site.</p>
-        </div>
-        <select class="text-input" data-notice-user>
-          <option value="">I am...</option>
-          ${noticeUi.users.map((user) => `<option value="${escapeHtml(user.email || user.displayName)}" data-name="${escapeHtml(user.displayName || '')}">${escapeHtml(user.displayName || user.email)}</option>`).join('')}
-        </select>
-      </section>`;
+  if (!noticeUi.notices.length) {
+    return '';
   }
   return `
     <section class="surface zoho-overview" aria-label="Notices">
       <div class="dashboard-section-copy">
         <p class="section-kicker">Notices</p>
-        <h3>${noticeUi.notices.length ? `${noticeUi.notices.length} notice${noticeUi.notices.length === 1 ? '' : 's'} for you` : 'No notices'}</h3>
-        <p class="muted">You are ${escapeHtml(me.name || me.email)}. <button class="button button-ghost" data-action="notice-change-user">Not you?</button></p>
+        <h3>${noticeUi.notices.length} notice${noticeUi.notices.length === 1 ? '' : 's'} for you</h3>
       </div>
       ${noticeUi.notices.map(noticeCard).join('')}
     </section>`;
@@ -107,14 +55,8 @@ function renderHomeNotices() {
 
 // Returns true when the click was one of ours.
 function handleNoticeAction(action, button) {
-  if (action === 'notice-change-user') {
-    setCurrentUser(null);
-    noticeUi.notices = [];
-    render();
-    return true;
-  }
   if (action === 'notice-dismiss') {
-    api(`/api/notices/${encodeURIComponent(button.dataset.id)}/dismiss?${noticeQuery()}`, { method: 'POST', body: '{}' })
+    api(`/api/notices/${encodeURIComponent(button.dataset.id)}/dismiss`, { method: 'POST', body: '{}' })
       .then(() => loadNotices())
       .catch((error) => showToast(error.message, 'critical'));
     return true;
@@ -128,7 +70,7 @@ function handleNoticeAction(action, button) {
     }
     noticeUi.busy = true;
     render();
-    api(`/api/notices/${encodeURIComponent(id)}/answer?${noticeQuery()}`, { method: 'POST', body: JSON.stringify(answers) })
+    api(`/api/notices/${encodeURIComponent(id)}/answer`, { method: 'POST', body: JSON.stringify(answers) })
       .then(async (result) => {
         showToast(`Saved. Default data collection: ${result.dataCollectionMode}.`, 'healthy');
         await loadNotices();
@@ -147,14 +89,6 @@ function handleNoticeAction(action, button) {
 
 // Returns true when handled.
 function handleNoticeChange(target) {
-  if (target.dataset && target.dataset.noticeUser !== undefined) {
-    if (target.value) {
-      const option = target.selectedOptions[0];
-      setCurrentUser({ email: target.value.includes('@') ? target.value : '', name: option.dataset.name || target.value });
-      loadNotices().then(() => render());
-    }
-    return true;
-  }
   if (target.dataset && target.dataset.noticeAnswer) {
     const [id, key] = target.dataset.noticeAnswer.split(':');
     noticeUi.answers[id] = { ...(noticeUi.answers[id] || {}), [key]: target.value === 'yes' };

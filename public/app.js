@@ -1040,6 +1040,12 @@ async function api(path, options = {}) {
     ...options
   });
 
+  if (response.status === 401) {
+    // the session ended (idle timeout, signed out elsewhere): back to the sign-in screen
+    authUi.user = null;
+    state.view = 'signin';
+    render();
+  }
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: 'Request failed.' }));
     const failure = new Error(data.message || 'Request failed.');
@@ -1536,8 +1542,7 @@ function brandHeader() {
           <img class="brand-logo" src="/assets/elegrow-logo-full.png" alt="Elegrow Technology" />
         </div>
         <div class="brand-support">
-          <span>Need help?</span>
-          <strong>info@elegrow.com</strong>
+          ${authUi.user ? renderUserBar() : '<span>Need help?</span><strong>info@elegrow.com</strong>'}
         </div>
       </div>
     </header>
@@ -3132,6 +3137,9 @@ function render() {
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
       ${state.view === 'review' ? reviewView() : ''}
       ${state.view === 'workspace' ? workspaceView() : ''}
+      ${state.view === 'signin' ? signInView() : ''}
+      ${state.view === 'profile' && authUi.user ? profileView() : ''}
+      ${state.view === 'admin' && authUi.user ? adminView() : ''}
     </main>
     ${renderObservationDrawer()}
     ${renderPrintDialog()}
@@ -3474,6 +3482,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (handleAuthAction(action, button)) {
+    return;
+  }
+
   if (handleNoticeAction(action, button)) {
     return;
   }
@@ -3731,6 +3743,9 @@ document.addEventListener('change', async (event) => {
   if (handleReviewChange(target)) {
     return;
   }
+  if (handleAuthChange(target)) {
+    return;
+  }
   if (handlePlanChange(target)) {
     return;
   }
@@ -3823,6 +3838,12 @@ async function loadSheetDefinitions() {
 }
 
 async function init() {
+  await loadAuth();
+  if (!authUi.user) {
+    state.view = 'signin';
+    render();
+    return;
+  }
   await loadSheetDefinitions();
   if (!restoreDraftSnapshot()) {
     state.draft = createDraft();
@@ -3838,7 +3859,6 @@ async function init() {
   await loadZohoProjects();
   await loadReports();
   await loadProjects();
-  await loadNoticeUsers();
   await loadNotices();
 }
 

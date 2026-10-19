@@ -18,6 +18,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
+const { devEnv, browserLogin } = require('./lib/dev-auth');
 const { chromium } = require('@playwright/test');
 
 const ROOT = path.join(__dirname, '..');
@@ -54,7 +55,7 @@ async function startServer() {
   const port = await freePort();
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_HOST: '127.0.0.1', ZOHO_USE_MOCK: 'true' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_HOST: '127.0.0.1', ZOHO_USE_MOCK: 'true' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   await new Promise((resolve, reject) => {
@@ -550,6 +551,13 @@ async function shoot(page, width, sheetId, code) {
   fs.mkdirSync(SHOTS, { recursive: true });
   const { child, url } = await startServer();
   const browser = await chromium.launch();
+  // every browser context is signed in (the app needs a session): wrap newContext
+  const plainNewContext = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const context = await plainNewContext(options);
+    await browserLogin(context, url, 'admin@elegrow.com');
+    return context;
+  };
   const pageErrors = [];
   try {
     for (const width of WIDTHS) {

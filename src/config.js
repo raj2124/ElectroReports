@@ -65,7 +65,30 @@ const instrumentCatalogue = [
   { match: 'kyoritsu4118a', name: 'Kyoritsu 4118A Loop / PSC Tester', range: '0 – 20 / 200 / 2000 Ω (loop); 0 – 20 kA (PSC)', accuracy: '±(2.5 % of reading + 3 digits)' }
 ];
 
+// Sign-in (Session 6E). mode: 'zoho' (Sign in with Zoho, OpenID Connect) or 'dev' (a user picker for
+// development and tests, never the default). With neither configured the API stays closed.
+const authMode = String(process.env.AUTH_MODE || '').trim().toLowerCase();
+const auth = {
+  mode: authMode,
+  zoho: {
+    clientId: String(process.env.AUTH_ZOHO_CLIENT_ID || '').trim(),
+    clientSecret: String(process.env.AUTH_ZOHO_CLIENT_SECRET || '').trim(),
+    redirectUri: String(process.env.AUTH_ZOHO_REDIRECT_URI || `http://127.0.0.1:${port}/auth/callback`).trim(),
+    accountsUrl: String(process.env.AUTH_ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.in').trim().replace(/\/+$/, ''),
+    // OpenID Connect first; set AUTH_ZOHO_SCOPE=AaaServer.profile.READ if the e-mail is not in the id_token
+    scope: String(process.env.AUTH_ZOHO_SCOPE || 'openid email profile').trim()
+  },
+  allowedDomain: String(process.env.AUTH_ALLOWED_DOMAIN || 'elegrow.com').trim().toLowerCase(),
+  idleHours: Number.parseFloat(process.env.AUTH_SESSION_IDLE_HOURS || '12'),
+  recheckMinutes: Number.parseFloat(process.env.AUTH_RECHECK_MINUTES || '60'),
+  sessionSecret: String(process.env.AUTH_SESSION_SECRET || '').trim(),
+  seedAdmins: String(process.env.AUTH_SEED_ADMINS !== undefined ? process.env.AUTH_SEED_ADMINS : 'shivam@elegrow.com').split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean),
+  // dev mode only: "email:role+role:Name:Designation,..."
+  devUsers: String(process.env.AUTH_DEV_USERS || '').split(',').map((entry) => entry.trim()).filter(Boolean)
+};
+
 module.exports = {
+  auth,
   instrumentCatalogue,
   app: {
     rootDir,

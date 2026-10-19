@@ -180,8 +180,8 @@ function findDay(store, projectId, workDate) {
 }
 
 // Stitch every daily into a new DRAFT final; an earlier final is kept untouched.
-function assembleFor(store, projectId, { actor = '' } = {}) {
-  const { report, provenance } = store.assembleFinal(projectId, { actor });
+function assembleFor(store, projectId, { actor = '', userId = '' } = {}) {
+  const { report, provenance } = store.assembleFinal(projectId, { actor, userId });
   const manifest = report.collectionManifest || {};
   return {
     report,

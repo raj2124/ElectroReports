@@ -416,7 +416,7 @@ function handleWorkspaceAction(action, button) {
   if (action === 'workspace-assemble-confirm') {
     workspaceUi.busy = true;
     render();
-    api(`/api/projects/${encodeURIComponent(workspaceUi.workspace.project.id)}/final/assemble`, { method: 'POST', body: JSON.stringify({ actor: (reviewUi && reviewUi.actor) || '' }) })
+    api(`/api/projects/${encodeURIComponent(workspaceUi.workspace.project.id)}/final/assemble`, { method: 'POST', body: '{}' })
       .then(async (result) => {
         workspaceUi.confirmAssemble = false;
         showToast(result.hasUnapproved ? `Final report assembled. Not yet approved: ${result.flaggedDates.join(', ')}.` : 'Final report assembled.', result.hasUnapproved ? 'warning' : 'healthy');

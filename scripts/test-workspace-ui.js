@@ -13,6 +13,7 @@ const { createReportStore } = require('../src/reportStore');
 const { normalizeReportInput } = require('../src/reportModel');
 const { buildPayload } = require('./fixtures/golden-esha');
 const { buildReviewState } = require('../src/review');
+const { devEnv, browserLogin } = require('./lib/dev-auth');
 
 const ROOT = path.join(__dirname, '..');
 const SHOTS = path.join(ROOT, 'reference', 'screenshots');
@@ -60,7 +61,7 @@ const freePort = () => new Promise((resolve) => {
   const port = await freePort();
   const server = spawn(process.execPath, ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ZOHO_USE_MOCK: 'true', ANTHROPIC_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -73,6 +74,7 @@ const freePort = () => new Promise((resolve) => {
     fs.mkdirSync(SHOTS, { recursive: true });
     const context = await browser.newContext({ viewport: { width: 1288, height: 900 } });
     const page = await context.newPage();
+    await browserLogin(context, `http://127.0.0.1:${port}`, 'admin@elegrow.com'); // admin: may edit the seeded (creator-less) days
     await page.goto(`http://127.0.0.1:${port}/`);
 
     // Home: active projects with a workspace link; Zoho projects open a workspace too.

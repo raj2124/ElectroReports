@@ -10,6 +10,7 @@ const { spawn } = require('child_process');
 const { createReportStore } = require('../src/reportStore');
 const { normalizeReportInput } = require('../src/reportModel');
 const { buildPayload } = require('./fixtures/golden-esha');
+const { devEnv, createCaller } = require('./lib/dev-auth');
 const { openPdf, pageCount, pageTextLines } = require('../src/pdfRaster');
 
 let passed = 0;
@@ -42,7 +43,7 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
 
   const port = await freePort();
   const server = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
-    env: { ...process.env, ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+    env: { ...process.env, ...devEnv(), ELECTROREPORTS_PORT: String(port), ELECTROREPORTS_DATA_FILE: dataFile, ELECTROREPORTS_GENERATED_DIR: path.join(dir, 'pdfs'), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'inherit']
   });
   await new Promise((resolve, reject) => {
@@ -52,11 +53,7 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
   });
 
   const base_url = `http://127.0.0.1:${port}`;
-  const call = async (method, url, body) => {
-    const response = await fetch(base_url + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    const type = response.headers.get('content-type') || '';
-    return { status: response.status, body: type.includes('json') ? await response.json() : Buffer.from(await response.arrayBuffer()), type };
-  };
+  const call = createCaller(base_url); // signs in as the admin unless a user is named
   const pdfText = async (url) => {
     const bytes = await fs.promises.readFile(path.join(dir, 'pdfs', path.basename(url)));
     assert.strictEqual(bytes.subarray(0, 5).toString(), '%PDF-');
@@ -74,7 +71,7 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
       const text = pages.join(' ');
       assert.ok(text.includes('Survey Overview') && !text.includes('Document Control & Distribution'));
       assert.strictEqual((await call('GET', `/api/reports/${legacy.id}/review`)).status, 400);
-      assert.strictEqual((await call('POST', `/api/reports/${legacy.id}/review/submit`, { actor: 'x' })).status, 400);
+      assert.strictEqual((await call('POST', `/api/reports/${legacy.id}/review/submit`, {})).status, 400);
     });
 
     await check('daily report exports with the new renderer: one page, document number DPR_01', async () => {
@@ -94,29 +91,31 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
       assert.ok(body.warnings.some((warning) => /Planned quantity not set/.test(warning)));
     });
 
-    await check('steps need a name; check needs ticks; approval needs the check and the acknowledgement', async () => {
-      const step = (name, body) => call('POST', `/api/reports/${final.id}/review/${name}`, body);
-      assert.strictEqual((await step('submit', {})).status, 400);
-      assert.strictEqual((await step('submit', { actor: 'H. S. Patil' })).status, 200);
-      assert.strictEqual((await step('submit', { actor: 'H. S. Patil' })).status, 409, 'cannot submit twice');
-      const early = await step('check', { actor: 'A. P.' });
+    await check('steps are recorded against the signed-in user; check needs ticks; approval needs the check and the acknowledgement', async () => {
+      // admin = H. S. Patil prepares, reviewer = A. P. checks, approver = J. C. Shah approves
+      const who = { submit: 'admin@elegrow.com', check: 'reviewer@elegrow.com', approve: 'approver@elegrow.com' };
+      const step = (name, body) => call('POST', `/api/reports/${final.id}/review/${name}`, body, who[name]);
+      assert.strictEqual((await call('POST', `/api/reports/${final.id}/review/submit`, {}, 'engineer@elegrow.com')).status, 403, 'an engineer cannot submit a report that is not theirs');
+      assert.strictEqual((await step('submit', {})).status, 200);
+      assert.strictEqual((await step('submit', {})).status, 409, 'cannot submit twice');
+      const early = await step('check', {});
       assert.deepStrictEqual([early.status, early.body.code], [409, 'CHECKLIST_INCOMPLETE']);
-      const notChecked = await step('approve', { actor: 'J. C. Shah' });
+      const notChecked = await step('approve', {});
       assert.deepStrictEqual([notChecked.status, notChecked.body.code], [409, 'NOT_CHECKED']);
       const ticks = Object.fromEntries((await call('GET', `/api/reports/${final.id}/review`)).body.checklist.map((item) => [item.id, true]));
-      assert.strictEqual((await call('PUT', `/api/reports/${final.id}/review/ticks`, { ticks })).status, 200);
-      const checked = await step('check', { actor: 'A. P.', note: 'ok' });
+      assert.strictEqual((await call('PUT', `/api/reports/${final.id}/review/ticks`, { ticks }, 'reviewer@elegrow.com')).status, 200);
+      const checked = await step('check', { note: 'ok' });
       assert.strictEqual(checked.status, 200);
       assert.strictEqual(checked.body.checked.by, 'A. P.');
-      const noAck = await step('approve', { actor: 'J. C. Shah' });
+      const noAck = await step('approve', {});
       assert.deepStrictEqual([noAck.status, noAck.body.code], [409, 'ACKNOWLEDGEMENT_REQUIRED']);
       assert.ok(/Sanity check not run/.test(noAck.body.message) && /No photo reference for P1 pits/.test(noAck.body.message));
-      const approved = await step('approve', { actor: 'J. C. Shah', designation: 'Head - Earthing', acknowledgements: { sanityCheck: 'Provider unavailable; narrative read by the reviewer.', p1Photos: 'Photos to follow in Annexure B.' } });
+      const approved = await step('approve', { acknowledgements: { sanityCheck: 'Provider unavailable; narrative read by the reviewer.', p1Photos: 'Photos to follow in Annexure B.' } });
       assert.strictEqual(approved.status, 200);
       assert.strictEqual(approved.body.status, 'approved');
       assert.deepStrictEqual(approved.body.initials, { prepared: 'HSP', checked: 'AP', approved: 'JCS' });
       assert.deepStrictEqual(approved.body.transitions.map((row) => row.action), ['submit', 'check', 'approve']);
-      assert.strictEqual(approved.body.transitions[2].designation, 'Head - Earthing');
+      assert.strictEqual(approved.body.transitions[2].designation, 'Director', 'the name and designation come from the profile');
     });
 
     await check('final export: deterministic narrative note without Claude, cover initials, approved (no draft marker); reused on re-export', async () => {
@@ -134,11 +133,11 @@ const dataUrl = (mime, buffer) => `data:${mime};base64,${buffer.toString('base64
     });
 
     await check('re-issue over HTTP creates R1 as a draft', async () => {
-      assert.strictEqual((await call('POST', `/api/reports/${final.id}/reissue`, {})).status, 400);
-      const reissued = await call('POST', `/api/reports/${final.id}/reissue`, { actor: 'H. S. Patil', reason: 'Client comments' });
+      assert.strictEqual((await call('POST', `/api/reports/${final.id}/reissue`, {}, 'engineer@elegrow.com')).status, 403, 'only an approver re-issues');
+      const reissued = await call('POST', `/api/reports/${final.id}/reissue`, { reason: 'Client comments' }, 'approver@elegrow.com');
       assert.strictEqual(reissued.status, 201);
       assert.deepStrictEqual([reissued.body.revision, reissued.body.reviewStatus, reissued.body.revisionOf], [1, 'draft', final.id]);
-      assert.strictEqual((await call('POST', `/api/reports/${final.id}/reissue`, { actor: 'x' })).body.code, 'ALREADY_REISSUED');
+      assert.strictEqual((await call('POST', `/api/reports/${final.id}/reissue`, {}, 'approver@elegrow.com')).body.code, 'ALREADY_REISSUED');
       const exported = await call('POST', `/api/reports/${reissued.body.id}/pdf`);
       const text = (await pdfText(exported.body.pdfUrl)).join(' ');
       assert.ok(text.includes('R1') && text.includes('Client comments') && text.includes('DRAFT – NOT APPROVED'));
