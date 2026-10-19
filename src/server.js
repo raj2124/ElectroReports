@@ -18,6 +18,11 @@ const {
   generateMeasurementObservations,
   sanityCheckNarrative
 } = require('./aiService');
+const { getReportKind } = require('./reportCollectionModel');
+const { buildReviewState } = require('./review');
+const { exportReportPdf } = require('./finalReport/service');
+const { ConsistencyError } = require('./finalReport/data');
+const { LogoError, parseLogoDataUrl, clientKeys } = require('./finalReport/logos');
 const { getProjects, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const {
   previewSoilSheetWithGemini,
@@ -361,14 +366,157 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
   }
 
   try {
-    const pdf = await generateElectroReportPdf(report, {
-      generatedDir,
-      publicPathPrefix: '/generated-pdfs'
-    });
+    // Daily and final reports use the new renderers; standalone reports keep the legacy layout.
+    const pdf =
+      getReportKind(report) === 'standalone'
+        ? await generateElectroReportPdf(report, { generatedDir, publicPathPrefix: '/generated-pdfs' })
+        : await exportReportPdf(store, report, { generatedDir, publicPathPrefix: '/generated-pdfs' });
     return res.json(pdf);
   } catch (error) {
+    if (error instanceof ConsistencyError) {
+      return res.status(409).json({ message: error.message, code: error.code, problems: error.problems });
+    }
     console.error('Failed to generate ElectroReports PDF', error);
     return res.status(500).json({ message: 'Failed to generate PDF.' });
+  }
+});
+
+// ---- Review and approval (daily and final reports) -------------------------------------------
+function reviewError(res, error) {
+  const status = error instanceof ConsistencyError ? 409 : error.code ? 409 : 400;
+  return res.status(status).json({
+    message: error instanceof Error ? error.message : 'Review step failed.',
+    code: error.code,
+    items: error.items,
+    problems: error.problems
+  });
+}
+
+function requireWorkflowReport(req, res) {
+  const report = loadReport(req.params.id);
+  if (!report) {
+    res.status(404).json({ message: 'Report not found.' });
+    return null;
+  }
+  if (getReportKind(report) === 'standalone') {
+    res.status(400).json({ message: 'Standalone reports have no review workflow.' });
+    return null;
+  }
+  return report;
+}
+
+app.get('/api/reports/:id/review', (req, res) => {
+  const report = requireWorkflowReport(req, res);
+  return report ? res.json(buildReviewState(store, report)) : undefined;
+});
+
+app.put('/api/reports/:id/review/ticks', (req, res) => {
+  if (!requireWorkflowReport(req, res)) {
+    return undefined;
+  }
+  try {
+    store.setReviewTicks(req.params.id, req.body && req.body.ticks);
+    return res.json(buildReviewState(store, loadReport(req.params.id)));
+  } catch (error) {
+    return reviewError(res, error);
+  }
+});
+
+const REVIEW_ACTIONS = { submit: 'in_review', approve: 'approved', return: 'draft' };
+
+app.post('/api/reports/:id/review/:action', (req, res) => {
+  if (!requireWorkflowReport(req, res)) {
+    return undefined;
+  }
+  const { action } = req.params;
+  const body = req.body || {};
+  const actor = String(body.actor || '').trim();
+  if (!actor) {
+    return res.status(400).json({ message: 'Enter your name: it is recorded with this step and gives the initials on the cover.' });
+  }
+  try {
+    let warnings = [];
+    if (action === 'check') {
+      store.markChecked(req.params.id, { actor, note: body.note });
+    } else if (REVIEW_ACTIONS[action]) {
+      const result = store.transition(req.params.id, REVIEW_ACTIONS[action], { actor, note: body.note, acknowledgements: body.acknowledgements || {} });
+      warnings = result.warnings;
+    } else {
+      return res.status(404).json({ message: 'Unknown review step.' });
+    }
+    return res.json({ ...buildReviewState(store, loadReport(req.params.id)), stepWarnings: warnings });
+  } catch (error) {
+    return reviewError(res, error);
+  }
+});
+
+app.post('/api/reports/:id/reissue', (req, res) => {
+  if (!requireWorkflowReport(req, res)) {
+    return undefined;
+  }
+  const body = req.body || {};
+  if (!String(body.actor || '').trim()) {
+    return res.status(400).json({ message: 'Enter your name to re-issue.' });
+  }
+  try {
+    const copy = store.reissueReport(req.params.id, { actor: body.actor, reason: body.reason });
+    return res.status(201).json(presentReport(copy));
+  } catch (error) {
+    return reviewError(res, error);
+  }
+});
+
+// ---- Client logos ------------------------------------------------------------------------------
+app.get('/api/client-logo', (req, res) => {
+  const keys = clientKeys({ clientId: req.query.clientId, clientName: req.query.clientName });
+  const found = keys.map((key) => store.getClientLogo(key)).find(Boolean);
+  if (!found) {
+    return res.status(404).json({ message: 'No logo stored for this client.' });
+  }
+  res.setHeader('Content-Type', found.mime);
+  return res.send(found.data);
+});
+
+app.put('/api/client-logo', (req, res) => {
+  const body = req.body || {};
+  // Stored under the Zoho client id and the client name, so a report that only knows the name
+  // (or only the id) still finds it.
+  const keys = clientKeys({ clientId: body.clientId, clientName: body.clientName });
+  if (!keys.length) {
+    return res.status(400).json({ message: 'A client id or client name is required.' });
+  }
+  try {
+    const { mime, buffer } = parseLogoDataUrl(body.dataUrl);
+    keys.forEach((key) => store.setClientLogo({ key, clientName: body.clientName || '', mime, data: buffer }));
+    return res.json({ keys, mime, bytes: buffer.length });
+  } catch (error) {
+    return res.status(error instanceof LogoError ? 400 : 500).json({ message: error.message });
+  }
+});
+
+app.delete('/api/client-logo', (req, res) => {
+  const deleted = clientKeys({ clientId: req.query.clientId, clientName: req.query.clientName }).map((key) => store.deleteClientLogo(key)).some(Boolean);
+  return deleted ? res.status(204).send() : res.status(404).json({ message: 'No logo stored for this client.' });
+});
+
+// A single report may override the client's logo (or clear the override with dataUrl: null).
+app.put('/api/reports/:id/client-logo', (req, res) => {
+  if (!requireWorkflowReport(req, res)) {
+    return undefined;
+  }
+  try {
+    const dataUrl = req.body && req.body.dataUrl;
+    if (dataUrl) {
+      parseLogoDataUrl(dataUrl);
+    }
+    const updated = store.updateReport(req.params.id, (current) => {
+      const next = { ...current };
+      next.clientLogoOverride = dataUrl || '';
+      return next;
+    });
+    return res.json({ hasOverride: Boolean(updated.clientLogoOverride) });
+  } catch (error) {
+    return res.status(error instanceof LogoError ? 400 : 500).json({ message: error.message });
   }
 });
 

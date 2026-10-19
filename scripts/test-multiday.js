@@ -65,16 +65,21 @@ const d1 = mkDaily('2026-07-10', [
 const d2 = mkDaily('2026-07-11', [{ rowId: 'b1', tag: 'e1', resistanceWithGrid: '3.0' }]);
 const d3 = mkDaily('2026-07-12', [{ rowId: 'c1', tag: 'E3', resistanceWithGrid: '1.0' }]);
 
-check('workflow: draft -> in_review -> approved, logged; illegal jumps rejected', () => {
+check('workflow: draft -> in_review -> checked -> approved, logged; illegal jumps rejected', () => {
   assert.strictEqual(d1.reviewStatus, 'draft');
   assert.throws(() => store.transitionReport(d1.id, 'approved'), /Invalid transition/);
   store.transitionReport(d1.id, 'in_review', { actor: 'eng', note: 'ready' });
   store.transitionReport(d1.id, 'draft', { actor: 'rev', note: 'redo' });
-  store.transitionReport(d1.id, 'in_review');
+  store.transitionReport(d1.id, 'in_review', { actor: 'eng' });
+  assert.throws(() => store.transitionReport(d1.id, 'approved', { actor: 'rev' }), (error) => error.code === 'NOT_CHECKED');
+  assert.throws(() => store.markChecked(d1.id, { actor: 'chk' }), (error) => error.code === 'CHECKLIST_INCOMPLETE');
+  store.setReviewTicks(d1.id, { counts: true });
+  store.markChecked(d1.id, { actor: 'chk', note: 'checked' });
+  assert.throws(() => store.markChecked(d1.id, { actor: 'chk' }), (error) => error.code === 'ALREADY_CHECKED');
   const a = store.transitionReport(d1.id, 'approved', { actor: 'rev' });
   assert.strictEqual(a.reviewStatus, 'approved');
-  assert.deepStrictEqual(store.listTransitions(d1.id).map((t) => `${t.fromStatus}>${t.toStatus}`),
-    ['draft>in_review', 'in_review>draft', 'draft>in_review', 'in_review>approved']);
+  assert.deepStrictEqual(store.listTransitions(d1.id).map((t) => `${t.action}:${t.fromStatus}>${t.toStatus}`),
+    ['submit:draft>in_review', 'return:in_review>draft', 'submit:draft>in_review', 'check:in_review>in_review', 'approve:in_review>approved']);
   assert.throws(() => store.transitionReport(d1.id, 'draft'), /Invalid transition/);
 });
 

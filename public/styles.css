@@ -4553,3 +4553,17 @@ textarea {
     padding: 18px 14px;
   }
 }
+
+/* Review & approval screen (6C) */
+.review-block { margin-top: 16px; }
+.review-list { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 10px; }
+.review-item { border: 1px solid var(--line, #d7deea); border-radius: 12px; padding: 10px 12px; }
+.review-tick { display: flex; gap: 10px; align-items: flex-start; font-weight: 600; }
+.review-tick input { margin-top: 3px; width: 18px; height: 18px; }
+.review-item-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 0 28px; }
+.review-alert { border: 1px solid #b42318; background: #fef3f2; color: #7a271a; border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+.review-warnings { border: 1px solid #b8860b; background: #fffaeb; color: #6b4e08; border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+.review-alert ul, .review-warnings ul { margin: 6px 0 0 18px; padding: 0; }
+.review-message { margin-top: 10px; font-weight: 600; }
+.review-reissue { margin-top: 16px; border-top: 1px solid var(--line, #d7deea); padding-top: 12px; }
+.review-shell textarea.text-input { width: 100%; resize: vertical; }

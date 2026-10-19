@@ -1647,6 +1647,7 @@ function dashboardView() {
                       </div>
                       <div class="card-actions">
                         <button class="button button-secondary" data-action="open-report" data-id="${report.id}">View Details</button>
+                        ${isReviewable(report) ? `<button class="button button-primary" data-action="open-review" data-id="${report.id}">Review</button>` : ''}
                         <button class="button button-ghost" data-action="delete-report" data-id="${report.id}">Delete</button>
                       </div>
                     </article>
@@ -3005,9 +3006,9 @@ function detailView() {
         <div class="button-row detail-hero-actions">
           <button class="button button-secondary" data-action="go-dashboard">Back to Dashboard</button>
           <button class="button button-primary" data-action="new-report">New Report</button>
-          <button class="button button-secondary" data-action="generate-ai-summary" data-id="${report.id}" ${!state.ai.configured || state.ai.generating ? 'disabled' : ''}>${
+          ${isReviewable(report) ? `<button class="button button-primary" data-action="open-review" data-id="${report.id}">Review &amp; approval</button>` : `<button class="button button-secondary" data-action="generate-ai-summary" data-id="${report.id}" ${!state.ai.configured || state.ai.generating ? 'disabled' : ''}>${
             state.ai.generating ? 'Generating AI Summary...' : report.aiNarrative ? 'Refresh AI Summary' : 'Generate AI Summary'
-          }</button>
+          }</button>`}
           <button class="button button-success" data-action="export-pdf" data-id="${report.id}" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Generating PDF...' : 'Export PDF'}</button>
           ${renderExportNote(report)}
         </div>
@@ -3116,6 +3117,7 @@ function render() {
       ${state.view === 'dashboard' ? dashboardView() : ''}
       ${state.view === 'builder' ? builderView() : ''}
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
+      ${state.view === 'review' ? reviewView() : ''}
     </main>
     ${renderObservationDrawer()}
     ${renderPrintDialog()}
@@ -3452,6 +3454,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (handleReviewAction(action, button)) {
+    return;
+  }
+
   if (handleSheetAction(action, button)) {
     render();
     return;
@@ -3638,6 +3644,10 @@ document.addEventListener('input', (event) => {
     return;
   }
 
+  if (handleReviewInput(target)) {
+    return;
+  }
+
   // Ticks are handled on `change` (one event per tap); typing and selects are handled here.
   if (target.type === 'checkbox' || target.type === 'radio') {
     return;
@@ -3685,6 +3695,9 @@ document.addEventListener('input', (event) => {
 
 document.addEventListener('change', async (event) => {
   const target = event.target;
+  if (handleReviewChange(target)) {
+    return;
+  }
   if (target.id === 'zohoProjectPicker') {
     applyZohoProject(target.value);
     return;

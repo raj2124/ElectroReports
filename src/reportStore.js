@@ -9,7 +9,8 @@ const {
   canTransition,
   assembleFinalReport
 } = require('./reportCollectionModel');
-const { assessReport } = require('./assessmentService');
+const { requiredAcknowledgements, currentRound, lastOf, buildReviewState } = require('./review');
+const { buildFinalReportData, assertConsistent } = require('./finalReport/data');
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -59,6 +60,7 @@ function openDatabase(dbPath) {
   `);
   migrateMultiDaySchema(db);
   migrateSheetSchema(db);
+  migrateReviewSchema(db);
   return db;
 }
 
@@ -125,6 +127,26 @@ function migrateMultiDaySchema(db) {
   // IMMEDIATE takes the write lock before the column checks, so two processes opening
   // a fresh database serialise (busy_timeout applies) instead of both ALTERing.
   apply.immediate();
+}
+
+// Review (ADDITIVE): every transition records which step it was (submit / check / approve /
+// return), and per-client logos are kept for the report covers. Logos live only in the database,
+// which is not committed to the repository.
+function migrateReviewSchema(db) {
+  db.transaction(() => {
+    if (!hasColumn(db, 'report_transitions', 'action')) {
+      db.exec('ALTER TABLE report_transitions ADD COLUMN action TEXT');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS client_logos (
+        key         TEXT PRIMARY KEY,
+        client_name TEXT,
+        mime        TEXT NOT NULL,
+        data        BLOB NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+    `);
+  }).immediate();
 }
 
 // Printed measurement sheets (ADDITIVE). Every printed page is issued with a unique sheet ID that
@@ -399,11 +421,13 @@ function createReportStore({ filePath }) {
     return rowsToReports(rows);
   }
 
-  // ---- Review workflow: draft -> in_review -> approved (daily AND final) ------
-  // Expired instrument calibration is warned about on save (never blocked on site), but a
-  // FINAL report cannot be approved until a reviewer acknowledges it with a note. The
-  // acknowledgement is recorded with the transition in report_transitions.
-  function transitionReport(id, toStatus, { actor = '', note = '', acknowledgement = '' } = {}) {
+  // ---- Review workflow: draft -> in_review -> (checked) -> approved (daily AND final) ------
+  // A report is submitted (Prepared), marked as checked by the checker (Checked), then approved
+  // (Approved); each step is its own row in report_transitions. Approval is blocked until the
+  // report is checked, its counts are consistent and, on a FINAL report, the expired-calibration
+  // and sanity-check-not-run notes are acknowledged. The same person checking and approving is
+  // allowed but returned as a warning.
+  function requireWorkflow(id) {
     const current = getReport(id);
     if (!current) {
       return null;
@@ -411,26 +435,16 @@ function createReportStore({ filePath }) {
     if (getReportKind(current) === REPORT_KINDS.STANDALONE) {
       throw new Error('Standalone reports have no review workflow.');
     }
-    const fromStatus = getReviewStatus(current);
-    if (!canTransition(fromStatus, toStatus)) {
-      throw new Error(`Invalid transition ${fromStatus} -> ${toStatus}.`);
-    }
-    let recordedNote = String(note || '');
-    if (toStatus === 'approved' && getReportKind(current) === REPORT_KINDS.FINAL) {
-      const blocking = assessReport(current).reviewItems.filter((item) => item.blocksApproval);
-      if (blocking.length) {
-        const acknowledged = String(acknowledgement || '').trim();
-        if (!acknowledged) {
-          const error = new Error(`Acknowledge before approving: ${blocking.map((item) => item.text).join(' ')}`);
-          error.code = 'ACKNOWLEDGEMENT_REQUIRED';
-          error.items = blocking;
-          throw error;
-        }
-        recordedNote = `Calibration acknowledged: ${acknowledged}${recordedNote ? ` | ${recordedNote}` : ''}`;
-      }
-    }
-    const at = new Date().toISOString();
-    const updated = { ...current, reviewStatus: toStatus, updatedAt: at };
+    return current;
+  }
+
+  function failure(message, code, extra = {}) {
+    const error = new Error(message);
+    error.code = code;
+    return Object.assign(error, extra);
+  }
+
+  function writeTransition(updated, fromStatus, toStatus, action, actor, note, at) {
     db.transaction(() => {
       updateStmt.run({
         id: updated.id,
@@ -440,15 +454,126 @@ function createReportStore({ filePath }) {
         data: JSON.stringify(updated)
       });
       db.prepare(
-        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(updated.id, fromStatus, toStatus, String(actor || ''), recordedNote, at);
+        'INSERT INTO report_transitions (report_id, from_status, to_status, actor, note, at, action) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(updated.id, fromStatus, toStatus, String(actor || ''), String(note || ''), at, action);
     })();
+  }
+
+  // acknowledgements: { calibration, sanityCheck } notes. `acknowledgement` (a single string)
+  // is the older form and covers the calibration note only.
+  function transition(id, toStatus, { actor = '', note = '', acknowledgement = '', acknowledgements = {} } = {}) {
+    const current = requireWorkflow(id);
+    if (!current) {
+      return null;
+    }
+    const fromStatus = getReviewStatus(current);
+    if (!canTransition(fromStatus, toStatus)) {
+      throw failure(`Invalid transition ${fromStatus} -> ${toStatus}.`, 'INVALID_TRANSITION');
+    }
+    const warnings = [];
+    const recorded = [];
+    let action = toStatus === 'in_review' ? 'submit' : toStatus === 'approved' ? 'approve' : 'return';
+    if (toStatus === 'approved') {
+      const round = currentRound(listTransitions(id));
+      const checked = lastOf(round, 'check');
+      if (!checked) {
+        throw failure('Mark the report as checked before approving it.', 'NOT_CHECKED');
+      }
+      assertConsistent(buildFinalReportData(current));
+      const given = { calibration: String(acknowledgements.calibration || acknowledgement || '').trim(), sanityCheck: String(acknowledgements.sanityCheck || '').trim() };
+      const missing = requiredAcknowledgements(current).filter((item) => !given[item.key]);
+      if (missing.length) {
+        throw failure(`Acknowledge before approving: ${missing.map((item) => item.text).join(' ')}`, 'ACKNOWLEDGEMENT_REQUIRED', { items: missing });
+      }
+      requiredAcknowledgements(current).forEach((item) => {
+        recorded.push(`${item.key === 'calibration' ? 'Calibration acknowledged' : 'Sanity check not run - acknowledged'}: ${given[item.key]}`);
+      });
+      if (String(actor || '').trim() && String(actor).trim().toLowerCase() === String(checked.actor || '').trim().toLowerCase()) {
+        warnings.push(`${actor} both checked and approved this report.`);
+      }
+    }
+    const at = new Date().toISOString();
+    const updated = { ...current, reviewStatus: toStatus, updatedAt: at };
+    if (toStatus === 'approved') {
+      updated.approvedAt = at;
+    }
+    if (toStatus === 'draft') {
+      updated.review = { ...(current.review || {}), ticks: {} };
+    }
+    const fullNote = [...recorded, String(note || '')].filter(Boolean).join(' | ');
+    writeTransition(updated, fromStatus, toStatus, action, actor, fullNote, at);
+    return { report: updated, warnings };
+  }
+
+  function transitionReport(id, toStatus, options) {
+    const result = transition(id, toStatus, options);
+    return result ? result.report : null;
+  }
+
+  // The checker's step: stays in_review, recorded as its own transition.
+  function markChecked(id, { actor = '', note = '' } = {}) {
+    const current = requireWorkflow(id);
+    if (!current) {
+      return null;
+    }
+    if (getReviewStatus(current) !== 'in_review') {
+      throw failure('Only a report in review can be marked as checked.', 'INVALID_STATE');
+    }
+    if (lastOf(currentRound(listTransitions(id)), 'check')) {
+      throw failure('This report is already marked as checked; return it to draft to change it.', 'ALREADY_CHECKED');
+    }
+    assertConsistent(buildFinalReportData(current));
+    const unticked = buildReviewState({ getReport, listTransitions }, current).checklist.filter((item) => item.manual && !item.ticked);
+    if (unticked.length) {
+      throw failure(`Tick every checklist item first: ${unticked.map((item) => item.text).join('; ')}.`, 'CHECKLIST_INCOMPLETE', { items: unticked });
+    }
+    const at = new Date().toISOString();
+    const updated = { ...current, updatedAt: at };
+    writeTransition(updated, 'in_review', 'in_review', 'check', actor, note, at);
     return updated;
+  }
+
+  // Checklist ticks are reviewer state on the report, not a transition.
+  function setReviewTicks(id, ticks) {
+    const current = requireWorkflow(id);
+    if (!current) {
+      return null;
+    }
+    if (getReviewStatus(current) === 'approved') {
+      throw failure('An approved report cannot be changed; re-issue it as the next revision.', 'INVALID_STATE');
+    }
+    return updateReport(id, (report) => ({ ...report, review: { ...(report.review || {}), ticks: { ...Object.fromEntries(Object.entries(ticks || {}).map(([key, value]) => [key, Boolean(value)])) } } }));
+  }
+
+  // Re-issue after approval: the approved report stays as issued; a copy becomes the next
+  // revision in draft, with its own review round.
+  function reissueReport(id, { actor = '', reason = '' } = {}) {
+    const current = requireWorkflow(id);
+    if (!current) {
+      return null;
+    }
+    if (getReviewStatus(current) !== 'approved') {
+      throw failure('Only an approved report can be re-issued.', 'INVALID_STATE');
+    }
+    const existing = listProjectReports(current.projectId, { kind: getReportKind(current) }).filter((entry) => entry.revisionOf === current.id);
+    if (existing.length) {
+      throw failure('This revision has already been re-issued.', 'ALREADY_REISSUED', { reportId: existing[0].id });
+    }
+    const { id: _id, createdAt: _created, updatedAt: _updated, approvedAt: _approved, review: _review, dailyStatus: _daily, ...body } = current;
+    const copy = addReport({
+      ...body,
+      reviewStatus: 'draft',
+      revision: (Number.isInteger(current.revision) ? current.revision : 0) + 1,
+      revisionOf: current.id,
+      revisionReason: String(reason || '').trim() || 'Re-issue',
+      revisedBy: String(actor || '')
+    });
+    return copy;
   }
 
   function listTransitions(reportId) {
     return db
-      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, note, at FROM report_transitions WHERE report_id = ? ORDER BY id')
+      .prepare('SELECT id, report_id AS reportId, from_status AS fromStatus, to_status AS toStatus, actor, note, at, action FROM report_transitions WHERE report_id = ? ORDER BY id')
       .all(String(reportId));
   }
 
@@ -575,6 +700,23 @@ function createReportStore({ filePath }) {
     return db.prepare(sql).all(params).map(rowToIssuedSheet);
   }
 
+  // ---- Client logos (cover pages) ------------------------------------------------------------
+  function getClientLogo(key) {
+    const row = db.prepare('SELECT key, client_name AS clientName, mime, data, updated_at AS updatedAt FROM client_logos WHERE key = ?').get(String(key));
+    return row || null;
+  }
+
+  function setClientLogo({ key, clientName = '', mime, data }) {
+    db.prepare(`INSERT INTO client_logos (key, client_name, mime, data, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET client_name = excluded.client_name, mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at`)
+      .run(String(key), String(clientName), mime, data, new Date().toISOString());
+    return getClientLogo(key);
+  }
+
+  function deleteClientLogo(key) {
+    return db.prepare('DELETE FROM client_logos WHERE key = ?').run(String(key)).changes > 0;
+  }
+
   return {
     listReports,
     getReport,
@@ -588,7 +730,14 @@ function createReportStore({ filePath }) {
     updateProject,
     listProjectReports,
     transitionReport,
+    transition,
+    markChecked,
+    setReviewTicks,
+    reissueReport,
     listTransitions,
+    getClientLogo,
+    setClientLogo,
+    deleteClientLogo,
     assembleFinal,
     listAssemblyProvenance,
     // printed sheets (additive)

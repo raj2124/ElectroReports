@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { createReportStore } = require('../src/reportStore');
 const { assessReport } = require('../src/assessmentService');
+const { buildReviewState } = require('../src/review');
 const { validateReport } = require('../src/sheetValidation');
 const {
   normalizeReportInput,
@@ -310,12 +311,20 @@ const daily = (date, calibrationDue) => store.addReport({
   electrodeResistance: [{ tag: `EP-${date}`, electrodeType: 'Rod', length: '3', diameter: '40', resistanceWithoutGrid: '2' }]
 });
 
+// Review round: submit, tick the checklist, mark as checked. Approval is then a separate call.
+function submitAndCheck(id, actor = 'reviewer') {
+  store.transitionReport(id, 'in_review', { actor: 'preparer' });
+  const ticks = Object.fromEntries(buildReviewState(store, store.getReport(id)).checklist.filter((item) => item.manual).map((item) => [item.id, true]));
+  store.setReviewTicks(id, ticks);
+  store.markChecked(id, { actor });
+}
+
 check('final reports carry per-day calibration records and each row keeps its own day header', () => {
   const day1 = daily('2026-10-10', '2026-09-01'); // expired on the day
   const day2 = daily('2026-10-11', '2027-03-01');
   [day1, day2].forEach((report) => {
-    store.transitionReport(report.id, 'in_review');
-    store.transitionReport(report.id, 'approved'); // dailies are never gated
+    submitAndCheck(report.id);
+    store.transitionReport(report.id, 'approved', { actor: 'reviewer' }); // dailies are not gated on calibration
   });
   const { report: final } = store.assembleFinal(prj.id);
   assert.strictEqual(final.calibrationRecords.length, 2);
@@ -327,30 +336,35 @@ check('final reports carry per-day calibration records and each row keeps its ow
 
 check('a FINAL report with expired calibration cannot be approved until acknowledged; the note is recorded', () => {
   const final = store.listProjectReports(prj.id, { kind: 'final' })[0];
-  store.transitionReport(final.id, 'in_review', { actor: 'reviewer' });
-  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'reviewer' }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && /2026-09-01/.test(error.message) && error.items.length === 1);
-  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'reviewer', acknowledgement: '   ' }), /Acknowledge/);
+  submitAndCheck(final.id);
+  const sanity = 'Sanity check unavailable (provider billing); narrative read against the tables by the reviewer.';
+  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'approver', acknowledgements: { sanityCheck: sanity } }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && /2026-09-01/.test(error.message) && error.items.length === 1);
+  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'approver', acknowledgement: 'Certificate on file.' }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && /Sanity check not run/.test(error.message));
+  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'approver', acknowledgements: { calibration: '   ', sanityCheck: sanity } }), /Acknowledge/);
   assert.strictEqual(store.getReport(final.id).reviewStatus, 'in_review', 'still in review after the refused approvals');
-  const approved = store.transitionReport(final.id, 'approved', { actor: 'reviewer', acknowledgement: 'Certificate re-issued 2026-09-20, held on file (CAL-4471).', note: 'Final check done' });
-  assert.strictEqual(approved.reviewStatus, 'approved');
+  const result = store.transition(final.id, 'approved', { actor: 'approver', acknowledgements: { calibration: 'Certificate re-issued 2026-09-20, held on file (CAL-4471).', sanityCheck: sanity }, note: 'Final check done' });
+  assert.strictEqual(result.report.reviewStatus, 'approved');
+  assert.deepStrictEqual(result.warnings, []);
   const last = store.listTransitions(final.id).pop();
-  assert.deepStrictEqual([last.fromStatus, last.toStatus, last.actor], ['in_review', 'approved', 'reviewer']);
+  assert.deepStrictEqual([last.action, last.fromStatus, last.toStatus, last.actor], ['approve', 'in_review', 'approved', 'approver']);
   assert.ok(last.note.startsWith('Calibration acknowledged: Certificate re-issued 2026-09-20, held on file (CAL-4471).'));
+  assert.ok(last.note.includes(`Sanity check not run - acknowledged: ${sanity}`));
   assert.ok(last.note.endsWith('| Final check done'));
 });
 
-check('a FINAL report with valid calibration approves without any acknowledgement', () => {
+check('a FINAL report with valid calibration still needs the sanity-check acknowledgement', () => {
   const clean = store.addProject({ projectNo: 'G-2', clientName: 'C', siteLocation: 'S', workOrder: 'W', engineerName: 'E' });
   const day = store.addReport({
     kind: 'daily', projectId: clean.id, collectionDate: '2026-10-12', project: { ...project, reportDate: '2026-10-12' }, tests: { electrodeResistance: true },
     sheetHeaders: { electrodeResistance: { instrument: 'mi3290', serialNo: '1', calibrationDue: '2027-01-01' } }, electrodeResistance: [{ tag: 'E', electrodeType: 'Rod', length: '3', diameter: '40', resistanceWithoutGrid: '2' }]
   });
-  store.transitionReport(day.id, 'in_review');
-  store.transitionReport(day.id, 'approved');
+  submitAndCheck(day.id);
+  store.transitionReport(day.id, 'approved', { actor: 'reviewer' });
   const { report: final } = store.assembleFinal(clean.id);
-  store.transitionReport(final.id, 'in_review');
-  assert.strictEqual(store.transitionReport(final.id, 'approved').reviewStatus, 'approved');
-  assert.strictEqual(store.listTransitions(final.id).pop().note, '');
+  submitAndCheck(final.id);
+  assert.throws(() => store.transitionReport(final.id, 'approved', { actor: 'approver' }), (error) => error.code === 'ACKNOWLEDGEMENT_REQUIRED' && error.items.length === 1 && error.items[0].key === 'sanityCheck');
+  assert.strictEqual(store.transitionReport(final.id, 'approved', { actor: 'approver', acknowledgements: { sanityCheck: 'Reviewed by hand.' } }).reviewStatus, 'approved');
+  assert.strictEqual(store.listTransitions(final.id).pop().note, 'Sanity check not run - acknowledged: Reviewed by hand.');
 });
 
 console.log(`\n${passed} sheet-rule checks passed.`);
