@@ -63,6 +63,7 @@ function openDatabase(dbPath) {
   migrateReviewSchema(db);
   migrateNoticeSchema(db);
   migrateAuthSchema(db);
+  migrateScheduleSchema(db);
   return db;
 }
 
@@ -173,6 +174,26 @@ function migrateNoticeSchema(db) {
       UNIQUE (kind, zoho_project_id, recipient_key)
     );
     CREATE INDEX IF NOT EXISTS idx_notices_recipient ON notices(recipient_key, status);
+  `);
+}
+
+// Scheduling (ADDITIVE, Session 6F): what was last read from Zoho (with when and the last error) and the
+// settings an admin edits. Nothing here is a second copy of a date: a refresh replaces it.
+function migrateScheduleSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schedule_cache (
+      key        TEXT PRIMARY KEY,
+      fetched_at TEXT,
+      data       TEXT,
+      error      TEXT,
+      error_at   TEXT
+    );
+    CREATE TABLE IF NOT EXISTS schedule_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    );
   `);
 }
 
@@ -866,6 +887,35 @@ function createReportStore({ filePath }) {
     return { total, entries: rows.map((row) => ({ id: row.id, at: row.at, userId: row.user_id || '', userEmail: row.user_email || '', userName: row.user_name || '', action: row.action, entityType: row.entity_type || '', entityId: row.entity_id || '', detail: row.detail ? JSON.parse(row.detail) : null })) };
   }
 
+  // ---- Schedule cache and settings --------------------------------------------------------------
+  function getScheduleCache(key) {
+    const row = db.prepare('SELECT * FROM schedule_cache WHERE key = ?').get(String(key));
+    return row ? { key: row.key, fetchedAt: row.fetched_at || '', data: row.data ? JSON.parse(row.data) : null, error: row.error || '', errorAt: row.error_at || '' } : null;
+  }
+
+  // A good read replaces the data and clears the error. A failed read (data undefined) keeps the last
+  // good data and records the error, so the screen can show old data with its age.
+  function setScheduleCache(key, data, { error = '', at = '' } = {}) {
+    const now = at || new Date().toISOString();
+    if (data === undefined) {
+      db.prepare('INSERT INTO schedule_cache (key, error, error_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET error = excluded.error, error_at = excluded.error_at').run(String(key), String(error), now);
+    } else {
+      db.prepare("INSERT INTO schedule_cache (key, fetched_at, data, error, error_at) VALUES (?, ?, ?, '', NULL) ON CONFLICT(key) DO UPDATE SET fetched_at = excluded.fetched_at, data = excluded.data, error = '', error_at = NULL").run(String(key), now, JSON.stringify(data));
+    }
+    return getScheduleCache(key);
+  }
+
+  function getScheduleSetting(key) {
+    const row = db.prepare('SELECT value FROM schedule_settings WHERE key = ?').get(String(key));
+    return row ? JSON.parse(row.value) : null;
+  }
+
+  function setScheduleSetting(key, value, by = '') {
+    db.prepare('INSERT INTO schedule_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by')
+      .run(String(key), JSON.stringify(value), new Date().toISOString(), String(by));
+    return value;
+  }
+
   // ---- Notices ------------------------------------------------------------------------------
   function rowToNotice(row) {
     return {
@@ -933,6 +983,10 @@ function createReportStore({ filePath }) {
     deleteUserSessions,
     addAudit,
     listAudit,
+    getScheduleCache,
+    setScheduleCache,
+    getScheduleSetting,
+    setScheduleSetting,
     addNotice,
     getNotice,
     listNotices,

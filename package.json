@@ -12,6 +12,7 @@
     "test:review-ui": "node scripts/test-review-ui.js",
     "test:auth": "node scripts/test-auth.js && node scripts/test-auth-ui.js",
     "test:zoho": "node scripts/test-zoho-tasks.js && node scripts/test-project-watch.js && node scripts/test-zoho-ui.js",
+    "test:schedule": "node scripts/test-schedule.js && node scripts/test-schedule-ui.js",
     "test:workspace": "node scripts/test-workspace.js && node scripts/test-workspace-ui.js",
     "test:layout": "node scripts/test-layout.js",
     "test:sheets": "node scripts/test-sheet-print.js",

@@ -116,6 +116,8 @@ function buildTaskPlan(tasks, { d03 = true, taskFields = config.zoho.taskFields 
       startDate: text(task.startDate),
       dueDate: text(task.dueDate),
       status: text(task.status),
+      closed: task.closed === true,
+      duration: text(task.duration),
       category: view.category,
       esha: view.esha,
       irt: view.irt,

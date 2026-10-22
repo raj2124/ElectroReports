@@ -54,6 +54,7 @@ function renderUserBar() {
     <div class="user-bar">
       <strong>${escapeHtml(authUi.user.name)}</strong>
       <span class="muted">${authUi.user.roles.map((role) => ROLE_LABEL[role] || role).join(', ')}</span>
+      <button class="button button-ghost" data-action="open-schedule">Schedule</button>
       <button class="button button-ghost" data-action="open-profile">My profile</button>
       ${hasRoleClient('admin') ? '<button class="button button-ghost" data-action="open-admin">Admin</button>' : ''}
       <button class="button button-ghost" data-action="sign-out">Sign out</button>

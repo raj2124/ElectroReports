@@ -110,6 +110,8 @@ module.exports = {
     clientId: process.env.ZOHO_CLIENT_ID || '',
     clientSecret: process.env.ZOHO_CLIENT_SECRET || '',
     projectsEndpoint: process.env.ZOHO_PROJECTS_ENDPOINT || '',
+    // Zoho People (Session 6F, read only): leave, holidays and the employee list. India data centre.
+    peopleBaseUrl: String(process.env.ZOHO_PEOPLE_BASE_URL || 'https://people.zoho.in').trim().replace(/\/+$/, ''),
     // New-project watch (Session 6D): how often Zoho is polled (0 turns it off) and which project
     // statuses get a notice. D03 projects only, created on or after 2026-01-01, with no workspace yet.
     pollMinutes: Number.parseInt(process.env.ZOHO_POLL_MINUTES || '15', 10),
@@ -121,6 +123,15 @@ module.exports = {
       plannedQuantity: String(process.env.ZOHO_TASK_FIELD_PLANNED_QTY || '').trim(),
       category: String(process.env.ZOHO_TASK_FIELD_CATEGORY || 'category').trim()
     }
+  },
+  // Scheduling (Session 6F). Zoho is read only; what is fetched is cached with its time. The working
+  // days and the rates per test are defaults: an admin edits them in the app (stored in the database).
+  schedule: {
+    refreshMinutes: Number.parseInt(process.env.SCHEDULE_REFRESH_MINUTES || '30', 10),
+    manualRefreshSeconds: Number.parseInt(process.env.SCHEDULE_MANUAL_REFRESH_SECONDS || '60', 10),
+    // Onsite tasks in these statuses are left off the calendar (everything else shows, whatever the project status).
+    hiddenTaskStatuses: String(process.env.SCHEDULE_HIDDEN_STATUSES || 'Closed').split(',').map((entry) => entry.trim()).filter(Boolean),
+    workingDays: String(process.env.SCHEDULE_WORKING_DAYS || 'Mon,Tue,Wed,Thu,Fri,Sat').split(',').map((entry) => entry.trim()).filter(Boolean)
   },
   claude,
   openai,

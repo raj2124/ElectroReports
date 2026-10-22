@@ -17,7 +17,7 @@ const USERS = [
 
 // Environment for a server under test.
 function devEnv(extra = {}) {
-  return { AUTH_MODE: 'dev', AUTH_DEV_USERS: USERS, AUTH_SESSION_SECRET: 'test-secret-not-used-anywhere-else', AUTH_SEED_ADMINS: '', ZOHO_POLL_MINUTES: '0', ...extra };
+  return { AUTH_MODE: 'dev', AUTH_DEV_USERS: USERS, AUTH_SESSION_SECRET: 'test-secret-not-used-anywhere-else', AUTH_SEED_ADMINS: '', ZOHO_POLL_MINUTES: '0', SCHEDULE_REFRESH_MINUTES: '0', ...extra };
 }
 
 // Signs in and returns the cookie header value ("er_session=...").

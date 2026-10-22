@@ -113,14 +113,14 @@ const mockProjectTasks = {
 // A D03 project as the live portal returns it (056-D03_TS-26-CLL): the tasks are in the raw v1 shape
 // (custom fields as { column_name, label_name, value }, owners under details), so the same
 // normalisation runs in the tests and live. Empty custom fields are omitted, as Zoho does.
-const rawTask = (id, name, tasklist, { owner = anup, category = 'Offsite', start = '10-26-2026', end = '10-26-2026', extra = [] } = {}) => ({
+const rawTask = (id, name, tasklist, { owner = anup, owners = [owner], category = 'Offsite', status = 'Planned', start = '10-26-2026', end = '10-26-2026', extra = [] } = {}) => ({
   id_string: id,
   name,
-  status: { name: 'Planned' },
+  status: { name: status },
   start_date: start,
   end_date: end,
   tasklist: { id: `tl-${tasklist.replace(/\W+/g, '').toLowerCase()}`, id_string: `tl-${tasklist.replace(/\W+/g, '').toLowerCase()}`, name: tasklist },
-  details: { owners: [owner] },
+  details: { owners },
   custom_fields: [
     { column_name: 'UDF_CHAR86', label_name: 'Docs Rev. No.', value: 'R0' },
     { column_name: 'UDF_CHAR81', label_name: 'Work Location', value: category },
@@ -140,6 +140,23 @@ const mockRawProjectTasks = {
     rawTask('r6', '[ESHA] Draft Earth Pit Resistance Test Report (170 Pits)', 'Draft Report Preparation', { start: '10-28-2026', end: '10-28-2026' })
   ]
 };
+// 024-D03_TS-26-GFL (Client Review, so no new-project notice): Onsite tasks for the schedule tests. They
+// clash with 056's pit task (Anup, 21-22 Oct), meet leave (Karishma 21 Oct, approved), fall short of or
+// run far past their planned quantity, have no owner or no dates, belong to someone who never signed in
+// (Mohana), or are closed (left off).
+const karishma = { id: '60007088440', zpuid: '27127000000467199', name: 'Karishma', email: 'karishma@elegrow.com' };
+const mohana = { id: 'u201', zpuid: 'u201', name: 'Mohana', email: 'mohana@elegrow.com' };
+const testFields = (test, planned) => [{ column_name: 'UDF_CHAR90', label_name: 'ESHA Test', value: test }, ...(planned ? [{ column_name: 'UDF_CHAR91', label_name: 'Planned Quantity', value: planned }] : [])];
+mockRawProjectTasks['27127000009860002'] = [
+  rawTask('g1', '[ESHA] Soil Resistivity Testing - 3 Locations', ONSITE, { category: 'Onsite', start: '10-21-2026', end: '10-22-2026', extra: testFields('Soil Resistivity', '3') }),
+  rawTask('g2', '[ESHA] Earth Pit Resistance Testing - 100 Pits', ONSITE, { owner: karishma, category: 'Onsite', start: '10-21-2026', end: '10-22-2026', extra: testFields('Earth Electrode Resistance', '100') }),
+  rawTask('g3', '[ESHA] Loop Impedance Testing - Panels', ONSITE, { owners: [], category: 'Onsite', start: '10-27-2026', end: '10-28-2026', extra: testFields('Loop Impedance') }),
+  rawTask('g4', '[ESHA] Earth Continuity Testing', ONSITE, { owner: karishma, category: 'Onsite', start: '', end: '', extra: testFields('Earth Continuity & Bonding') }),
+  rawTask('g5', '[ESHA] Riser Integrity Testing - 10 Points', ONSITE, { owner: mohana, category: 'Onsite', start: '11-02-2026', end: '11-13-2026', extra: testFields('Riser / Grid Integrity', '10') }),
+  rawTask('g6', '[ESHA] Step & Touch Testing', ONSITE, { owner: mohana, category: 'Onsite', status: 'Closed', start: '10-21-2026', end: '10-22-2026', extra: testFields('Step & Touch Voltage', '15') }),
+  rawTask('g7', '[IRT] Thermography Survey', ONSITE, { owner: mohana, category: 'Onsite', start: '10-21-2026', end: '10-22-2026' }),
+  rawTask('g8', '[ESHA] Report Drafting', 'Draft Report Preparation', { owner: mohana, start: '10-21-2026', end: '10-22-2026' })
+];
 const mockProjectsD03 = [
   { id: '27127000009850033', name: '056-D03_TS-26-CLL', projectNumber: '056-D03_TS-26-CLL', clientName: 'CLL', workOrderNo: '', ownerName: 'Anup Parekh', ownerEmail: 'anup@elegrow.com', stage: 'Planning', createdAt: String(Date.parse('2026-10-13T08:49:46Z')) },
   { id: '27127000009860001', name: '060-D03_TS-26-XYZ', projectNumber: '060-D03_TS-26-XYZ', clientName: 'XYZ', workOrderNo: '', ownerName: 'Nidhi Shah', ownerEmail: 'nidhi@elegrow.com', stage: 'Active', createdAt: String(Date.parse('2026-10-15T08:00:00Z')) },
@@ -744,6 +761,8 @@ function normalizeTask(task) {
     owners: ownerList,
     customFields,
     status: asText(effectiveStatus),
+    closed: closedFlag || /^closed$/i.test(asText(effectiveStatus)),
+    duration: asText(task?.duration),
     ownerName: asText(ownerName || (ownerList[0] && ownerList[0].name)),
     dueDate: asText(dueDate),
     startDate: asText(startDate),

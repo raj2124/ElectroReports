@@ -3137,6 +3137,7 @@ function render() {
       ${state.view === 'detail' && state.activeReport ? detailView() : ''}
       ${state.view === 'review' ? reviewView() : ''}
       ${state.view === 'workspace' ? workspaceView() : ''}
+      ${state.view === 'schedule' && authUi.user ? scheduleView() : ''}
       ${state.view === 'signin' ? signInView() : ''}
       ${state.view === 'profile' && authUi.user ? profileView() : ''}
       ${state.view === 'admin' && authUi.user ? adminView() : ''}
@@ -3490,6 +3491,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (handleScheduleAction(action, button)) {
+    return;
+  }
+
   if (handleWorkspaceAction(action, button)) {
     return;
   }
@@ -3750,6 +3755,9 @@ document.addEventListener('change', async (event) => {
     return;
   }
   if (handleNoticeChange(target)) {
+    return;
+  }
+  if (handleScheduleChange(target)) {
     return;
   }
   if (target.id === 'zohoProjectPicker') {

@@ -27,6 +27,8 @@ const { LogoError, parseLogoDataUrl, clientKeys } = require('./finalReport/logos
 const { getProjects, getProject, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const { isD03Name, buildTaskPlan, nameOwners } = require('./zohoTasks');
 const { pollNewProjects, answerNotice, dismissNotice, startProjectWatch } = require('./projectWatch');
+const { createScheduleService } = require('./scheduleService');
+const { createPeopleClient } = require('./zohoPeople');
 const { createAuth } = require('./auth');
 const { reviewGate, reviewAccess, mayEditReport, hasRole } = require('./permissions');
 const {
@@ -70,6 +72,9 @@ if (!fs.existsSync(generatedDir)) {
 }
 
 app.use(express.json({ limit: '25mb' }));
+
+// Scheduling (6F): Zoho Projects tasks and Zoho People leave, read only and cached.
+const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: createPeopleClient() });
 
 // Sign-in (Session 6E): the session user on every API / auth / PDF request, then the route rules.
 const auth = createAuth({ store, config, zoho: require('./zohoClient') });
@@ -736,6 +741,37 @@ app.post('/api/projects/:id/zoho-refresh', async (req, res) => {
   }
 });
 
+// ---- Schedule (6F) -----------------------------------------------------------------------------
+// Everyone signed in sees the whole team, their own row first. Nothing here writes to Zoho.
+app.get('/api/schedule', async (req, res) => {
+  try {
+    return res.json(await schedule.snapshot({ from: String(req.query.from || ''), to: String(req.query.to || ''), user: req.user }));
+  } catch (error) {
+    console.error('Failed to build the schedule', error);
+    return res.status(500).json({ message: 'Failed to build the schedule.' });
+  }
+});
+
+app.post('/api/schedule/refresh', async (req, res) => {
+  try {
+    const body = req.body || {};
+    return res.json(await schedule.refresh({ from: String(body.from || ''), to: String(body.to || ''), user: req.user }));
+  } catch (error) {
+    console.error('Failed to refresh the schedule', error);
+    return res.status(500).json({ message: 'Failed to refresh the schedule.' });
+  }
+});
+
+// Admin only (the /api/admin rule): working days and the rate per test.
+app.put('/api/admin/schedule-settings', (req, res) => {
+  const result = schedule.saveSettings(req.body || {}, req.user.email);
+  if (result.error) {
+    return res.status(400).json({ message: result.error });
+  }
+  auth.audit(req.user, 'schedule.settings', 'schedule', 'settings', { workingDays: result.settings.workingDays, rates: Object.fromEntries(Object.entries(result.settings.rates).map(([id, rate]) => [id, rate.perDay])) });
+  return res.json(result.settings);
+});
+
 // ---- Client logos ------------------------------------------------------------------------------
 app.get('/api/client-logo', (req, res) => {
   const keys = clientKeys({ clientId: req.query.clientId, clientName: req.query.clientName });
@@ -857,4 +893,5 @@ app.use((error, _req, res, next) => {
 app.listen(port, host, () => {
   console.log(`ElectroReports running on http://${host}:${port}`);
   startProjectWatch({ store });
+  schedule.start();
 });

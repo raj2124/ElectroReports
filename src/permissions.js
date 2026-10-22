@@ -21,6 +21,7 @@ const hasRole = (user, ...roles) => Boolean(user) && (user.roles.includes('admin
 const ROUTE_RULES = [
   ['*', /^\/api\/admin(\/|$)/, ['admin']],
   ['POST', /^\/api\/zoho\/poll$/, ['admin']],
+  ['POST', /^\/api\/schedule\/refresh$/, [ANY]],
 
   ['POST', /^\/api\/reports$/, ['engineer']],
   ['PUT', /^\/api\/reports\/[^/]+$/, ['engineer']],

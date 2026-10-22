@@ -96,6 +96,11 @@ async function openWorkspaceFromZoho(zohoProjectId) {
     showToast('That Zoho project is not loaded. Refresh Zoho and try again.', 'warning');
     return;
   }
+  return openWorkspaceFromZohoProject(project);
+}
+
+// Opens the workspace of a Zoho project (as the project list returns it), creating it first when it has none.
+async function openWorkspaceFromZohoProject(project) {
   try {
     const result = await api('/api/projects', {
       method: 'POST',
