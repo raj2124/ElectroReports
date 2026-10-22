@@ -64,6 +64,7 @@ function openDatabase(dbPath) {
   migrateNoticeSchema(db);
   migrateAuthSchema(db);
   migrateScheduleSchema(db);
+  migratePeopleSyncSchema(db);
   return db;
 }
 
@@ -194,6 +195,33 @@ function migrateScheduleSchema(db) {
       updated_at TEXT NOT NULL,
       updated_by TEXT
     );
+  `);
+}
+
+// Site Work Log in Zoho People (ADDITIVE, Session 6G): one row per log entry, keyed by the Record Key
+// that is also written to People. It remembers the People record id (so a later revision updates the same
+// record), the neutral entry that was or is to be written (a retry re-resolves the engineer), and how the
+// last attempt went.
+function migratePeopleSyncSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS people_sync (
+      record_key       TEXT PRIMARY KEY,
+      root_id          TEXT NOT NULL,
+      report_id        TEXT,
+      test_id          TEXT,
+      work_date        TEXT,
+      status           TEXT NOT NULL,
+      sync_state       TEXT NOT NULL,
+      people_record_id TEXT,
+      hash             TEXT,
+      entry            TEXT,
+      error            TEXT,
+      attempts         INTEGER NOT NULL DEFAULT 0,
+      synced_at        TEXT,
+      updated_at       TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_people_sync_root ON people_sync(root_id);
+    CREATE INDEX IF NOT EXISTS idx_people_sync_state ON people_sync(sync_state);
   `);
 }
 
@@ -916,6 +944,47 @@ function createReportStore({ filePath }) {
     return value;
   }
 
+  // ---- Site Work Log sync (6G) --------------------------------------------------------------
+  function rowToPeopleSync(row) {
+    return row ? {
+      key: row.record_key, rootId: row.root_id, reportId: row.report_id || '', testId: row.test_id || '', workDate: row.work_date || '',
+      status: row.status, state: row.sync_state, peopleRecordId: row.people_record_id || '', hash: row.hash || '',
+      entry: row.entry ? JSON.parse(row.entry) : null, error: row.error || '', attempts: row.attempts, syncedAt: row.synced_at || '', updatedAt: row.updated_at
+    } : null;
+  }
+
+  function getPeopleSync(key) {
+    return rowToPeopleSync(db.prepare('SELECT * FROM people_sync WHERE record_key = ?').get(String(key)));
+  }
+
+  function listPeopleSync({ rootId = '', state = '', limit = 500 } = {}) {
+    const where = [];
+    const args = [];
+    if (rootId) { where.push('root_id = ?'); args.push(String(rootId)); }
+    if (state) { where.push('sync_state = ?'); args.push(String(state)); }
+    const rows = db.prepare(`SELECT * FROM people_sync ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ?`).all(...args, limit);
+    return rows.map(rowToPeopleSync);
+  }
+
+  function peopleSyncCounts() {
+    return Object.fromEntries(db.prepare('SELECT sync_state AS state, COUNT(*) AS n FROM people_sync GROUP BY sync_state').all().map((row) => [row.state, row.n]));
+  }
+
+  // Insert or replace the row of `key`; fields not given keep their value.
+  function savePeopleSync(key, fields) {
+    const current = getPeopleSync(key) || { attempts: 0 };
+    const next = { ...current, ...fields, updatedAt: new Date().toISOString() };
+    db.prepare(`INSERT INTO people_sync (record_key, root_id, report_id, test_id, work_date, status, sync_state, people_record_id, hash, entry, error, attempts, synced_at, updated_at)
+      VALUES (@key, @rootId, @reportId, @testId, @workDate, @status, @state, @peopleRecordId, @hash, @entry, @error, @attempts, @syncedAt, @updatedAt)
+      ON CONFLICT(record_key) DO UPDATE SET root_id = @rootId, report_id = @reportId, test_id = @testId, work_date = @workDate, status = @status, sync_state = @state,
+        people_record_id = @peopleRecordId, hash = @hash, entry = @entry, error = @error, attempts = @attempts, synced_at = @syncedAt, updated_at = @updatedAt`).run({
+      key: String(key), rootId: next.rootId || '', reportId: next.reportId || '', testId: next.testId || '', workDate: next.workDate || '', status: next.status || '',
+      state: next.state || 'pending', peopleRecordId: next.peopleRecordId || '', hash: next.hash || '', entry: next.entry ? JSON.stringify(next.entry) : null,
+      error: next.error || '', attempts: next.attempts || 0, syncedAt: next.syncedAt || '', updatedAt: next.updatedAt
+    });
+    return getPeopleSync(key);
+  }
+
   // ---- Notices ------------------------------------------------------------------------------
   function rowToNotice(row) {
     return {
@@ -987,6 +1056,10 @@ function createReportStore({ filePath }) {
     setScheduleCache,
     getScheduleSetting,
     setScheduleSetting,
+    getPeopleSync,
+    listPeopleSync,
+    peopleSyncCounts,
+    savePeopleSync,
     addNotice,
     getNotice,
     listNotices,

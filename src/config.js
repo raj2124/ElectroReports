@@ -112,6 +112,14 @@ module.exports = {
     projectsEndpoint: process.env.ZOHO_PROJECTS_ENDPOINT || '',
     // Zoho People (Session 6F, read only): leave, holidays and the employee list. India data centre.
     peopleBaseUrl: String(process.env.ZOHO_PEOPLE_BASE_URL || 'https://people.zoho.in').trim().replace(/\/+$/, ''),
+    // Site Work Log (Session 6G): the People form that gets one record per engineer, work date and test. Its
+    // fields are found by label when the app writes; `fields` only holds overrides by API name, keyed by the
+    // app's field key (e.g. {"completedQty":"Completed_Qty1"}). The form has to be created in People first;
+    // until it exists nothing is lost: the writes wait as "pending" and the admin Backfill / Retry sends them.
+    workLog: {
+      form: String(process.env.ZOHO_PEOPLE_WORKLOG_FORM || 'site_work_log').trim(),
+      fields: (() => { try { return JSON.parse(process.env.ZOHO_PEOPLE_WORKLOG_FIELDS || '{}'); } catch (_error) { return {}; } })()
+    },
     // New-project watch (Session 6D): how often Zoho is polled (0 turns it off) and which project
     // statuses get a notice. D03 projects only, created on or after 2026-01-01, with no workspace yet.
     pollMinutes: Number.parseInt(process.env.ZOHO_POLL_MINUTES || '15', 10),

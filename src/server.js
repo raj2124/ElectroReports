@@ -29,6 +29,8 @@ const { isD03Name, buildTaskPlan, nameOwners } = require('./zohoTasks');
 const { pollNewProjects, answerNotice, dismissNotice, startProjectWatch } = require('./projectWatch');
 const { createScheduleService } = require('./scheduleService');
 const { createPeopleClient } = require('./zohoPeople');
+const { createPeopleSync } = require('./peopleSync');
+const { stampReport } = require('./entryCredit');
 const { createAuth } = require('./auth');
 const { reviewGate, reviewAccess, mayEditReport, hasRole } = require('./permissions');
 const {
@@ -74,7 +76,10 @@ if (!fs.existsSync(generatedDir)) {
 app.use(express.json({ limit: '25mb' }));
 
 // Scheduling (6F): Zoho Projects tasks and Zoho People leave, read only and cached.
-const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: createPeopleClient() });
+const peopleClient = createPeopleClient();
+const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: peopleClient });
+// Site Work Log (6G): the one thing written to Zoho People, on approval only. Never blocks a review step.
+const peopleSync = createPeopleSync({ store, people: peopleClient, config, getWorkingDays: () => schedule.getSettings().workingDays });
 
 // Sign-in (Session 6E): the session user on every API / auth / PDF request, then the route rules.
 const auth = createAuth({ store, config, zoho: require('./zohoClient') });
@@ -511,6 +516,9 @@ app.post('/api/reports/:id/review/:action', (req, res) => {
     if (gate.overridden) {
       auth.audit(req.user, 'review.override', 'report', req.params.id, { step: action, reason: gate.reason });
     }
+    if (action === 'approve') {
+      peopleSync.afterTransition(action, loadReport(req.params.id)).catch((error) => console.error('Site Work Log sync failed', error));
+    }
     return res.json(reviewPayload(req, loadReport(req.params.id), { stepWarnings: warnings }));
   } catch (error) {
     return reviewError(res, error);
@@ -600,7 +608,7 @@ app.post('/api/projects/:id/days', (req, res) => {
   try {
     const draft = body.report || {};
     const normalized = normalizeReportInput({ ...draft, project: { ...(draft.project || {}), reportDate: workDate } });
-    const created = store.addReport({ ...normalized, kind: 'daily', projectId: project.id, collectionDate: workDate, createdBy: req.user.id });
+    const created = store.addReport({ ...stampReport(normalized, null, req.user), kind: 'daily', projectId: project.id, collectionDate: workDate, createdBy: req.user.id });
     if (!project.plannedQuantities && normalized.project.plannedQuantities) {
       store.updateProject(project.id, { plannedQuantities: normalized.project.plannedQuantities });
     }
@@ -648,7 +656,7 @@ app.put('/api/reports/:id', (req, res) => {
   }
   try {
     const normalized = normalizeReportInput({ ...body, project: { ...(body.project || {}), reportDate: current.collectionDate } });
-    const updated = store.updateReport(req.params.id, () => ({ ...normalized, collectionDate: current.collectionDate }));
+    const updated = store.updateReport(req.params.id, () => ({ ...stampReport({ ...normalized, collectionDate: current.collectionDate }, current, req.user) }));
     return res.json(presentReport(updated));
   } catch (error) {
     return res.status(400).json({
@@ -770,6 +778,48 @@ app.put('/api/admin/schedule-settings', (req, res) => {
   }
   auth.audit(req.user, 'schedule.settings', 'schedule', 'settings', { workingDays: result.settings.workingDays, rates: Object.fromEntries(Object.entries(result.settings.rates).map(([id, rate]) => [id, rate.perDay])) });
   return res.json(result.settings);
+});
+
+// ---- Site Work Log in Zoho People (6G): admin only (the /api/admin rule) ---------------------------
+app.get('/api/admin/people-sync', async (_req, res) => {
+  try {
+    return res.json(await peopleSync.status());
+  } catch (error) {
+    console.error('Failed to read the Site Work Log status', error);
+    return res.status(500).json({ message: 'Failed to read the Site Work Log status.' });
+  }
+});
+
+app.get('/api/admin/people-sync/totals', (req, res) => {
+  try {
+    return res.json(peopleSync.totals({ from: String(req.query.from || ''), to: String(req.query.to || '') }));
+  } catch (error) {
+    return res.status(error.code === 'BAD_RANGE' ? 400 : 500).json({ message: error.code === 'BAD_RANGE' ? error.message : 'Failed to total the Site Work Log.' });
+  }
+});
+
+app.post('/api/admin/people-sync/backfill', async (req, res) => {
+  const body = req.body || {};
+  try {
+    const summary = await peopleSync.backfill({ from: String(body.from || ''), to: String(body.to || '') });
+    auth.audit(req.user, 'people.backfill', 'people_sync', `${summary.from}..${summary.to}`, summary);
+    return res.json(summary);
+  } catch (error) {
+    if (error.code === 'BAD_RANGE') return res.status(400).json({ message: error.message, code: error.code });
+    console.error('Site Work Log backfill failed', error);
+    return res.status(500).json({ message: 'The Site Work Log backfill failed.' });
+  }
+});
+
+app.post('/api/admin/people-sync/retry', async (req, res) => {
+  try {
+    const tally = await peopleSync.retry();
+    auth.audit(req.user, 'people.retry', 'people_sync', 'retry', tally);
+    return res.json(tally);
+  } catch (error) {
+    console.error('Site Work Log retry failed', error);
+    return res.status(500).json({ message: 'The Site Work Log retry failed.' });
+  }
 });
 
 // ---- Client logos ------------------------------------------------------------------------------

@@ -254,8 +254,12 @@ const rowOf = (result, name) => result.rows.find((row) => row.name === name);
     const src = (file) => fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8');
     ['schedule.js', 'scheduleService.js'].forEach((file) => assert.ok(!/\b(axios|http|zoho|people)\.(post|put|patch|delete|request)\(|method:\s*['"](POST|PUT|PATCH|DELETE)/i.test(src(file)), `${file} makes no write call`));
     const people = src('zohoPeople.js');
-    assert.strictEqual((people.match(/http\.(post|put|patch|delete)\(/g) || []).length, 1, 'zohoPeople.js: one POST');
-    assert.ok(/http\.post\(`\$\{String\(config\.zoho\.accountsBaseUrl\)[^`]*\/oauth\/v2\/token`/.test(people), '... and it is the token refresh');
+    // 6G added the one write the app makes to People (Site Work Log records, used by peopleSync.js only): the
+    // form POST next to the token refresh. Nothing else writes, and the schedule code never reaches it.
+    assert.strictEqual((people.match(/http\.(post|put|patch|delete)\(/g) || []).length, 2, 'zohoPeople.js: the token refresh and the Site Work Log form post');
+    assert.ok(/http\.post\(`\$\{String\(config\.zoho\.accountsBaseUrl\)[^`]*\/oauth\/v2\/token`/.test(people), '... one is the token refresh');
+    assert.ok(/http\.post\(url, new URLSearchParams\(fields\)/.test(people), '... the other is the form post');
+    ['schedule.js', 'scheduleService.js'].forEach((file) => assert.ok(!/insertRecord|updateRecord/.test(src(file)), `${file} never writes a People record`));
     const server = src('server.js');
     assert.ok(!/zoho[A-Za-z.]*\.(createTask|updateTask|updateProject)/.test(server));
   });

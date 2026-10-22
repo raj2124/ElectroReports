@@ -1,0 +1,294 @@
+{
+ "response": {
+  "result": [
+   {
+    "comptype": "Lookup",
+    "Options": {
+     "Option1": {
+      "Value": "ELE0001 - Anup - Parekh",
+      "Id": "9001"
+     },
+     "Option2": {
+      "Value": "ELE0002 - Nidhi - Shah",
+      "Id": "9002"
+     }
+    },
+    "description": "",
+    "labelname": "engineer",
+    "ismandatory": false,
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "isPrimary": true,
+    "displayname": "Engineer",
+    "autofillvalue": "",
+    "fieldType": 26,
+    "ReferedFormName": "P_Employee",
+    "ReferedFieldName": "EmployeeID"
+   },
+   {
+    "comptype": "Text",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Project",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "project",
+    "fieldType": 1,
+    "maxLength": 255
+   },
+   {
+    "comptype": "Picklist",
+    "ismandatory": false,
+    "Options": {
+     "Option4": "Loop Impedance",
+     "Option3": "Earth Continuity & Bonding",
+     "Option2": "Earth Electrode Resistance",
+     "Option1": "Soil Resistivity",
+     "Option9": "Tower Footing Resistance",
+     "Option8": "Step & Touch Voltage",
+     "Option7": "Ground (Grid) Resistance",
+     "Option6": "Riser / Grid Integrity",
+     "Option5": "Prospective Fault Current"
+    },
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "displayname": "Test",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "test",
+    "fieldType": 25
+   },
+   {
+    "comptype": "Number",
+    "ismandatory": false,
+    "minimumValue": "",
+    "descriptionType": 0,
+    "displayname": "Planned Qty.",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "planned_qty",
+    "fieldType": 5,
+    "maximumValue": "",
+    "maxLength": 19
+   },
+   {
+    "comptype": "Picklist",
+    "ismandatory": false,
+    "Options": {
+     "Option4": "Checked",
+     "Option3": "In review",
+     "Option2": "Draft",
+     "Option1": "Approved"
+    },
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "displayname": "Report Status",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "report_status",
+    "fieldType": 25
+   },
+   {
+    "comptype": "Number",
+    "ismandatory": false,
+    "minimumValue": "",
+    "descriptionType": 0,
+    "displayname": "Data Gaps",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "data_gaps",
+    "fieldType": 5,
+    "maximumValue": "",
+    "maxLength": 19
+   },
+   {
+    "comptype": "Picklist",
+    "ismandatory": false,
+    "Options": {
+     "Option2": "No",
+     "Option1": "Yes"
+    },
+    "displayType": "Radio",
+    "descriptionType": 0,
+    "displayname": "First-time Approved",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "first_time_approved",
+    "fieldType": 25
+   },
+   {
+    "comptype": "Text",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Record Key",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "record_key",
+    "fieldType": 1,
+    "maxLength": 255
+   },
+   {
+    "comptype": "Lookup",
+    "Options": {
+     "Option1": {
+      "Value": "ELE0001 - Anup - Parekh",
+      "Id": "9001"
+     },
+     "Option2": {
+      "Value": "ELE0002 - Nidhi - Shah",
+      "Id": "9002"
+     }
+    },
+    "description": "",
+    "labelname": "AddedBy",
+    "ismandatory": false,
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "isPrimary": false,
+    "displayname": "Added By",
+    "autofillvalue": "",
+    "fieldType": 26,
+    "ReferedFormName": "P_Employee",
+    "ReferedFieldName": "EmployeeID"
+   },
+   {
+    "comptype": "Datetime",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Added Time",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "AddedTime",
+    "fieldType": 22
+   },
+   {
+    "comptype": "Date",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Work Date",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "work_date",
+    "fieldType": 10
+   },
+   {
+    "comptype": "Text",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Client",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "client",
+    "fieldType": 1,
+    "maxLength": 255
+   },
+   {
+    "comptype": "Picklist",
+    "ismandatory": false,
+    "Options": {
+     "Option4": "Points",
+     "Option3": "Panels",
+     "Option2": "Locations",
+     "Option1": "Pits",
+     "Option5": "Towers"
+    },
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "displayname": "Unit",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "unit",
+    "fieldType": 25
+   },
+   {
+    "comptype": "Number",
+    "ismandatory": false,
+    "minimumValue": "",
+    "descriptionType": 0,
+    "displayname": "Completed Qty.",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "completed_qty",
+    "fieldType": 5,
+    "maximumValue": "",
+    "maxLength": 19
+   },
+   {
+    "comptype": "Number",
+    "ismandatory": false,
+    "minimumValue": "",
+    "descriptionType": 0,
+    "displayname": "Returned Count",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "returned_count",
+    "fieldType": 5,
+    "maximumValue": "",
+    "maxLength": 19
+   },
+   {
+    "comptype": "Picklist",
+    "ismandatory": false,
+    "Options": {
+     "Option2": "No",
+     "Option1": "Yes"
+    },
+    "displayType": "Radio",
+    "descriptionType": 0,
+    "displayname": "On-time Submission",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "on_time_submission",
+    "fieldType": 25
+   },
+   {
+    "comptype": "Text",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Report ID",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "report_id",
+    "fieldType": 1,
+    "maxLength": 255
+   },
+   {
+    "comptype": "Lookup",
+    "Options": {
+     "Option1": {
+      "Value": "ELE0001 - Anup - Parekh",
+      "Id": "9001"
+     },
+     "Option2": {
+      "Value": "ELE0002 - Nidhi - Shah",
+      "Id": "9002"
+     }
+    },
+    "description": "",
+    "labelname": "ModifiedBy",
+    "ismandatory": false,
+    "displayType": "Pick_List",
+    "descriptionType": 0,
+    "isPrimary": false,
+    "displayname": "Modified By",
+    "autofillvalue": "",
+    "fieldType": 26,
+    "ReferedFormName": "P_Employee",
+    "ReferedFieldName": "EmployeeID"
+   },
+   {
+    "comptype": "Datetime",
+    "ismandatory": false,
+    "descriptionType": 0,
+    "displayname": "Modified Time",
+    "autofillvalue": "",
+    "description": "",
+    "labelname": "ModifiedTime",
+    "fieldType": 22
+   }
+  ],
+  "message": "Data fetched successfully",
+  "uri": "/api/forms/site_work_log/components",
+  "status": 0
+ }
+}
