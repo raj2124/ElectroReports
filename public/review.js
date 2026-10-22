@@ -116,6 +116,7 @@ function reviewView() {
           ${report.projectId ? `<button class="button button-secondary" data-action="open-workspace" data-id="${escapeHtml(report.projectId)}">Project workspace</button>` : ''}
           <button class="button button-secondary" data-action="go-dashboard">Back to Dashboard</button>
           <button class="button button-secondary" data-action="open-report" data-id="${report.id}">View Details</button>
+          ${review.kind === 'final' ? `<button class="button button-secondary" data-action="open-references">References${(report.references || []).length ? ` (${report.references.length})` : ''}</button>` : ''}
           <button class="button button-success" data-action="export-pdf" data-id="${report.id}" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Generating PDF...' : 'Preview / download PDF'}</button>
         </div>
       </div>

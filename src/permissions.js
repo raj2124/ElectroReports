@@ -35,6 +35,7 @@ const ROUTE_RULES = [
   ['POST', /^\/api\/reports\/[^/]+\/review\/return$/, ['reviewer', 'approver']],
   ['POST', /^\/api\/reports\/[^/]+\/review\/[^/]+$/, ['admin']],
   ['POST', /^\/api\/reports\/[^/]+\/reissue$/, ['approver']],
+  ['PUT', /^\/api\/reports\/[^/]+\/references$/, ['reviewer']],
   ['PUT', /^\/api\/reports\/[^/]+\/client-logo$/, ['approver']],
   ['PUT', /^\/api\/client-logo$/, ['approver']],
   ['DELETE', /^\/api\/client-logo$/, ['approver']],

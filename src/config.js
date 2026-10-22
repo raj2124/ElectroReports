@@ -65,6 +65,41 @@ const instrumentCatalogue = [
   { match: 'kyoritsu4118a', name: 'Kyoritsu 4118A Loop / PSC Tester', range: '0 – 20 / 200 / 2000 Ω (loop); 0 – 20 kA (PSC)', accuracy: '±(2.5 % of reading + 3 digits)' }
 ];
 
+// Microsoft Graph (Session 6H): Outlook calendar sync (write, only the app's own events, only mailboxes in the
+// Exchange-scoped group) and the SharePoint knowledge base (STRICTLY read-only: Sites.Selected with "read").
+const kbSitesDefault = [
+  { name: 'ETPL_OP_26_27', url: 'https://eletechnology.sharepoint.com/sites/ETPL_OP_26_27', folders: [], scope: 'client' },
+  { name: 'FY23-24', url: 'https://eletechnology.sharepoint.com/sites/FY23-24', folders: [], scope: 'client' },
+  { name: 'FY23-24-StandardsGuideline', url: 'https://eletechnology.sharepoint.com/sites/FY23-24-StandardsGuideline', folders: ['Shared Documents/ETPL Knowledge Hub/02 Technical Knowledge'], scope: 'general' }
+];
+function parseKbSites(value) {
+  if (!String(value || '').trim()) return kbSitesDefault;
+  try {
+    const list = JSON.parse(value);
+    return Array.isArray(list) ? list.map((site) => ({ name: String(site.name || '').trim(), url: String(site.url || '').trim().replace(/\/+$/, ''), folders: (Array.isArray(site.folders) ? site.folders : []).map((entry) => String(entry).replace(/^\/+|\/+$/g, '')), scope: site.scope === 'general' ? 'general' : 'client' })).filter((site) => site.name && site.url) : kbSitesDefault;
+  } catch (_error) {
+    return kbSitesDefault;
+  }
+}
+const graph = {
+  useMock: toBool(process.env.GRAPH_USE_MOCK, true),
+  tenantId: String(process.env.GRAPH_TENANT_ID || '').trim(),
+  clientId: String(process.env.GRAPH_CLIENT_ID || '').trim(),
+  certPath: String(process.env.GRAPH_CERT_PATH || '').trim(),
+  certThumbprintSha256: String(process.env.GRAPH_CERT_THUMBPRINT_SHA256 || '').replace(/[^0-9a-fA-F]/g, ''),
+  clientSecret: String(process.env.GRAPH_CLIENT_SECRET || '').trim(),
+  baseUrl: 'https://graph.microsoft.com/v1.0',
+  authority: 'https://login.microsoftonline.com',
+  appBaseUrl: String(process.env.APP_BASE_URL || '').trim().replace(/\/+$/, ''),
+  timezone: String(process.env.GRAPH_CALENDAR_TIMEZONE || 'India Standard Time').trim(),
+  kb: {
+    sites: parseKbSites(process.env.GRAPH_KB_SITES),
+    refreshMinutes: Number.parseInt(process.env.GRAPH_KB_REFRESH_MINUTES || '60', 10),
+    maxMb: Number.parseFloat(process.env.GRAPH_KB_MAX_MB || '40'),
+    dbPath: process.env.GRAPH_KB_DB || path.join(path.dirname(process.env.ELECTROREPORTS_DATA_FILE || path.join(rootDir, 'data', 'reports.json')), 'knowledge.db')
+  }
+};
+
 // Sign-in (Session 6E). mode: 'zoho' (Sign in with Zoho, OpenID Connect) or 'dev' (a user picker for
 // development and tests, never the default). With neither configured the API stays closed.
 const authMode = String(process.env.AUTH_MODE || '').trim().toLowerCase();
@@ -89,6 +124,7 @@ const auth = {
 
 module.exports = {
   auth,
+  graph,
   instrumentCatalogue,
   app: {
     rootDir,

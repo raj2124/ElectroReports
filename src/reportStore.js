@@ -65,6 +65,7 @@ function openDatabase(dbPath) {
   migrateAuthSchema(db);
   migrateScheduleSchema(db);
   migratePeopleSyncSchema(db);
+  migrateCalendarSyncSchema(db);
   return db;
 }
 
@@ -222,6 +223,25 @@ function migratePeopleSyncSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_people_sync_root ON people_sync(root_id);
     CREATE INDEX IF NOT EXISTS idx_people_sync_state ON people_sync(sync_state);
+  `);
+}
+
+// Outlook calendar sync (ADDITIVE, Session 6H): the events the app created, one per Zoho task and owner. The
+// event id and a hash of what was sent let the next run update only what changed; Outlook itself (the events
+// tagged with the app's extended property) is what a run reconciles against.
+function migrateCalendarSyncSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS calendar_sync (
+      event_key   TEXT PRIMARY KEY,
+      task_id     TEXT NOT NULL,
+      owner_email TEXT NOT NULL,
+      event_id    TEXT,
+      hash        TEXT,
+      sync_state  TEXT NOT NULL,
+      error       TEXT,
+      synced_at   TEXT,
+      updated_at  TEXT NOT NULL
+    );
   `);
 }
 
@@ -985,6 +1005,26 @@ function createReportStore({ filePath }) {
     return getPeopleSync(key);
   }
 
+  // The workspaces a person worked on: they created a daily report there or are credited on a row (6G stamps).
+  function projectIdsWorkedBy(userId) {
+    const id = String(userId || '');
+    if (!id) return [];
+    return db.prepare("SELECT DISTINCT project_id FROM reports WHERE project_id IS NOT NULL AND (data LIKE ? OR data LIKE ?)").all(`%"createdBy":"${id.replace(/[%_"\\]/g, '')}"%`, `%"userId":"${id.replace(/[%_"\\]/g, '')}"%`).map((row) => row.project_id);
+  }
+
+  // ---- Calendar sync (6H) -------------------------------------------------------------------
+  const rowToCalendar = (row) => (row ? { key: row.event_key, taskId: row.task_id, ownerEmail: row.owner_email, eventId: row.event_id || '', hash: row.hash || '', state: row.sync_state, error: row.error || '', syncedAt: row.synced_at || '' } : null);
+  const getCalendarSync = (key) => rowToCalendar(db.prepare('SELECT * FROM calendar_sync WHERE event_key = ?').get(String(key)));
+  const listCalendarSync = () => db.prepare('SELECT * FROM calendar_sync ORDER BY event_key').all().map(rowToCalendar);
+  function saveCalendarSync(key, fields) {
+    const next = { ...(getCalendarSync(key) || {}), ...fields };
+    db.prepare(`INSERT INTO calendar_sync (event_key, task_id, owner_email, event_id, hash, sync_state, error, synced_at, updated_at) VALUES (@key, @taskId, @ownerEmail, @eventId, @hash, @state, @error, @syncedAt, @updatedAt)
+      ON CONFLICT(event_key) DO UPDATE SET task_id = @taskId, owner_email = @ownerEmail, event_id = @eventId, hash = @hash, sync_state = @state, error = @error, synced_at = @syncedAt, updated_at = @updatedAt`)
+      .run({ key: String(key), taskId: next.taskId || '', ownerEmail: next.ownerEmail || '', eventId: next.eventId || '', hash: next.hash || '', state: next.state || 'done', error: next.error || '', syncedAt: next.syncedAt || '', updatedAt: new Date().toISOString() });
+    return getCalendarSync(key);
+  }
+  const deleteCalendarSync = (key) => db.prepare('DELETE FROM calendar_sync WHERE event_key = ?').run(String(key));
+
   // ---- Notices ------------------------------------------------------------------------------
   function rowToNotice(row) {
     return {
@@ -1056,6 +1096,11 @@ function createReportStore({ filePath }) {
     setScheduleCache,
     getScheduleSetting,
     setScheduleSetting,
+    projectIdsWorkedBy,
+    getCalendarSync,
+    listCalendarSync,
+    saveCalendarSync,
+    deleteCalendarSync,
     getPeopleSync,
     listPeopleSync,
     peopleSyncCounts,

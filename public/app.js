@@ -3141,6 +3141,8 @@ function render() {
       ${state.view === 'signin' ? signInView() : ''}
       ${state.view === 'profile' && authUi.user ? profileView() : ''}
       ${state.view === 'admin' && authUi.user ? adminView() : ''}
+      ${state.view === 'kb' && authUi.user ? kbView() : ''}
+      ${state.view === 'references' && authUi.user ? referencesView() : ''}
     </main>
     ${renderObservationDrawer()}
     ${renderPrintDialog()}
@@ -3487,6 +3489,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (typeof handleKbAction === 'function' && handleKbAction(action, button)) {
+    return;
+  }
+
   if (handleNoticeAction(action, button)) {
     return;
   }
@@ -3693,6 +3699,10 @@ document.addEventListener('input', (event) => {
     return;
   }
 
+  if (typeof handleKbInput === 'function' && handleKbInput(target)) {
+    return;
+  }
+
   if (handleWorkspaceInput(target)) {
     return;
   }
@@ -3749,6 +3759,9 @@ document.addEventListener('change', async (event) => {
     return;
   }
   if (handleAuthChange(target)) {
+    return;
+  }
+  if (typeof handleKbChange === 'function' && handleKbChange(target)) {
     return;
   }
   if (handlePlanChange(target)) {
@@ -3868,6 +3881,9 @@ async function init() {
   await loadReports();
   await loadProjects();
   await loadNotices();
+  if (typeof consumeDeepLink === 'function') {
+    await consumeDeepLink();
+  }
 }
 
 window.addEventListener('beforeunload', () => {

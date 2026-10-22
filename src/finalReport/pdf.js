@@ -370,6 +370,17 @@ function drawAnnexures(doc, annexures) {
   });
 }
 
+// References picked by the reviewer (6H.5): title, where it is kept and its date, nothing from the documents'
+// text. They are pointers for the reader and play no part in any figure or verdict of this report.
+function drawReferences(doc, references) {
+  doc.section('References');
+  doc.note('Documents the reviewer selected as further reading. They were not used in any calculation, result or finding in this report.');
+  doc.table({
+    columns: [['Document', 38], ['Location', 50], ['Dated', 12]],
+    rows: references.map((reference) => [String(reference.title || ''), `${reference.source || ''}: ${reference.path || ''}`, String(reference.modified || '').slice(0, 10)])
+  });
+}
+
 function drawControlAndIndex(doc, data, revisions, sections, approvals) {
   const pdf = doc.doc;
   pdf.switchToPage(1);
@@ -434,6 +445,7 @@ async function generateFinalReportPdf(report, options = {}) {
   drawCap(doc, data);
   drawMaintenance(doc);
   drawAnnexures(doc, annexures);
+  if (Array.isArray(report.references) && report.references.length) drawReferences(doc, report.references);
   drawControlAndIndex(doc, data, revisions, doc.sections, options.approvals);
   const pageCount = doc.pageIndex + 1;
   doc.finish({ coverPages: 1 });

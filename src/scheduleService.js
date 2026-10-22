@@ -17,7 +17,7 @@ const SETTINGS_KEY = 'settings';
 const text = (value) => String(value === undefined || value === null ? '' : value).trim();
 const message = (error) => (error && error.message ? String(error.message).slice(0, 200) : 'unknown error');
 
-function createScheduleService({ store, zoho, people, config = defaultConfig, now = () => Date.now(), log = console }) {
+function createScheduleService({ store, zoho, people, config = defaultConfig, now = () => Date.now(), log = console, onTasksRefreshed = null }) {
   const inFlight = new Map();
   const stamp = () => new Date(now()).toISOString();
   const put = (key, data, error = '') => store.setScheduleCache(key, data, { error, at: stamp() });
@@ -92,6 +92,8 @@ function createScheduleService({ store, zoho, people, config = defaultConfig, no
         const { data, failed } = await readTasks();
         put('tasks', data);
         if (failed.length) put('tasks', undefined, `${failed.length} project${failed.length === 1 ? '' : 's'} could not be read (older data kept): ${failed.slice(0, 3).join('; ')}`);
+        // the Outlook calendar sync follows the tasks (a no-op while it is switched off)
+        if (typeof onTasksRefreshed === 'function') Promise.resolve().then(onTasksRefreshed).catch((error) => log.error(`Schedule: calendar hook failed: ${message(error)}`));
       } catch (error) {
         log.error(`Schedule: reading Zoho tasks failed: ${message(error)}`);
         put('tasks', undefined, message(error));

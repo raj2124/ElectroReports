@@ -4670,3 +4670,8 @@ textarea {
 @media (max-width: 720px) {
   .sched-grid { --name-width: 120px; }
 }
+
+/* Knowledge base search and references (6H) */
+.kb-hits { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.kb-hit { padding: 10px 12px; border: 1px solid var(--line, #d8dee9); border-radius: 8px; overflow-wrap: anywhere; }
+.kb-hit .button { margin-top: 6px; }

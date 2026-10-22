@@ -32,6 +32,9 @@ const { createPeopleClient } = require('./zohoPeople');
 const { createPeopleSync } = require('./peopleSync');
 const { stampReport } = require('./entryCredit');
 const { createAuth } = require('./auth');
+const { createGraph } = require('./graphService');
+const { createCalendarSync } = require('./calendarSync');
+const { createKnowledgeBase, projectKeyOf } = require('./knowledgeBase');
 const { reviewGate, reviewAccess, mayEditReport, hasRole } = require('./permissions');
 const {
   previewSoilSheetWithGemini,
@@ -77,7 +80,11 @@ app.use(express.json({ limit: '25mb' }));
 
 // Scheduling (6F): Zoho Projects tasks and Zoho People leave, read only and cached.
 const peopleClient = createPeopleClient();
-const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: peopleClient });
+// Microsoft Graph (6H): Outlook calendar sync and the read-only SharePoint knowledge base. GRAPH_USE_MOCK runs both on an in-memory Graph.
+const graph = createGraph();
+const calendarSync = createCalendarSync({ store, graph, config: { ...config.graph, hiddenTaskStatuses: config.schedule.hiddenTaskStatuses } });
+const knowledge = createKnowledgeBase({ graph, config: config.graph, store });
+const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: peopleClient, onTasksRefreshed: calendarSync.onTasksRefreshed });
 // Site Work Log (6G): the one thing written to Zoho People, on approval only. Never blocks a review step.
 const peopleSync = createPeopleSync({ store, people: peopleClient, config, getWorkingDays: () => schedule.getSettings().workingDays });
 
@@ -542,6 +549,13 @@ app.post('/api/reports/:id/reissue', (req, res) => {
 // ---- Project workspaces (Session 6C.4) -------------------------------------------------------
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+// The /?project=<id> link of a calendar event: a workspace id or a Zoho project id.
+app.get('/api/projects/lookup/:id', (req, res) => {
+  const id = String(req.params.id);
+  const workspace = store.listProjects().find((project) => project.id === id || String(project.zohoProjectId || '') === id);
+  return res.json({ workspaceId: workspace ? workspace.id : '', zohoProjectId: workspace ? String(workspace.zohoProjectId || '') : id });
+});
+
 app.get('/api/projects', (_req, res) => {
   res.json(listProjectSummaries(store));
 });
@@ -822,6 +836,96 @@ app.post('/api/admin/people-sync/retry', async (req, res) => {
   }
 });
 
+// ---- Microsoft Graph (6H): admin only (the /api/admin rule) ------------------------------------------
+app.get('/api/admin/calendar-sync', (_req, res) => res.json(calendarSync.status()));
+
+app.put('/api/admin/calendar-sync', (req, res) => {
+  const settings = calendarSync.saveSettings(req.body || {}, req.user.email);
+  auth.audit(req.user, 'calendar.settings', 'calendar_sync', 'settings', settings);
+  return res.json(calendarSync.status());
+});
+
+// What a run would change, whatever the switches say. Writes nothing.
+app.post('/api/admin/calendar-sync/preview', async (_req, res) => {
+  try {
+    return res.json(await calendarSync.run({ dryRun: true }));
+  } catch (error) {
+    return res.status(502).json({ message: `The preview failed (${error.status || ''} ${error.code || 'error'}).`.replace('( ', '(') });
+  }
+});
+
+app.post('/api/admin/calendar-sync/run', async (req, res) => {
+  if (!calendarSync.getSettings().enabled) {
+    return res.status(409).json({ message: 'Switch calendar sync on first.', code: 'SYNC_OFF' });
+  }
+  try {
+    const summary = await calendarSync.run();
+    auth.audit(req.user, 'calendar.run', 'calendar_sync', 'run', { dryRun: summary.dryRun, counts: summary.counts });
+    return res.json(summary);
+  } catch (error) {
+    return res.status(502).json({ message: `The calendar sync failed (${error.status || ''} ${error.code || 'error'}).`.replace('( ', '(') });
+  }
+});
+
+app.get('/api/admin/kb', (_req, res) => res.json(knowledge.status()));
+
+app.post('/api/admin/kb/refresh', async (req, res) => {
+  try {
+    const summary = await knowledge.refresh();
+    auth.audit(req.user, 'kb.refresh', 'kb', 'refresh', summary.sites.map((site) => ({ site: site.name, added: site.added, updated: site.updated, removed: site.removed, errors: site.errors, error: site.error })));
+    return res.json(summary);
+  } catch (error) {
+    console.error('Knowledge base refresh failed', error.status || '', error.code || '');
+    return res.status(500).json({ message: 'The knowledge base refresh failed.' });
+  }
+});
+
+// ---- Knowledge base search (6H.4) -----------------------------------------------------------------
+// Admin, approver and reviewer search everything; an engineer finds the general documents and the client
+// documents of the projects they worked on. The filter is in the query, not in the page.
+app.get('/api/kb/search', (req, res) => {
+  const hits = knowledge.search({ query: String(req.query.q || ''), access: knowledge.accessFor(req.user), limit: Math.min(50, Math.max(1, Number.parseInt(req.query.limit || '20', 10) || 20)) });
+  return res.json({ hits });
+});
+
+// The project a report belongs to, as the folder naming of SharePoint knows it ('' when none is recognisable).
+function reportProjectKey(report) {
+  const project = report.projectId ? store.getProject(report.projectId) : null;
+  return projectKeyOf((project && project.projectNo) || (report.project && report.project.projectNo) || '');
+}
+
+// References (6H.5): the reviewer searches for documents of this report's own client project and the general
+// knowledge base; another client's documents are never offered or accepted.
+app.get('/api/reports/:id/kb-search', (req, res) => {
+  const report = requireWorkflowReport(req, res);
+  if (!report) return undefined;
+  if (!hasRole(req.user, 'reviewer')) return res.status(403).json({ message: 'Only a reviewer can pick references.' });
+  const hits = knowledge.search({ query: String(req.query.q || ''), access: knowledge.accessFor(req.user), limit: 20, projectKey: reportProjectKey(report) });
+  return res.json({ hits });
+});
+
+app.put('/api/reports/:id/references', (req, res) => {
+  const report = requireWorkflowReport(req, res);
+  if (!report) return undefined;
+  if (getReportKind(report) !== 'final') return res.status(400).json({ message: 'References belong on a final report.' });
+  if (getReviewStatus(report) === 'approved') return res.status(409).json({ message: 'An approved report is not changed: re-issue it first.', code: 'INVALID_STATE' });
+  const ids = Array.isArray(req.body && req.body.fileIds) ? [...new Set(req.body.fileIds.map(Number))].filter(Number.isInteger) : [];
+  const access = knowledge.accessFor(req.user);
+  const key = reportProjectKey(report);
+  const references = [];
+  for (const id of ids) {
+    const file = knowledge.getFile(id, access);
+    if (!file || !(file.scope === 'general' || (file.projectKey && file.projectKey === key))) {
+      return res.status(400).json({ message: 'A selected document is not available for this report: only this project\'s own documents and the general knowledge base can be cited.', code: 'REFERENCE_NOT_ALLOWED' });
+    }
+    const kept = (report.references || []).find((entry) => entry.fileId === file.id);
+    references.push({ fileId: file.id, title: file.title, path: file.path, source: file.source, modified: file.modified, webUrl: file.webUrl, addedBy: kept ? kept.addedBy : req.user.name, addedAt: kept ? kept.addedAt : new Date().toISOString() });
+  }
+  store.updateReport(req.params.id, (current) => ({ ...current, references }));
+  auth.audit(req.user, 'report.references', 'report', req.params.id, { count: references.length });
+  return res.json({ references });
+});
+
 // ---- Client logos ------------------------------------------------------------------------------
 app.get('/api/client-logo', (req, res) => {
   const keys = clientKeys({ clientId: req.query.clientId, clientName: req.query.clientName });
@@ -944,4 +1048,5 @@ app.listen(port, host, () => {
   console.log(`ElectroReports running on http://${host}:${port}`);
   startProjectWatch({ store });
   schedule.start();
+  knowledge.start();
 });
