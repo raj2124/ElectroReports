@@ -4675,3 +4675,25 @@ textarea {
 .kb-hits { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
 .kb-hit { padding: 10px 12px; border: 1px solid var(--line, #d8dee9); border-radius: 8px; overflow-wrap: anywhere; }
 .kb-hit .button { margin-top: 6px; }
+
+/* Scanned sheets and wording suggestions (6I) */
+.scan-split { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .scan-split { grid-template-columns: 1fr; } }
+.scan-image-pane { position: sticky; top: 8px; }
+.scan-image-scroll { max-height: 80vh; overflow: auto; border: 1px solid var(--line, #d8dee9); border-radius: 8px; background: #fff; }
+.scan-image-scroll img { display: block; max-width: none; }
+.scan-data-pane { min-width: 0; display: grid; gap: 12px; }
+.scan-data-pane fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.scan-table-wrap { overflow-x: auto; }
+.scan-table td, .scan-table th { vertical-align: top; }
+.scan-table .table-input { min-width: 72px; width: 100%; }
+.scan-fixed { color: var(--muted, #5c6b7d); text-align: center; white-space: nowrap; }
+.scan-pre { color: var(--muted, #5c6b7d); font-style: italic; }
+.scan-ticks { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 0.8em; }
+.scan-flag { background: #fff3cd; outline: 2px solid #d59a12; outline-offset: -2px; }
+.scan-flag-text { font-size: 0.7em; color: #7a5a00; margin-top: 2px; }
+.scan-edited { box-shadow: inset 3px 0 0 #2f6fdb; }
+.scan-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.scan-header-item > .muted { display: block; font-size: 0.75em; }
+.suggest-btn { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 1px solid #5b78a8; border-radius: 50%; background: #fff; color: #0b3a8c; font: 700 0.8rem/1 Georgia, serif; cursor: pointer; }
+.suggest-btn:hover, .suggest-btn:focus-visible { background: #e3edfb; }

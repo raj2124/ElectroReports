@@ -16,6 +16,8 @@
     "test:workspace": "node scripts/test-workspace.js && node scripts/test-workspace-ui.js",
     "test:people": "node scripts/test-people-sync.js",
     "test:graph": "node scripts/test-graph.js && node scripts/test-graph-ui.js",
+    "test:scan": "node scripts/test-scan.js && node scripts/test-scan-routes.js && node scripts/test-scan-ui.js",
+    "test:ai-checks": "node scripts/test-ai-checks.js",
     "test:layout": "node scripts/test-layout.js",
     "test:sheets": "node scripts/test-sheet-print.js",
     "test:esha": "node scripts/test-esha-golden.js && node scripts/test-esha-rules.js && node scripts/test-live-remarks.js && node scripts/test-ui-assessments.js && node scripts/test-sheet-definitions.js && node scripts/test-sheet-rules.js && node scripts/test-sheet-widths.js && node scripts/test-soil-unit.js",

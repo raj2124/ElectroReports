@@ -20,9 +20,9 @@ const {
 } = require('./aiService');
 const { getReportKind, getReviewStatus } = require('./reportCollectionModel');
 const { ensureProject, buildWorkspace, listProjectSummaries, findDay, assembleFor, pickProjectFields } = require('./workspace');
-const { buildReviewState } = require('./review');
-const { exportReportPdf } = require('./finalReport/service');
-const { ConsistencyError } = require('./finalReport/data');
+const { buildReviewState, sanityState } = require('./review');
+const { exportReportPdf, narrativeFor } = require('./finalReport/service');
+const { ConsistencyError, buildFinalReportData } = require('./finalReport/data');
 const { LogoError, parseLogoDataUrl, clientKeys } = require('./finalReport/logos');
 const { getProjects, getProject, getProjectUsers, getPortalUsers, filterProjectsForPicker, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const { isD03Name, buildTaskPlan, nameOwners } = require('./zohoTasks');
@@ -32,6 +32,11 @@ const { createPeopleClient } = require('./zohoPeople');
 const { createPeopleSync } = require('./peopleSync');
 const { stampReport } = require('./entryCredit');
 const { createAuth } = require('./auth');
+const { createAiGuard } = require('./aiGuard');
+const { createAiChecks } = require('./aiChecks');
+const { createScanService, ScanError } = require('./scan/service');
+const { createGeminiProvider } = require('./scan/geminiProvider');
+const { createMockProvider } = require('./scan/mockProvider');
 const { createGraph } = require('./graphService');
 const { createCalendarSync } = require('./calendarSync');
 const { createKnowledgeBase, projectKeyOf } = require('./knowledgeBase');
@@ -85,6 +90,18 @@ const graph = createGraph();
 const calendarSync = createCalendarSync({ store, graph, config: { ...config.graph, hiddenTaskStatuses: config.schedule.hiddenTaskStatuses } });
 const knowledge = createKnowledgeBase({ graph, config: config.graph, store });
 const schedule = createScheduleService({ store, zoho: require('./zohoClient'), people: peopleClient, onTasksRefreshed: calendarSync.onTasksRefreshed });
+// Scanned sheets (6I): the reader is the mock unless OCR_USE_MOCK=false; a provider that keeps failing is paused by the guard.
+const aiGuard = createAiGuard({ store });
+const scans = createScanService({
+  store,
+  config: config.scan,
+  provider: config.scan.useMock ? createMockProvider({ primaryModel: config.gemini.model }) : createGeminiProvider({ config }),
+  guard: aiGuard,
+  models: { primary: config.gemini.model, escalation: config.gemini.escalationModel }
+});
+// Secondary AI checks (6I): the sanity check of a final narrative and remark wording; mocks unless AI_CHECKS_USE_MOCK=false.
+const aiChecks = createAiChecks({ store, config, guard: aiGuard });
+const scanUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.scan.maxUploadBytes, files: 10 } });
 // Site Work Log (6G): the one thing written to Zoho People, on approval only. Never blocks a review step.
 const peopleSync = createPeopleSync({ store, people: peopleClient, config, getWorkingDays: () => schedule.getSettings().workingDays });
 
@@ -167,7 +184,7 @@ app.get('/api/catalog', (_req, res) => {
 });
 
 app.get('/api/ai/status', (_req, res) => {
-  res.json(getAiStatus());
+  res.json({ ...getAiStatus(), checks: { mock: config.scan.aiChecksUseMock, sanityModel: config.openai.sanityModel, observationModel: config.openai.observationModel, guard: aiGuard.status('openai') }, sheetReader: { mock: config.scan.useMock, model: config.gemini.model, escalationModel: config.gemini.escalationModel, minConfidence: config.scan.minConfidence, guard: aiGuard.status('gemini') } });
 });
 
 app.get('/api/ocr/status', (_req, res) => {
@@ -428,6 +445,14 @@ app.post('/api/reports/:id/pdf', async (req, res) => {
       getReportKind(report) === 'standalone'
         ? await generateElectroReportPdf(report, { generatedDir, publicPathPrefix: '/generated-pdfs' })
         : await exportReportPdf(store, report, { generatedDir, publicPathPrefix: '/generated-pdfs' });
+    // A final report's narrative gets its independent sanity check when it is AI-written and has none for this text yet.
+    // Best effort: a provider problem never changes the export.
+    if (getReportKind(report) === 'final') {
+      const fresh = loadReport(req.params.id);
+      if (fresh && fresh.reportNarrative && fresh.reportNarrative.aiWritten && getReviewStatus(fresh) !== 'approved' && sanityState(fresh).state === 'not run') {
+        await aiChecks.sanityCheck(fresh).catch(() => null);
+      }
+    }
     return res.json(pdf);
   } catch (error) {
     if (error instanceof ConsistencyError) {
@@ -924,6 +949,109 @@ app.put('/api/reports/:id/references', (req, res) => {
   store.updateReport(req.params.id, (current) => ({ ...current, references }));
   auth.audit(req.user, 'report.references', 'report', req.params.id, { count: references.length });
   return res.json({ references });
+});
+
+// ---- Secondary AI checks (6I) --------------------------------------------------------------------
+// Runs the independent sanity check of a final report's narrative now (the narrative is written first if it does not exist).
+// A provider problem answers 200 with the reason: the review goes on with "not run".
+app.post('/api/reports/:id/ai/sanity', async (req, res) => {
+  const report = requireWorkflowReport(req, res);
+  if (!report) return undefined;
+  if (getReportKind(report) !== 'final') return res.status(400).json({ message: 'The sanity check is for a final report\'s narrative.' });
+  if (getReviewStatus(report) === 'approved') return res.status(409).json({ message: 'An approved report is not changed: re-issue it first.', code: 'INVALID_STATE' });
+  try {
+    await narrativeFor(store, report, buildFinalReportData(report), {});
+    const result = await aiChecks.sanityCheck(loadReport(req.params.id));
+    auth.audit(req.user, 'ai.sanity', 'report', req.params.id, { status: result.status, flags: (result.flags || []).length, code: result.code });
+    return res.json({ result: { status: result.status, reason: result.reason || '', flags: result.flags || [], notes: result.notes || '' }, review: reviewPayload(req, loadReport(req.params.id)) });
+  } catch (error) {
+    console.error('Sanity check request failed', error && error.name);
+    return res.status(500).json({ message: 'The sanity check could not be run.' });
+  }
+});
+
+// Remark wording for a flagged point: the engineer clicks to insert it. Always answers with text (the standard wording when
+// the provider is unavailable or its draft is not plain wording) and says which it is.
+app.post('/api/observations/suggest', async (req, res) => {
+  const body = req.body || {};
+  const sheet = require('./sheetDefinitions').getSheet(String(body.sheetKey || ''));
+  if (!sheet) return res.status(400).json({ message: 'Unknown sheet.' });
+  return res.json(await aiChecks.suggestWording({ sheetLabel: sheet.title, pointKind: String(body.pointKind || ''), conditionCodes: body.conditionCodes }));
+});
+
+// Admin only: how many calls each provider got (counts, no content).
+app.get('/api/admin/ai-usage', (_req, res) => res.json({ usage: store.aiUsageSummary() }));
+
+// ---- Scanned sheets (6I) -------------------------------------------------------------------------
+function scanFailure(res, error) {
+  if (error instanceof ScanError) return res.status(error.status).json({ message: error.message, code: error.code, ...error.extra });
+  if (error && (error.name === 'UploadError')) return res.status(400).json({ message: error.message, code: error.code });
+  console.error('Scan request failed', error && error.name);
+  return res.status(500).json({ message: 'The scan request failed.' });
+}
+
+app.get('/api/scans', (req, res) => res.json({ scans: scans.list(req.user, { all: req.query.all === '1' }) }));
+
+app.post('/api/scans', scanUpload.array('files', 10), async (req, res) => {
+  try {
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ message: 'Choose a PDF, PNG or JPEG of the printed sheets.' });
+    const created = [];
+    for (const file of files) created.push(...(await scans.ingest({ buffer: file.buffer, mimetype: file.mimetype, fileName: file.originalname, user: req.user })));
+    auth.audit(req.user, 'scan.upload', 'scan', created[0] && created[0].batchId, { pages: created.length });
+    return res.status(202).json({ scans: created });
+  } catch (error) {
+    return scanFailure(res, error);
+  }
+});
+
+app.get('/api/scans/:id', (req, res) => {
+  try { return res.json(scans.detail(req.params.id, req.user)); } catch (error) { return scanFailure(res, error); }
+});
+
+app.get('/api/scans/:id/image', (req, res) => {
+  try {
+    res.set('Cache-Control', 'private, no-store');
+    return res.type('png').send(scans.image(req.params.id, req.user));
+  } catch (error) { return scanFailure(res, error); }
+});
+
+app.put('/api/scans/:id', (req, res) => {
+  try { return res.json(scans.edit(req.params.id, req.user, (req.body && req.body.edits) || {})); } catch (error) { return scanFailure(res, error); }
+});
+
+app.post('/api/scans/:id/assign', (req, res) => {
+  try { return res.json(scans.assign(req.params.id, req.user, req.body || {})); } catch (error) { return scanFailure(res, error); }
+});
+
+app.post('/api/scans/:id/retry', (req, res) => {
+  try { return res.json(scans.retry(req.params.id, req.user)); } catch (error) { return scanFailure(res, error); }
+});
+
+app.post('/api/scans/:id/discard', (req, res) => {
+  try {
+    const summary = scans.discard(req.params.id, req.user);
+    auth.audit(req.user, 'scan.discard', 'scan', req.params.id, {});
+    return res.json(summary);
+  } catch (error) { return scanFailure(res, error); }
+});
+
+// Writes the scan into the project's daily report (created if the project has none for that date).
+app.post('/api/scans/:id/accept', (req, res) => {
+  try {
+    const result = scans.accept(req.params.id, req.user, { confirm: Boolean(req.body && req.body.confirm) });
+    auth.audit(req.user, 'scan.accept', 'scan', req.params.id, { reportId: result.reportId, written: result.written, overwrites: result.overwrites, createdDay: result.createdDay });
+    return res.json(result);
+  } catch (error) { return scanFailure(res, error); }
+});
+
+// Admin only (the /api/admin rule): delete the scans of a date range, images included. Audited.
+app.post('/api/admin/scans/purge', (req, res) => {
+  try {
+    const result = scans.purge({ from: String((req.body && req.body.from) || ''), to: String((req.body && req.body.to) || '') });
+    auth.audit(req.user, 'scan.purge', 'scan', `${result.from}..${result.to}`, result);
+    return res.json(result);
+  } catch (error) { return scanFailure(res, error); }
 });
 
 // ---- Client logos ------------------------------------------------------------------------------

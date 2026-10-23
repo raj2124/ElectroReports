@@ -56,6 +56,7 @@ function renderUserBar() {
       <span class="muted">${authUi.user.roles.map((role) => ROLE_LABEL[role] || role).join(', ')}</span>
       <button class="button button-ghost" data-action="open-schedule">Schedule</button>
       <button class="button button-ghost" data-action="open-kb">Search documents</button>
+      ${hasRoleClient('engineer') ? '<button class="button button-ghost" data-action="open-scans">Scan sheets</button>' : ''}
       <button class="button button-ghost" data-action="open-profile">My profile</button>
       ${hasRoleClient('admin') ? '<button class="button button-ghost" data-action="open-admin">Admin</button>' : ''}
       <button class="button button-ghost" data-action="sign-out">Sign out</button>
@@ -92,6 +93,7 @@ function adminView() {
         <button class="button ${tab === 'people' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="people">Site Work Log</button>
         <button class="button ${tab === 'calendar' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="calendar">Calendar sync</button>
         <button class="button ${tab === 'kb' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="kb">Knowledge base</button>
+        <button class="button ${tab === 'scans' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="scans">Scans and AI</button>
         <button class="button button-secondary" data-action="go-dashboard">Back to Dashboard</button>
       </div>
       ${
@@ -101,6 +103,8 @@ function adminView() {
           ? calendarSyncPanel()
           : tab === 'kb'
           ? kbAdminPanel()
+          : tab === 'scans'
+          ? scanAdminPanel()
           : tab === 'users'
           ? `<table class="data-table admin-users"><thead><tr><th>Name</th><th>E-mail</th><th>Roles</th><th>Active</th><th>Last sign-in</th></tr></thead><tbody>
           ${users
@@ -182,6 +186,9 @@ async function loadAdminData() {
       authUi.people = await api('/api/admin/people-sync');
     }
     await loadGraphAdmin(authUi.adminTab);
+    if (authUi.adminTab === 'scans' && typeof loadScanAdmin === 'function') {
+      await loadScanAdmin();
+    }
     if (authUi.adminTab === 'audit') {
       const filter = authUi.auditFilter;
       authUi.audit = await api(`/api/admin/audit?limit=100&offset=${filter.offset}&user=${encodeURIComponent(filter.user)}&action=${encodeURIComponent(filter.action)}`);

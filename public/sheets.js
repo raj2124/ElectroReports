@@ -1278,7 +1278,8 @@ function renderStatusCell(sheetId, row, explain) {
   const button = text ? `<button class="explain-btn" type="button" data-explain="${esc(text)}" aria-label="Why this status">i</button>` : '';
   return `
     <td class="sheet-status-cell sticky-right-2" data-label="Status">
-      <div class="status-line">${pill(assessment.status.tone, assessment.status.label)}${assessment.priority ? `<span class="soft-chip">${esc(assessment.priority)}</span>` : ''}${button}</div>
+      <div class="status-line">${pill(assessment.status.tone, assessment.status.label)}${assessment.priority ? `<span class="soft-chip">${esc(assessment.priority)}</span>` : ''}${button}${typeof suggestButton === 'function' ? suggestButton(sheetId, row, assessment) : ''}</div>
+      ${typeof suggestionHtml === 'function' ? suggestionHtml(row.rowId) : ''}
       ${limit}
       ${flagChips(assessment.flags)}
       <div class="auto-eval-text status-explain-inline">${esc(assessment.comment)}</div>

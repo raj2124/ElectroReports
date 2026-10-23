@@ -1242,7 +1242,7 @@ function deriveStepTouchAssessment(row, contextOrReport) {
 }
 
 function valueHasAnyInput(value, key = '') {
-  if (key === 'rowId') {
+  if (key === 'rowId' || key === 'sheetRow') {
     return false;
   }
   if (Array.isArray(value)) {
@@ -1268,9 +1268,14 @@ function normalizeObservationPhotos(photos) {
     .filter((photo) => photo.dataUrl);
 }
 
+// Where a row sits on the printed sheet it came from (Session 6I): set when a scanned sheet is accepted, so a
+// second scan of the same sheet overwrites the same row. Not data: it never counts as a value.
+const sheetRowOf = (source) => (Number.isInteger(source?.sheetRow) && source.sheetRow >= 0 ? { sheetRow: source.sheetRow } : {});
+
 function normalizeRowMeta(row, prefix = 'row') {
   return {
     rowId: asTrimmedString(row?.rowId) || buildRowId(prefix),
+    ...sheetRowOf(row),
     rowObservation: asTrimmedString(row?.rowObservation),
     rowPhotos: normalizeObservationPhotos(row?.rowPhotos)
   };
@@ -1313,6 +1318,7 @@ function normalizeSoilLocations(input) {
     .filter((location) => soilLocationHasAnyValue(location))
     .map((location, index) => ({
       locationId: asTrimmedString(location?.locationId) || buildRowId('soil-location'),
+      ...sheetRowOf(location),
       name: asTrimmedString(location?.name) || `Location ${index + 1}`,
       ...Object.fromEntries(SOIL_DIRECTION_KEYS.map((key) => [key, normalizeSoilRows(location?.[key])])),
       inputUnit: asTrimmedString(location?.inputUnit) === 'ohm' ? 'ohm' : asTrimmedString(location?.inputUnit) === 'ohm-m' ? 'ohm-m' : '',
@@ -1398,6 +1404,7 @@ function normalizeTowerFootingGroups(inputGroups) {
 
       return {
         groupId: asTrimmedString(group?.groupId) || buildRowId('tower-group'),
+        ...sheetRowOf(group),
         srNo: asTrimmedString(group?.srNo) || String(groupIndex + 1),
         mainLocationTower: asTrimmedString(group?.mainLocationTower),
         readings: normalizedReadings,

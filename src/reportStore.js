@@ -66,6 +66,7 @@ function openDatabase(dbPath) {
   migrateScheduleSchema(db);
   migratePeopleSyncSchema(db);
   migrateCalendarSyncSchema(db);
+  migrateScanSchema(db);
   return db;
 }
 
@@ -223,6 +224,45 @@ function migratePeopleSyncSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_people_sync_root ON people_sync(root_id);
     CREATE INDEX IF NOT EXISTS idx_people_sync_state ON people_sync(sync_state);
+  `);
+}
+
+// Scanned sheets and AI calls (ADDITIVE, Session 6I). A scan is one page of an upload: its image is a file in
+// data/scans/, everything else (the issued sheet it matched, what was read, the engineer's edits, what an accept
+// overwrote) is JSON in `data`. ai_usage counts provider calls (no content), for budgeting.
+function migrateScanSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scans (
+      id          TEXT PRIMARY KEY,
+      batch_id    TEXT NOT NULL,
+      created_by  TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      file_name   TEXT,
+      page_index  INTEGER NOT NULL DEFAULT 0,
+      image_path  TEXT,
+      sheet_id    TEXT,
+      sheet_key   TEXT,
+      project_no  TEXT,
+      work_date   TEXT,
+      accepted_at TEXT,
+      data        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
+    CREATE INDEX IF NOT EXISTS idx_scans_created ON scans(created_at);
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      at       TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model    TEXT,
+      kind     TEXT NOT NULL,
+      ok       INTEGER NOT NULL,
+      code     TEXT,
+      ms       INTEGER,
+      units    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_at ON ai_usage(at);
   `);
 }
 
@@ -1012,6 +1052,50 @@ function createReportStore({ filePath }) {
     return db.prepare("SELECT DISTINCT project_id FROM reports WHERE project_id IS NOT NULL AND (data LIKE ? OR data LIKE ?)").all(`%"createdBy":"${id.replace(/[%_"\\]/g, '')}"%`, `%"userId":"${id.replace(/[%_"\\]/g, '')}"%`).map((row) => row.project_id);
   }
 
+  // ---- Scans (6I) -------------------------------------------------------------------------------
+  const rowToScan = (row) => (row ? { id: row.id, batchId: row.batch_id, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, status: row.status, fileName: row.file_name || '', pageIndex: row.page_index, imagePath: row.image_path || '', sheetId: row.sheet_id || '', sheetKey: row.sheet_key || '', projectNo: row.project_no || '', workDate: row.work_date || '', acceptedAt: row.accepted_at || '', ...JSON.parse(row.data) } : null);
+  const getScan = (id) => rowToScan(db.prepare('SELECT * FROM scans WHERE id = ?').get(String(id)));
+  function listScans({ createdBy = '', status = '', limit = 200 } = {}) {
+    const where = [];
+    const args = [];
+    if (createdBy) { where.push('created_by = ?'); args.push(String(createdBy)); }
+    if (status) { where.push('status = ?'); args.push(String(status)); }
+    return db.prepare(`SELECT * FROM scans ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC, page_index LIMIT ?`).all(...args, limit).map(rowToScan);
+  }
+  const SCAN_COLUMNS = { status: 'status', fileName: 'file_name', imagePath: 'image_path', sheetId: 'sheet_id', sheetKey: 'sheet_key', projectNo: 'project_no', workDate: 'work_date', acceptedAt: 'accepted_at' };
+  // Columns and the JSON `data` are both merged: pass only what changes.
+  function saveScan(id, fields) {
+    const current = getScan(id);
+    const now = new Date().toISOString();
+    if (!current) {
+      const scan = { id: String(id), batchId: fields.batchId || '', createdBy: fields.createdBy || '', createdAt: now, pageIndex: fields.pageIndex || 0, ...fields };
+      const { batchId, createdBy, createdAt, pageIndex, ...rest } = scan;
+      const columns = {};
+      Object.entries(SCAN_COLUMNS).forEach(([key, column]) => { columns[column] = rest[key] === undefined ? null : rest[key]; delete rest[key]; });
+      delete rest.id;
+      db.prepare('INSERT INTO scans (id, batch_id, created_by, created_at, updated_at, status, file_name, page_index, image_path, sheet_id, sheet_key, project_no, work_date, accepted_at, data) VALUES (@id, @batch_id, @created_by, @created_at, @updated_at, @status, @file_name, @page_index, @image_path, @sheet_id, @sheet_key, @project_no, @work_date, @accepted_at, @data)')
+        .run({ id: scan.id, batch_id: batchId, created_by: createdBy, created_at: createdAt, updated_at: now, page_index: pageIndex, ...columns, status: columns.status || 'queued', data: JSON.stringify(rest) });
+      return getScan(id);
+    }
+    const columns = {};
+    const rest = {};
+    Object.entries(fields).forEach(([key, value]) => { if (SCAN_COLUMNS[key]) columns[SCAN_COLUMNS[key]] = value; else rest[key] = value; });
+    const { id: _id, batchId, createdBy, createdAt, updatedAt, pageIndex, imagePath: _p, status: _s, fileName: _f, sheetId: _si, sheetKey: _sk, projectNo: _pn, workDate: _wd, acceptedAt: _aa, ...data } = current;
+    const sets = Object.keys(columns).map((column) => `${column} = @${column}`);
+    db.prepare(`UPDATE scans SET ${[...sets, 'updated_at = @updated_at', 'data = @data'].join(', ')} WHERE id = @id`).run({ id: String(id), updated_at: now, data: JSON.stringify({ ...data, ...rest }), ...columns });
+    return getScan(id);
+  }
+  // Deletes the scans created on [from, to] (ISO dates); returns what was deleted, so the caller can remove the images.
+  function deleteScans({ from, to }) {
+    const rows = db.prepare('SELECT id, image_path FROM scans WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?').all(String(from), String(to));
+    db.transaction(() => rows.forEach((row) => db.prepare('DELETE FROM scans WHERE id = ?').run(row.id)))();
+    return rows.map((row) => ({ id: row.id, imagePath: row.image_path || '' }));
+  }
+  function addAiUsage({ provider, model = '', kind, ok, code = '', ms = 0, units = 1 }) {
+    db.prepare('INSERT INTO ai_usage (at, provider, model, kind, ok, code, ms, units) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(new Date().toISOString(), provider, model, kind, ok ? 1 : 0, code, ms, units);
+  }
+  const aiUsageSummary = ({ from = '0000-01-01', to = '9999-12-31' } = {}) => db.prepare("SELECT provider, kind, COUNT(*) AS calls, SUM(ok) AS ok, SUM(units) AS units FROM ai_usage WHERE substr(at, 1, 10) >= ? AND substr(at, 1, 10) <= ? GROUP BY provider, kind").all(String(from), String(to));
+
   // ---- Calendar sync (6H) -------------------------------------------------------------------
   const rowToCalendar = (row) => (row ? { key: row.event_key, taskId: row.task_id, ownerEmail: row.owner_email, eventId: row.event_id || '', hash: row.hash || '', state: row.sync_state, error: row.error || '', syncedAt: row.synced_at || '' } : null);
   const getCalendarSync = (key) => rowToCalendar(db.prepare('SELECT * FROM calendar_sync WHERE event_key = ?').get(String(key)));
@@ -1097,6 +1181,12 @@ function createReportStore({ filePath }) {
     getScheduleSetting,
     setScheduleSetting,
     projectIdsWorkedBy,
+    getScan,
+    listScans,
+    saveScan,
+    deleteScans,
+    addAiUsage,
+    aiUsageSummary,
     getCalendarSync,
     listCalendarSync,
     saveCalendarSync,

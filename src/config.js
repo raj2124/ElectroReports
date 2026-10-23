@@ -100,6 +100,18 @@ const graph = {
   }
 };
 
+// Scanned sheets (Session 6I): OCR_USE_MOCK / AI_CHECKS_USE_MOCK default to the mocks, so nothing is sent to a provider
+// until they are set to false on purpose (the provider billing is not ready).
+const scanDataDir = path.join(path.dirname(process.env.ELECTROREPORTS_DATA_FILE || path.join(rootDir, 'data', 'reports.json')), 'scans');
+const scan = {
+  useMock: toBool(process.env.OCR_USE_MOCK, true),
+  dir: process.env.ELECTROREPORTS_SCANS_DIR || scanDataDir,
+  minConfidence: Math.min(1, Math.max(0, Number.parseFloat(process.env.OCR_MIN_CONFIDENCE || '0.8'))),
+  maxPages: Number.parseInt(process.env.OCR_MAX_PAGES || '30', 10),
+  maxUploadBytes: Math.round(Number.parseFloat(process.env.OCR_MAX_UPLOAD_MB || '40') * 1024 * 1024),
+  aiChecksUseMock: toBool(process.env.AI_CHECKS_USE_MOCK, true)
+};
+
 // Sign-in (Session 6E). mode: 'zoho' (Sign in with Zoho, OpenID Connect) or 'dev' (a user picker for
 // development and tests, never the default). With neither configured the API stays closed.
 const authMode = String(process.env.AUTH_MODE || '').trim().toLowerCase();
@@ -125,6 +137,7 @@ const auth = {
 module.exports = {
   auth,
   graph,
+  scan,
   instrumentCatalogue,
   app: {
     rootDir,

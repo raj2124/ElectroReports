@@ -97,9 +97,27 @@ function buildChecklist(report, { consistency, data }) {
   return items;
 }
 
+// The independent sanity check of a final report's narrative (src/aiChecks.js): 'passed', 'issues', or 'not run' (never run,
+// could not run, or the narrative has changed since it ran). A check kept by an older version of the app (no status) is read as
+// it was: consistent or not.
+function sanityState(report) {
+  const check = report.aiSanityCheck;
+  if (!check) return { state: 'not run', reason: '', flags: [] };
+  if (check.status === 'error') return { state: 'not run', reason: check.reason || 'The check could not run.', flags: [] };
+  if (check.narrativeHash) {
+    let now = '';
+    try { now = require('./aiChecks').sanityHashOf(report); } catch (_error) { now = ''; }
+    if (!now || now !== check.narrativeHash) return { state: 'not run', reason: 'The narrative changed after the check ran.', flags: [] };
+  }
+  const flags = Array.isArray(check.flags) ? check.flags : [];
+  const issues = check.status ? check.status === 'issues' : check.consistent === false;
+  return { state: issues ? 'issues' : 'passed', reason: '', flags, notes: check.notes || '', model: check.model || '', at: check.generatedAt || check.at || '' };
+}
+
 const ACK_LABEL = {
   calibration: 'Calibration acknowledged',
   sanityCheck: 'Sanity check not run - acknowledged',
+  sanityIssues: 'Sanity check issues - acknowledged',
   p1Photos: 'P1 photo missing - acknowledged'
 };
 
@@ -126,8 +144,11 @@ function requiredAcknowledgements(report) {
     if (calibration.length) {
       items.push({ key: 'calibration', text: calibration.map((item) => item.text).join(' '), required: true });
     }
-    if (!report.aiSanityCheck) {
-      items.push({ key: 'sanityCheck', text: 'Sanity check not run: the independent check of the narrative against the computed results was not performed.', required: true });
+    const sanity = sanityState(report);
+    if (sanity.state === 'not run') {
+      items.push({ key: 'sanityCheck', text: `Sanity check not run: the independent check of the narrative against the computed results was not performed${sanity.reason ? ` (${sanity.reason})` : ''}.`, required: true });
+    } else if (sanity.state === 'issues') {
+      items.push({ key: 'sanityIssues', text: `The independent sanity check found ${sanity.flags.length} possible contradiction${sanity.flags.length === 1 ? '' : 's'} between the narrative and the computed results: ${sanity.flags.map((flag) => `${flag.area ? `${flag.area}: ` : ''}${flag.issue}`).join(' | ')} Confirm that you have read them and that the report may be issued.`, required: true });
     }
   }
   return items;
@@ -188,6 +209,7 @@ function buildReviewState(store, report) {
     data = { warnings: [], tests: [], basis: {} };
     consistency = { ok: false, problems: [`The report could not be assessed: ${error.message}`], warnings: [] };
   }
+  const sanityOf = sanityState(report);
   const checklist = buildChecklist(report, { consistency, data }).map((item) => ({ ...item, ticked: Boolean(report.review && report.review.ticks && report.review.ticks[item.id]) }));
   const checkedRow = lastOf(round, 'check');
   const acknowledgements = requiredAcknowledgements(report);
@@ -205,7 +227,8 @@ function buildReviewState(store, report) {
     consistency,
     warnings: reviewWarnings(report, data),
     narrative: report.reportNarrative ? { aiWritten: Boolean(report.reportNarrative.aiWritten), model: report.reportNarrative.model || '', note: report.reportNarrative.note || '' } : null,
-    sanityCheck: report.aiSanityCheck ? 'run' : 'not run',
+    sanityCheck: sanityOf.state,
+    sanity: sanityOf,
     transitions,
     initials: {
       prepared: initialsOf((lastOf(round, 'submit') || lastOf(transitions, 'submit') || {}).actor),
@@ -222,4 +245,4 @@ function buildReviewState(store, report) {
   };
 }
 
-module.exports = { ACK_LABEL, approvalBlockers, approvalBlock, transitionAction, initialsOf, currentRound, lastOf, buildChecklist, requiredAcknowledgements, buildReviewState, revisionRows };
+module.exports = { sanityState, ACK_LABEL, approvalBlockers, approvalBlock, transitionAction, initialsOf, currentRound, lastOf, buildChecklist, requiredAcknowledgements, buildReviewState, revisionRows };

@@ -3143,6 +3143,8 @@ function render() {
       ${state.view === 'admin' && authUi.user ? adminView() : ''}
       ${state.view === 'kb' && authUi.user ? kbView() : ''}
       ${state.view === 'references' && authUi.user ? referencesView() : ''}
+      ${state.view === 'scans' && authUi.user ? scansView() : ''}
+      ${state.view === 'scan-review' && authUi.user ? scanReviewView() : ''}
     </main>
     ${renderObservationDrawer()}
     ${renderPrintDialog()}
@@ -3493,6 +3495,10 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (typeof handleScanAction === 'function' && (handleScanAction(action, button) || handleScanAdminAction(action, button))) {
+    return;
+  }
+
   if (handleNoticeAction(action, button)) {
     return;
   }
@@ -3703,6 +3709,10 @@ document.addEventListener('input', (event) => {
     return;
   }
 
+  if (typeof handleScanInput === 'function' && handleScanInput(target)) {
+    return;
+  }
+
   if (handleWorkspaceInput(target)) {
     return;
   }
@@ -3762,6 +3772,9 @@ document.addEventListener('change', async (event) => {
     return;
   }
   if (typeof handleKbChange === 'function' && handleKbChange(target)) {
+    return;
+  }
+  if (typeof handleScanChange === 'function' && handleScanChange(target)) {
     return;
   }
   if (handlePlanChange(target)) {
