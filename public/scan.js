@@ -70,7 +70,7 @@ function scansView() {
   return `
     <section class="surface section-card kb-card" data-scans>
       <p class="section-kicker">Scanned sheets</p>
-      <h2>Upload filled sheets</h2>
+      <h1>Upload filled sheets</h1>
       <p class="muted">Upload a PDF or photos (PNG, JPEG) of the printed measurement sheets. Each page is matched to its issued sheet by the QR code and read; you check it next to the scan, then accept it into that project's daily report. Nothing reaches a report until you accept.</p>
       <div class="field-grid"><label class="field"><span>PDF or photos</span><input class="text-input" type="file" multiple accept="application/pdf,image/png,image/jpeg" data-scan-files /></label></div>
       ${scanUi.files.length ? `<p class="muted" data-scan-chosen>Chosen: ${scanUi.files.map((file) => escapeHtml(file.name)).join(', ')}</p>` : ''}
@@ -137,7 +137,7 @@ function scanReviewView() {
       <div class="detail-hero">
         <div class="detail-hero-copy">
           <p class="section-kicker">${escapeHtml(detail.form.code)} · ${escapeHtml(detail.form.title)}</p>
-          <h2>${escapeHtml(detail.clientName || '')}</h2>
+          <h1>${escapeHtml(detail.clientName || '')}</h1>
           <p>${escapeHtml(detail.projectNo)} · ${escapeHtml(detail.workDate)} · rows from ${detail.form.rowOffset + 1}${detail.identified ? ` · found by ${escapeHtml(detail.identified)}` : ''}</p>
           <div class="detail-hero-tags">${pill(accepted ? 'healthy' : flagged ? 'warning' : 'healthy', accepted ? 'Accepted' : `${flagged} cell${flagged === 1 ? '' : 's'} to check`)}${detail.escalated ? '<span class="soft-chip">second read used</span>' : ''}</div>
         </div>
@@ -356,7 +356,7 @@ function scanAdminPanel() {
     </div>
     <div class="button-row"><button class="button button-secondary" data-action="scan-purge" ${scanUi.purge.from && scanUi.purge.to ? '' : 'disabled'}>Delete these scans</button></div>
     ${scanUi.purgeMessage ? `<p class="review-message" role="status" data-scan-purge-message>${escapeHtml(scanUi.purgeMessage)}</p>` : ''}
-    <h3>Reader and AI-check calls</h3>
+    <h3 aria-level="2">Reader and AI-check calls</h3>
     ${scanUi.usage && scanUi.usage.length ? `<table class="data-table" data-ai-usage><thead><tr><th>Provider</th><th>Kind</th><th>Calls</th><th>Succeeded</th></tr></thead><tbody>${scanUi.usage.map((row) => `<tr><td>${escapeHtml(row.provider)}</td><td>${escapeHtml(row.kind)}</td><td>${row.calls}</td><td>${row.ok}</td></tr>`).join('')}</tbody></table>` : '<p class="muted" data-ai-usage>No provider calls yet.</p>'}`;
 }
 

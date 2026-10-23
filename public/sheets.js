@@ -1522,7 +1522,7 @@ function renderSoilStep() {
             return `
               <section class="mini-surface mini-surface-location">
                 <div class="mini-surface-head mini-surface-head-location">
-                  <div><h4>${esc(safeText(location.name, `Location ${locationIndex + 1}`))}</h4><p>${directionCount} direction${directionCount === 1 ? '' : 's'} · ${esc(preset.label || '')} spacings</p></div>
+                  <div><h4 aria-level="3">${esc(safeText(location.name, `Location ${locationIndex + 1}`))}</h4><p>${directionCount} direction${directionCount === 1 ? '' : 's'} · ${esc(preset.label || '')} spacings</p></div>
                   <div class="mini-surface-head-actions">${locations.length > 1 ? `<button class="button button-ghost" type="button" data-action="remove-soil-location" data-location-index="${locationIndex}">Remove location</button>` : ''}</div>
                 </div>
                 ${renderSoilLocationHeader(sheet, location, locationIndex, locationAssessment)}
@@ -1810,7 +1810,7 @@ function renderSoilDetail(report) {
         const bearings = SOIL_DIRECTION_KEYS.filter((key) => safeText((location.bearings || {})[key], '')).map((key) => `${key.replace('direction', 'D')} ${(location.bearings || {})[key]}°`).join('  ');
         return `
           <div class="detail-subsection">
-            <div class="detail-subsection-head"><h4>${esc(locationSummary.name)}</h4>${pill(locationSummary.category.tone, locationSummary.category.label)}</div>
+            <div class="detail-subsection-head"><h4 aria-level="3">${esc(locationSummary.name)}</h4>${pill(locationSummary.category.tone, locationSummary.category.label)}</div>
             <div class="detail-grid">
               <div><span>Reading unit</span><strong>${esc(unit)}</strong></div>
               <div><span>Probe depth</span><strong>${esc(safeText(location.probeDepthCm, '–'))}${safeText(location.probeDepthCm, '') ? ' cm' : ''}</strong></div>

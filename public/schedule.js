@@ -141,8 +141,8 @@ function renderScheduleSettings(data) {
         <p class="muted">Holidays from Zoho People are treated as non-working days as well.</p>
       </fieldset>
       <table class="data-table">
-        <thead><tr><th>Test</th><th>Per engineer per working day</th><th>Unit</th><th></th></tr></thead>
-        <tbody>${data.tests.map((test) => `<tr><td>${escapeHtml(test.name)}</td><td><input class="text-input" type="number" min="0.1" step="0.5" data-schedule-rate="${test.id}" value="${escapeHtml(draft.rates[test.id].perDay)}" /></td><td>${escapeHtml(draft.rates[test.id].unit)}</td><td><span class="chip">estimate</span></td></tr>`).join('')}</tbody>
+        <thead><tr><th>Test</th><th>Per engineer per working day</th><th>Unit</th><th><span class="visually-hidden">Note</span></th></tr></thead>
+        <tbody>${data.tests.map((test) => `<tr><td>${escapeHtml(test.name)}</td><td><input class="text-input" type="number" min="0.1" step="0.5" aria-label="${escapeHtml(test.name)}: per engineer per working day" data-schedule-rate="${test.id}" value="${escapeHtml(draft.rates[test.id].perDay)}" /></td><td>${escapeHtml(draft.rates[test.id].unit)}</td><td><span class="chip">estimate</span></td></tr>`).join('')}</tbody>
       </table>
       <p class="muted">These rates are estimates used only for the "planned quantity vs days" warning. They never block anything.</p>
       <div class="button-row">
@@ -172,7 +172,7 @@ function scheduleView() {
       <div class="sched-head">
         <div>
           <p class="section-kicker">Schedule</p>
-          <h2>${escapeHtml(title)}</h2>
+          <h1>${escapeHtml(title)}</h1>
           <p class="muted">${data ? `Onsite ESHA tasks from Zoho Projects, tasks read ${escapeHtml(ageText(data.zoho.tasks.ageSeconds))}${data.zoho.mock ? ' (mock portal)' : ''}. Leave and holidays from Zoho People. Read only.` : 'Loading from Zoho...'}</p>
         </div>
         <div class="sched-controls">
@@ -217,7 +217,7 @@ function scheduleView() {
         <span><i class="sched-swatch sched-clash"></i>Two tasks one day</span>
       </div>
       <section class="sched-warnings" aria-label="Warnings">
-        <h3>${warnings.length ? `${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : 'No warnings'}</h3>
+        <h3 aria-level="2">${warnings.length ? `${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : 'No warnings'}</h3>
         <p class="muted">Warnings are shown for what is on screen. They never block anything.</p>
         ${grouped.map((group) => `<details open><summary>${escapeHtml(WARNING_TITLE[group.kind])} (${group.items.length})</summary><ul>${group.items.map((warning) => `<li data-warning="${escapeHtml(warning.kind)}">${escapeHtml(warning.message)}</li>`).join('')}</ul></details>`).join('')}
       </section>`

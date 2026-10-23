@@ -73,7 +73,7 @@ function renderReviewLogo(report) {
   return `
     <section class="surface section-card review-block">
       <p class="section-kicker">Cover</p>
-      <h3>Client logo</h3>
+      <h3 aria-level="2">Client logo</h3>
       <p class="muted">Stored once per client and used by every report for ${escapeHtml(report.project.clientName || 'this client')}. PNG or JPG, up to 1 MB.</p>
       <div class="button-row">
         <label class="button button-secondary">Upload for this client<input type="file" accept="image/png,image/jpeg" data-review-logo="client" hidden /></label>
@@ -108,7 +108,7 @@ function reviewView() {
       <div class="detail-hero">
         <div class="detail-hero-copy">
           <p class="section-kicker">${escapeHtml(kindLabel)}${date ? ` · ${escapeHtml(date)}` : ''}${review.revision ? ` · Revision R${review.revision}` : ''}</p>
-          <h2>${escapeHtml(report.project.clientName || '')}</h2>
+          <h1>${escapeHtml(report.project.clientName || '')}</h1>
           <p>${escapeHtml(report.project.projectNo || '')} ${review.documentNo ? `· ${escapeHtml(review.documentNo)}` : ''}</p>
           <div class="detail-hero-tags">${pill(REVIEW_STATUS_TONE[review.status], REVIEW_STATUS_LABEL[review.status])}</div>
         </div>
@@ -131,7 +131,7 @@ function reviewView() {
 
       <section class="surface section-card review-block">
         <p class="section-kicker">Standard 6.4</p>
-        <h3>Reviewer checklist</h3>
+        <h3 aria-level="2">Reviewer checklist</h3>
         <ul class="review-list">${review.checklist.map((item) => renderChecklistItem(item, locked)).join('')}</ul>
         <p class="muted">The app compares every count itself (summary, results tables, electrode priorities, scope and the corrective action plan). ${review.consistency.ok ? 'All counts agree.' : ''}</p>
         ${review.consistency.ok ? '' : `<div class="review-alert" role="alert"><strong>Counts differ: this report cannot be released.</strong><ul>${review.consistency.problems.map((problem) => `<li>${escapeHtml(problem)}</li>`).join('')}</ul></div>`}
@@ -147,7 +147,7 @@ function reviewView() {
       ${review.status === 'in_review' && review.acknowledgements.length ? `
       <section class="surface section-card review-block">
         <p class="section-kicker">Before approval</p>
-        <h3>Acknowledgements</h3>
+        <h3 aria-level="2">Acknowledgements</h3>
         ${review.acknowledgements.map((item) => `
           <label class="field"><span>${escapeHtml(item.text)}</span>
             <textarea class="text-input" rows="2" data-review-ack="${escapeHtml(item.key)}" placeholder="Reviewer note (required to approve)">${escapeHtml(reviewUi.acknowledgements[item.key] || '')}</textarea></label>`).join('')}
@@ -155,7 +155,7 @@ function reviewView() {
 
       <section class="surface section-card review-block">
         <p class="section-kicker">Workflow</p>
-        <h3>${escapeHtml(REVIEW_STATUS_LABEL[review.status])}${review.checked ? ` · checked by ${escapeHtml(review.checked.by)}` : ''}</h3>
+        <h3 aria-level="2">${escapeHtml(REVIEW_STATUS_LABEL[review.status])}${review.checked ? ` · checked by ${escapeHtml(review.checked.by)}` : ''}</h3>
         ${locked ? '' : `<label class="field"><span>Note (optional)</span><textarea class="text-input" rows="2" data-review-field="note">${escapeHtml(reviewUi.note)}</textarea></label>`}
         <div class="button-row">
           ${available.submit ? `<button class="button button-primary" data-action="review-step" data-step="submit" ${busy}>Submit for review</button>` : ''}
@@ -177,7 +177,7 @@ function reviewView() {
 
       <section class="surface section-card review-block">
         <p class="section-kicker">Record</p>
-        <h3>Transitions</h3>
+        <h3 aria-level="2">Transitions</h3>
         ${review.transitions.length ? `
         <table class="data-table"><thead><tr><th>When</th><th>Step</th><th>By</th><th>Note</th></tr></thead><tbody>
           ${review.transitions.map((row) => `<tr><td>${escapeHtml(formatStamp(row.at))}</td><td>${escapeHtml(STEP_LABEL[row.action] || row.action)}</td><td>${escapeHtml(row.actor || '-')}</td><td>${escapeHtml(row.note || '')}</td></tr>`).join('')}

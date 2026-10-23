@@ -991,11 +991,11 @@ function renderScopeStandardsPanel(source) {
   return `
     <div class="builder-info-stack">
       <div>
-        <h4>Selected Scope</h4>
+        <h4 aria-level="3">Selected Scope</h4>
         ${renderSelectedModuleTags(source)}
       </div>
       <div>
-        <h4>Reference Standards</h4>
+        <h4 aria-level="3">Reference Standards</h4>
         ${renderStandardsSummary(source)}
       </div>
     </div>
@@ -1559,7 +1559,7 @@ function dashboardView() {
       <div class="hero-banner">
         <div class="hero-copy">
           <p class="eyebrow">ElectroReports</p>
-          <h2>Electrical Reporting for Field Engineers</h2>
+          <h1>Electrical Reporting for Field Engineers</h1>
           <p>
             Capture site measurements, sync live Zoho Projects, and prepare clear client-ready reports with a faster,
             more dependable workflow.
@@ -1603,7 +1603,7 @@ function dashboardView() {
     <section class="surface toolbar">
       <div class="dashboard-section-copy">
         <p class="section-kicker">Dashboard</p>
-        <h3>Saved Reports</h3>
+        <h3 aria-level="2">Saved Reports</h3>
         <p class="muted">Search saved reports by project number, client, location, or engineer.</p>
       </div>
       <div class="toolbar-actions">
@@ -1611,6 +1611,7 @@ function dashboardView() {
           id="reportSearchInput"
           class="search-input"
           type="search"
+          aria-label="Search saved reports"
           placeholder="Search project number, client, location, or engineer"
           value="${escapeHtml(state.search)}"
         />
@@ -1619,7 +1620,7 @@ function dashboardView() {
 
     ${
       state.loadingReports
-        ? '<section class="surface empty-state"><h3>Loading reports...</h3></section>'
+        ? '<section class="surface empty-state"><h3 aria-level="2">Loading reports...</h3></section>'
         : state.reports.length
           ? `<section class="card-grid">
               ${state.reports
@@ -1631,7 +1632,7 @@ function dashboardView() {
                         <span class="chip">${escapeHtml(report.project.projectNo)}</span>
                         <span class="report-card-date">${escapeHtml(formatDisplayDate(report.project.reportDate) || report.project.reportDate)}</span>
                       </div>
-                      <h4>${escapeHtml(report.project.clientName)}</h4>
+                      <h4 aria-level="3">${escapeHtml(report.project.clientName)}</h4>
                       <p class="report-card-location">${escapeHtml(report.project.siteLocation)}</p>
                       <div class="report-card-meta">
                         <div>
@@ -1671,7 +1672,7 @@ function dashboardView() {
             </section>`
           : `<section class="surface empty-state">
               <div class="empty-state-copy">
-                <h3>No Reports Yet</h3>
+                <h3 aria-level="2">No Reports Yet</h3>
                 <p>Create your first ElectroReports report to start building your live measurement archive.</p>
                 <button class="button button-primary" data-action="new-report">Create First Report</button>
               </div>
@@ -1682,7 +1683,7 @@ function dashboardView() {
       <div class="section-head">
         <div class="dashboard-section-copy">
           <p class="section-kicker">Zoho Projects</p>
-          <h3>Live Zoho Projects</h3>
+          <h3 aria-level="2">Live Zoho Projects</h3>
           <p class="muted zoho-overview-copy">Start a report from a live Zoho project and keep engineer, status, and project references aligned.</p>
         </div>
         <div class="button-row">
@@ -1700,7 +1701,7 @@ function sectionCard(title, subtitle, content) {
       <div class="section-head">
         <div>
           <p class="section-kicker">${escapeHtml(subtitle)}</p>
-          <h3>${escapeHtml(title)}</h3>
+          <h3 aria-level="2">${escapeHtml(title)}</h3>
         </div>
       </div>
       ${content}
@@ -1745,7 +1746,7 @@ function renderZohoProjectCards() {
             <div class="zoho-card-topline">
               ${visibleDate ? `<span class="meta-date-badge">${escapeHtml(visibleDate)}</span>` : ''}
             </div>
-            <h4>${escapeHtml(projectHeading)}</h4>
+            <h4 aria-level="3">${escapeHtml(projectHeading)}</h4>
             <div class="zoho-card-meta zoho-card-meta-compact">
               <div class="zoho-meta-block zoho-meta-panel">
                 <span>Owner</span>
@@ -1812,11 +1813,11 @@ function renderProjectStep() {
       <div class="zoho-sync-panel${state.editing ? ' is-hidden' : ''}">
         <div class="zoho-sync-copy">
           <p class="section-kicker">Zoho Projects Sync</p>
-          <h4>Pick a live Zoho project to prefill this report</h4>
+          <h4 aria-level="3">Pick a live Zoho project to prefill this report</h4>
           <p>Project number, client, work order, owner, and project reference can be pulled directly from Zoho.</p>
         </div>
         <div class="zoho-sync-controls">
-          <select class="text-input" id="zohoProjectPicker">
+          <select class="text-input" id="zohoProjectPicker" aria-label="Zoho project">
             <option value="">Select a Zoho project</option>
             ${zohoProjectOptions}
           </select>
@@ -1936,12 +1937,12 @@ function renderSelectionStep() {
       <div class="selection-support-grid">
         <article class="glass-note-card">
           <p class="section-kicker">Report Scope</p>
-          <h4>${escapeHtml(getDraftReportTitle())}</h4>
+          <h4 aria-level="3">${escapeHtml(getDraftReportTitle())}</h4>
           <p>The final PDF title follows the selected scope automatically. One test keeps its own name; multiple tests use Earthing System Health Assessment.</p>
         </article>
         <article class="glass-note-card">
           <p class="section-kicker">Testing Equipment</p>
-          <h4>Instruments are recorded on each sheet</h4>
+          <h4 aria-level="3">Instruments are recorded on each sheet</h4>
           <p>Tick the instrument, serial number and calibration due date in the header of each measurement sheet, as on the printed sheets.</p>
         </article>
       </div>
@@ -2029,11 +2030,11 @@ function renderObservationDrawer() {
   return `
     <div class="observation-drawer-layer">
       <button class="observation-drawer-backdrop" type="button" data-action="close-row-observation" aria-label="Close observation panel"></button>
-      <aside class="observation-drawer" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <div class="observation-drawer" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
         <div class="observation-drawer-head">
           <div>
             <p class="section-kicker">Row Observation</p>
-            <h3>${escapeHtml(title)}</h3>
+            <h3 aria-level="2">${escapeHtml(title)}</h3>
             <p class="muted">Attach optional field remarks and photo evidence only for this measurement row.</p>
           </div>
           <button class="icon-button" type="button" data-action="close-row-observation" aria-label="Close observation panel">
@@ -2094,7 +2095,7 @@ function renderObservationDrawer() {
             Save Observation
           </button>
         </div>
-      </aside>
+      </div>
     </div>
   `;
 }
@@ -2117,7 +2118,7 @@ function tableSurface(title, subtitle, header, body, footer = '', tableOptions =
     <div class="mini-surface">
       <div class="mini-surface-head">
         <div>
-          <h4>${escapeHtml(title)}</h4>
+          <h4 aria-level="3">${escapeHtml(title)}</h4>
           <p>${escapeHtml(subtitle)}</p>
         </div>
       </div>
@@ -2198,7 +2199,7 @@ function renderSoilOcrAssist() {
     <section class="mini-surface soil-ocr-assist">
       <div class="mini-surface-head mini-surface-head-location">
         <div>
-          <h4>Soil Sheet Autofill</h4>
+          <h4 aria-level="3">Soil Sheet Autofill</h4>
           <p>Choose whether to record manually or import a physical soil resistivity sheet for OCR preview.</p>
         </div>
         <div class="mini-surface-head-actions">
@@ -2236,7 +2237,7 @@ function renderSoilOcrAssist() {
                   ? `
                     <div class="soil-ocr-preview">
                       <div class="detail-subsection-head">
-                        <h4>Preview Before Applying</h4>
+                        <h4 aria-level="3">Preview Before Applying</h4>
                         <div class="button-row">
                           <button class="button button-secondary" type="button" data-action="apply-ocr-preview" data-sheet="${sheetId}">Apply To Soil Sheet</button>
                         </div>
@@ -2248,7 +2249,7 @@ function renderSoilOcrAssist() {
                               <section class="mini-surface mini-surface-location">
                                 <div class="mini-surface-head mini-surface-head-location">
                                   <div>
-                                    <h4>${escapeHtml(location.name || `Location ${index + 1}`)}</h4>
+                                    <h4 aria-level="3">${escapeHtml(location.name || `Location ${index + 1}`)}</h4>
                                     <p>Preview extracted values before writing into the Soil Resistivity measurement sheet.</p>
                                   </div>
                                 </div>
@@ -2332,7 +2333,7 @@ function renderElectrodeOcrAssist() {
     <section class="mini-surface soil-ocr-assist">
       <div class="mini-surface-head mini-surface-head-location">
         <div>
-          <h4>Electrode Sheet Autofill</h4>
+          <h4 aria-level="3">Electrode Sheet Autofill</h4>
           <p>Choose whether to record manually or import a physical earth electrode sheet for OCR preview.</p>
         </div>
         <div class="mini-surface-head-actions">
@@ -2370,7 +2371,7 @@ function renderElectrodeOcrAssist() {
                   ? `
                     <div class="soil-ocr-preview">
                       <div class="detail-subsection-head">
-                        <h4>Preview Before Applying</h4>
+                        <h4 aria-level="3">Preview Before Applying</h4>
                         <div class="button-row">
                           <button class="button button-secondary" type="button" data-action="apply-ocr-preview" data-sheet="${sheetId}">Apply To Electrode Sheet</button>
                         </div>
@@ -2431,7 +2432,7 @@ function renderContinuityOcrAssist() {
     <section class="mini-surface soil-ocr-assist">
       <div class="mini-surface-head mini-surface-head-location">
         <div>
-          <h4>Continuity Sheet Autofill</h4>
+          <h4 aria-level="3">Continuity Sheet Autofill</h4>
           <p>Choose whether to record manually or import a physical continuity sheet for OCR preview.</p>
         </div>
         <div class="mini-surface-head-actions">
@@ -2469,7 +2470,7 @@ function renderContinuityOcrAssist() {
                   ? `
                     <div class="soil-ocr-preview">
                       <div class="detail-subsection-head">
-                        <h4>Preview Before Applying</h4>
+                        <h4 aria-level="3">Preview Before Applying</h4>
                         <div class="button-row">
                           <button class="button button-secondary" type="button" data-action="apply-ocr-preview" data-sheet="${sheetId}">Apply To Continuity Sheet</button>
                         </div>
@@ -2495,7 +2496,7 @@ function renderSharedOcrAssist({ sheetId, title, description, inputId, chooseLab
     <section class="mini-surface soil-ocr-assist">
       <div class="mini-surface-head mini-surface-head-location">
         <div>
-          <h4>${escapeHtml(title)}</h4>
+          <h4 aria-level="3">${escapeHtml(title)}</h4>
           <p>${escapeHtml(description)}</p>
         </div>
         <div class="mini-surface-head-actions">
@@ -2533,7 +2534,7 @@ function renderSharedOcrAssist({ sheetId, title, description, inputId, chooseLab
                   ? `
                     <div class="soil-ocr-preview">
                       <div class="detail-subsection-head">
-                        <h4>Preview Before Applying</h4>
+                        <h4 aria-level="3">Preview Before Applying</h4>
                         <div class="button-row">
                           <button class="button button-secondary" type="button" data-action="apply-ocr-preview" data-sheet="${sheetId}">${escapeHtml(applyLabel)}</button>
                         </div>
@@ -2810,7 +2811,7 @@ function builderView() {
       <div class="builder-header">
         <div>
           <p class="section-kicker">Report Builder</p>
-          <h2>${state.editing ? `Site day ${escapeHtml(formatDisplayDate(state.editing.workDate) || state.editing.workDate)}` : 'New ElectroReports Project'}</h2>
+          <h1>${state.editing ? `Site day ${escapeHtml(formatDisplayDate(state.editing.workDate) || state.editing.workDate)}` : 'New ElectroReports Project'}</h1>
           <p>Only the sections you select will appear in the report flow and in the final PDF.</p>
         </div>
         <div class="button-row">
@@ -2848,7 +2849,7 @@ function builderView() {
         <aside class="builder-aside">
           <section class="mini-surface aside-panel">
             <p class="section-kicker">Live Readiness</p>
-            <h4>${assessment.label}</h4>
+            <h4 aria-level="3">${assessment.label}</h4>
             <p>${stepGuidance(currentStep)} ${currentStepNote(currentStep)}</p>
             ${renderProgressBar('Project completeness', readiness.projectScore, readiness.projectScore === 100 ? 'healthy' : readiness.projectScore > 60 ? 'warning' : 'critical')}
             ${renderProgressBar('Measurement coverage', readiness.measurementScore, readiness.measurementScore > 84 ? 'healthy' : readiness.measurementScore > 40 ? 'warning' : 'critical')}
@@ -2891,7 +2892,7 @@ function reportSectionBlock(title, content) {
   return `
     <section class="surface detail-block">
       <div class="section-head">
-        <h3>${escapeHtml(title)}</h3>
+        <h3 aria-level="2">${escapeHtml(title)}</h3>
       </div>
       ${content}
     </section>
@@ -2958,18 +2959,18 @@ function renderAiNarrativeSection(report) {
         <div><span>Reference PDFs</span><strong>${escapeHtml((narrative.referenceDocuments || []).join(', ') || '-')}</strong></div>
       </div>
       <div class="detail-subsection">
-        <div class="detail-subsection-head"><h4>Overall Assessment</h4></div>
+        <div class="detail-subsection-head"><h4 aria-level="3">Overall Assessment</h4></div>
         <p class="detail-note">${escapeHtml(safeText(narrative.overallAssessment, '-'))}</p>
       </div>
       <div class="detail-subsection">
-        <div class="detail-subsection-head"><h4>Executive Summary</h4></div>
+        <div class="detail-subsection-head"><h4 aria-level="3">Executive Summary</h4></div>
         <p class="detail-note">${escapeHtml(safeText(narrative.executiveSummary, '-'))}</p>
       </div>
       ${
         findings.length
           ? `
             <div class="detail-subsection">
-              <div class="detail-subsection-head"><h4>Key Findings & Recommended Actions</h4></div>
+              <div class="detail-subsection-head"><h4 aria-level="3">Key Findings & Recommended Actions</h4></div>
               ${simpleDetailTable(
                 [
                   { label: 'Test Area', key: 'testArea' },
@@ -2988,7 +2989,7 @@ function renderAiNarrativeSection(report) {
         moduleSummaries.length
           ? `
             <div class="detail-subsection">
-              <div class="detail-subsection-head"><h4>Module Summaries</h4></div>
+              <div class="detail-subsection-head"><h4 aria-level="3">Module Summaries</h4></div>
               ${simpleDetailTable(
                 [
                   { label: 'Measurement Sheet', key: 'label' },
@@ -3014,7 +3015,7 @@ function detailView() {
       <div class="detail-hero">
         <div class="detail-hero-copy">
           <p class="section-kicker">${escapeHtml(report.project.projectNo)}</p>
-          <h2>${escapeHtml(report.project.clientName)}</h2>
+          <h1>${escapeHtml(report.project.clientName)}</h1>
           <p>${escapeHtml(report.project.siteLocation)} | Engineer: ${escapeHtml(report.project.engineerName)}</p>
           <div class="detail-hero-tags">
             ${pill(assessment.tone, assessment.label)}
@@ -3161,7 +3162,39 @@ function render() {
   if (typeof hideExplain === 'function') {
     hideExplain();
   }
+  makeScrollRegionsFocusable();
 }
+
+// A table wider than its box scrolls sideways; a keyboard user can only scroll it if it can take focus (WCAG 2.1.1).
+function makeScrollRegionsFocusable() {
+  // Tables outside a wrapper get one, so every sideways-scrolling table is a scroll region we can label.
+  document.querySelectorAll('table.data-table').forEach((table) => {
+    if (!table.closest('.table-wrap, .scan-table-wrap')) {
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      table.replaceWith(wrap);
+      wrap.appendChild(table);
+    }
+  });
+  let unnamed = 0;
+  document.querySelectorAll('.table-wrap, .scan-table-wrap').forEach((wrap) => {
+    if (wrap.scrollWidth > wrap.clientWidth + 1) {
+      const title = wrap.closest('.detail-subsection, .mini-surface, .section-card')?.querySelector('h3, h4, .section-kicker')?.textContent.trim();
+      unnamed += title ? 0 : 1;
+      wrap.setAttribute('tabindex', '0');
+      wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', title ? `${title}, scrollable table` : `Scrollable table ${unnamed}`);
+    } else {
+      wrap.removeAttribute('tabindex');
+      wrap.removeAttribute('role');
+      wrap.removeAttribute('aria-label');
+    }
+  });
+}
+window.addEventListener('resize', () => {
+  window.clearTimeout(makeScrollRegionsFocusable.timer);
+  makeScrollRegionsFocusable.timer = window.setTimeout(makeScrollRegionsFocusable, 150);
+});
 
 function buildFocusSelector(element) {
   if (!element) {

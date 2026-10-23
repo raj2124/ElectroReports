@@ -47,7 +47,7 @@ function renderHomeNotices() {
     <section class="surface zoho-overview" aria-label="Notices">
       <div class="dashboard-section-copy">
         <p class="section-kicker">Notices</p>
-        <h3>${noticeUi.notices.length} notice${noticeUi.notices.length === 1 ? '' : 's'} for you</h3>
+        <h3 aria-level="2">${noticeUi.notices.length} notice${noticeUi.notices.length === 1 ? '' : 's'} for you</h3>
       </div>
       ${noticeUi.notices.map(noticeCard).join('')}
     </section>`;

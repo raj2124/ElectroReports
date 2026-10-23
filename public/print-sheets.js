@@ -44,7 +44,7 @@ function renderPrintDialog() {
         <div class="observation-drawer-head">
           <div>
             <p class="section-kicker">Site visit</p>
-            <h3>Print sheets for site</h3>
+            <h3 aria-level="2">Print sheets for site</h3>
             <p class="muted">${escapeHtml(project.projectNo || 'No project number')} · ${escapeHtml(project.clientName || 'No client')}. Instrument, serial number and readings stay blank; pit and point tags from earlier reports of this project are pre-printed.</p>
           </div>
           <button class="icon-button" type="button" data-action="close-print-sheets" aria-label="Close"><span class="icon-button-symbol">&times;</span></button>

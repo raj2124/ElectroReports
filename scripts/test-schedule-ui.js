@@ -94,7 +94,7 @@ const freePort = () => new Promise((resolve) => {
     await page.click('[data-action="schedule-today"]');
     await page.waitForFunction(() => scheduleUi.data && scheduleUi.data.window.from <= todayIso() && scheduleUi.data.window.to >= todayIso());
     await goTo('2026-10-21', 'month');
-    expect(await page.locator('.sched-day').count() === 31 && (await page.innerText('.sched-card h2')).includes('October 2026'), 'the month view has every day of the month');
+    expect(await page.locator('.sched-day').count() === 31 && (await page.innerText('.sched-card h1')).includes('October 2026'), 'the month view has every day of the month');
     expect(await page.locator('.sched-bar').count() === 5, 'five Onsite tasks in October');
     await page.screenshot({ path: path.join(SHOTS, 'Schedule_month_1288.png'), fullPage: true });
     await page.click('[data-action="schedule-step"][data-step="1"]');

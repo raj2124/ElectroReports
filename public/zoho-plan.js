@@ -125,7 +125,7 @@ function renderZohoTaskPanel() {
   return `
     <div class="zoho-tasks">
       <p class="section-kicker">Zoho tasks</p>
-      <h4>${plan.d03 ? 'Measurement tasks are pre-selected' : 'Tasks of this project'}</h4>
+      <h4 aria-level="3">${plan.d03 ? 'Measurement tasks are pre-selected' : 'Tasks of this project'}</h4>
       <p class="muted">${plan.d03 ? `${picked} task${picked === 1 ? '' : 's'} selected. The selection sets the tests, the planned quantities and the engineer; change it if the site visit differs.` : 'This is not a D03 project: the tasks are listed, nothing is selected for you.'}</p>
       ${plan.warnings.length ? `<ul class="planned-warnings">${plan.warnings.map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>` : ''}
       ${plan.taskLists

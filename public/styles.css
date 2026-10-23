@@ -18,6 +18,8 @@
   --critical-soft: #ffebeb;
   --neutral: #72839a;
   --neutral-soft: #edf2f7;
+  --warning-text: #7a5600; /* 6.0:1 on --warning-soft / amber pill backgrounds */
+  --neutral-text: #4a5a70; /* 6.2:1 on --neutral-soft */
   --shadow: 0 24px 80px rgba(13, 28, 53, 0.12);
   --glow-brand: rgba(69, 148, 255, 0.18);
   --glow-ice: rgba(189, 228, 255, 0.26);
@@ -134,10 +136,10 @@ textarea {
 }
 
 .brand-lockup h1,
-.hero-copy h2,
-.builder-header h2,
+.hero-copy :is(h1, h2),
+.builder-header :is(h1, h2),
 .surface h3,
-.detail-shell h2 {
+.detail-shell :is(h1, h2) {
   margin: 0;
   font-family: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
   letter-spacing: -0.02em;
@@ -184,7 +186,7 @@ textarea {
   box-shadow: 0 16px 32px rgba(9, 32, 58, 0.2);
 }
 
-.hero-copy h2 {
+.hero-copy :is(h1, h2) {
   font-size: clamp(2.4rem, 5vw, 4rem);
   line-height: 0.94;
   max-width: 10ch;
@@ -910,7 +912,7 @@ textarea {
   letter-spacing: 0.22em;
 }
 
-.hero-panel-dashboard .hero-copy h2 {
+.hero-panel-dashboard .hero-copy :is(h1, h2) {
   max-width: 14ch;
   font-size: clamp(2.45rem, 4.7vw, 4.15rem);
   line-height: 1.02;
@@ -1451,7 +1453,7 @@ textarea {
 }
 
 .builder-header .section-kicker,
-.builder-header h2,
+.builder-header :is(h1, h2),
 .builder-header p,
 .builder-header .button-row {
   position: relative;
@@ -2080,7 +2082,7 @@ textarea {
 
 .pill-warning {
   background: #fff3d7;
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: rgba(173, 125, 31, 0.24);
 }
 
@@ -2092,7 +2094,7 @@ textarea {
 
 .pill-neutral {
   background: #edf2f7;
-  color: var(--neutral);
+  color: var(--neutral-text);
   border-color: rgba(114, 131, 154, 0.2);
 }
 
@@ -2712,7 +2714,7 @@ textarea {
 }
 
 .detail-hero .section-kicker,
-.detail-hero h2,
+.detail-hero :is(h1, h2),
 .detail-hero-copy,
 .detail-hero-tags {
   position: relative;
@@ -2844,7 +2846,7 @@ textarea {
     padding: 34px 28px;
   }
 
-  .hero-panel-dashboard .hero-copy h2 {
+  .hero-panel-dashboard .hero-copy :is(h1, h2) {
     max-width: none;
     font-size: clamp(2.2rem, 9.5vw, 3.5rem);
   }
@@ -2944,7 +2946,7 @@ textarea {
     gap: 18px;
   }
 
-  .hero-copy h2 {
+  .hero-copy :is(h1, h2) {
     max-width: none;
     font-size: clamp(2rem, 10vw, 2.8rem);
     line-height: 1;
@@ -3192,7 +3194,7 @@ textarea {
     padding: 18px 16px;
   }
 
-  .hero-copy h2 {
+  .hero-copy :is(h1, h2) {
     font-size: clamp(1.9rem, 10.8vw, 2.5rem);
   }
 
@@ -4085,7 +4087,7 @@ textarea {
 
 .sheet-table .sheet-status-cell .pill {
   padding: 4px 8px;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   letter-spacing: 0.02em;
   line-height: 1.2;
   overflow-wrap: normal;
@@ -4641,23 +4643,23 @@ textarea {
 .sched-header .sched-track { grid-auto-rows: auto; padding: 0; }
 .sched-day { display: grid; justify-items: center; padding: 4px 0; font-size: 0.72rem; border-left: 1px solid var(--border); }
 .sched-day strong { font-size: 0.95rem; }
-.sched-day em { font-style: normal; font-size: 0.6rem; color: var(--warning); }
+.sched-day em { font-style: normal; font-size: 0.7rem; color: var(--warning-text); }
 .sched-cell { border-left: 1px solid var(--border); }
 .sched-off { background: var(--neutral-soft); }
 .sched-holiday { background: var(--warning-soft); }
 .sched-today { box-shadow: inset 2px 0 0 var(--brand), inset -2px 0 0 var(--brand); }
 .sched-clash { background: var(--critical-soft); }
 /* Leave is drawn over the bars: leave under a task is exactly what it has to show. Clicks pass through. */
-.sched-leave { z-index: 3; display: flex; align-items: flex-end; justify-content: center; margin: 0 1px; border-bottom: 4px solid var(--success); font-size: 0.62rem; font-weight: 700; color: var(--success); background: repeating-linear-gradient(135deg, rgba(31, 109, 69, 0.34) 0 5px, rgba(31, 109, 69, 0.1) 5px 10px); pointer-events: none; }
+.sched-leave { z-index: 3; display: flex; align-items: flex-end; justify-content: center; margin: 0 1px; border-bottom: 4px solid var(--success); font-size: 0.7rem; font-weight: 700; color: var(--success); background: repeating-linear-gradient(135deg, rgba(31, 109, 69, 0.34) 0 5px, rgba(31, 109, 69, 0.1) 5px 10px); pointer-events: none; }
 .sched-leave span { background: rgba(255, 255, 255, 0.85); border-radius: 4px 4px 0 0; padding: 0 4px; }
-.sched-leave-pending { opacity: 0.6; border-bottom: 4px dashed var(--warning); color: var(--warning); background: repeating-linear-gradient(135deg, rgba(173, 125, 31, 0.4) 0 5px, rgba(173, 125, 31, 0.1) 5px 10px); }
+.sched-leave-pending { opacity: 0.6; border-bottom: 4px dashed var(--warning); color: var(--warning-text); background: repeating-linear-gradient(135deg, rgba(173, 125, 31, 0.4) 0 5px, rgba(173, 125, 31, 0.1) 5px 10px); }
 .sched-bar { z-index: 2; margin: 0 2px; padding: 0 8px; border: 0; border-radius: 8px; color: #fff; font: inherit; font-size: 0.76rem; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(13, 28, 53, 0.25); }
 .sched-bar:hover, .sched-bar:focus-visible { filter: brightness(1.08); outline: 2px solid var(--brand-deep); outline-offset: 1px; }
 .sched-bar-warn { outline: 2px solid var(--critical); outline-offset: -2px; }
 .sched-bar b { background: var(--critical); border-radius: 50%; padding: 0 5px; margin-right: 2px; }
 .sched-clip-start { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .sched-clip-end { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.sched-c0 { background: #1b6fd1; } .sched-c1 { background: #1f8a5b; } .sched-c2 { background: #8a4fd0; } .sched-c3 { background: #c4631a; }
+.sched-c0 { background: #1b6fd1; } .sched-c1 { background: #17724a; } .sched-c2 { background: #8a4fd0; } .sched-c3 { background: #a8510f; }
 .sched-c4 { background: #b0346e; } .sched-c5 { background: #2e8c9c; } .sched-c6 { background: #6b7c1f; } .sched-c7 { background: #a2362b; }
 .sched-c8 { background: #455a9c; } .sched-c9 { background: #7a5c2e; }
 .sched-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.78rem; }
@@ -4695,5 +4697,50 @@ textarea {
 .scan-edited { box-shadow: inset 3px 0 0 #2f6fdb; }
 .scan-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .scan-header-item > .muted { display: block; font-size: 0.75em; }
-.suggest-btn { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 1px solid #5b78a8; border-radius: 50%; background: #fff; color: #0b3a8c; font: 700 0.8rem/1 Georgia, serif; cursor: pointer; }
+.suggest-btn { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: 1px solid #5b78a8; border-radius: 50%; background: #fff; color: #0b3a8c; font: 700 0.8rem/1 Georgia, serif; cursor: pointer; }
 .suggest-btn:hover, .suggest-btn:focus-visible { background: #e3edfb; }
+
+/* ---- 6J: phone layout, contrast, tap targets, structure ----------------------------------------- */
+h1 { font-size: 1.5em; margin: 0.83em 0; } /* the views' headings were h2 (same default size) */
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.admin-card > h1 { margin: 0 0 14px; font-size: 1.4rem; }
+.admin-tabs { flex-wrap: wrap; justify-content: flex-start; }
+.assumed-rho-panel .section-kicker { color: #0b5cad; }
+
+/* The form steps' two columns (rail of 340-380px) were forced back on after the single-column rule: on a phone the form
+   squeezed to a sliver and the rail covered the Print button. One column up to the breakpoint, rail below the form. */
+@media (max-width: 920px) {
+  .builder-layout-form { grid-template-columns: minmax(0, 1fr); }
+  .builder-layout-form .builder-aside { position: static; }
+}
+.sched-head > *, .sched-controls > * { min-width: 0; }
+.sched-card, .admin-card { min-width: 0; }
+
+/* Tap targets: the whole label is the target, the box is 24px (WCAG 2.2 AA) and the label 44px on a phone. */
+input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; flex: 0 0 auto; }
+.role-box, .scan-ticks label { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 6px 2px 0; cursor: pointer; }
+.scan-ticks { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.fill-down { min-width: 24px; min-height: 24px; }
+summary { min-height: 24px; padding-block: 3px; }
+.icon-button { min-width: 24px; min-height: 24px; }
+@media (max-width: 720px) {
+  .role-box, .scan-ticks label { min-height: 44px; padding-right: 10px; }
+  [data-scan-table] td:has(input[type="checkbox"]) { padding: 0; }
+  .fill-down { min-width: 44px; min-height: 44px; }
+  summary, .soft-chip-button, .button-ghost, .icon-button { min-height: 44px; }
+  .icon-button { min-width: 44px; }
+}
+fieldset { min-width: 0; }
+label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 28px; }
+.explain-btn { min-width: 24px; min-height: 24px; }
+@media (max-width: 720px) {
+  label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; min-width: 44px; }
+  .soft-chip-button, .button-ghost { height: auto; min-height: 44px; }
+}
+.sched-card { grid-template-columns: minmax(0, 1fr); }
+.sched-card > * { min-width: 0; }
+@media (max-width: 720px) {
+  button.soft-chip.soft-chip-button, .soil-ocr-assist .soft-chip-button { height: auto; min-height: 44px; }
+}
+.scan-table label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; gap: 8px; }
+[data-scan-review] label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; gap: 8px; }

@@ -39,7 +39,7 @@ function projectCard(project) {
   return `
     <article class="project-card reveal-card">
       <span class="chip">${escapeHtml(project.projectNo)}</span>
-      <h4>${escapeHtml(project.clientName)}</h4>
+      <h4 aria-level="3">${escapeHtml(project.clientName)}</h4>
       <p class="muted">${escapeHtml(project.siteLocation || '')}</p>
       <div class="project-card-facts">
         <span>Site days <strong>${project.days}</strong></span>
@@ -58,7 +58,7 @@ function renderHomeProjects() {
     <section class="surface zoho-overview" aria-label="Projects">
       <div class="dashboard-section-copy">
         <p class="section-kicker">Projects</p>
-        <h3>Active projects</h3>
+        <h3 aria-level="2">Active projects</h3>
         <p class="muted">Each project has a workspace: its site days and their status, progress against the plan, and the final report.</p>
       </div>
       ${active.length ? `<div class="project-grid">${active.map(projectCard).join('')}</div>` : '<p class="muted">No active project yet. Open a workspace from a Zoho project below.</p>'}
@@ -201,7 +201,7 @@ function workspaceView() {
       <div class="detail-hero">
         <div class="detail-hero-copy">
           <p class="section-kicker">Project workspace</p>
-          <h2>${escapeHtml(project.clientName)}</h2>
+          <h1>${escapeHtml(project.clientName)}</h1>
           <p>${escapeHtml(project.projectNo)}${project.siteLocation ? ` · ${escapeHtml(project.siteLocation)}` : ''}${project.unit ? ` · ${escapeHtml(project.unit)}` : ''}</p>
           <div class="detail-hero-tags">${pill(workspace.state === 'completed' ? 'healthy' : 'warning', workspace.state === 'completed' ? 'Completed' : 'Active')}</div>
         </div>
@@ -214,7 +214,7 @@ function workspaceView() {
       <div class="workspace-grid">
         <section class="surface section-card">
           <p class="section-kicker">Site days</p>
-          <h3>Daily reports</h3>
+          <h3 aria-level="2">Daily reports</h3>
           <div class="button-row">
             <label class="field"><span>Work date</span><input class="text-input" type="date" data-workspace-field="workDate" value="${escapeHtml(workspaceUi.workDate)}" /></label>
             <button class="button button-primary" data-action="workspace-start-day">${existing ? `Reopen ${escapeHtml(formatDisplayDate(workspaceUi.workDate) || workspaceUi.workDate)}` : "Start today's report"}</button>
@@ -222,7 +222,7 @@ function workspaceView() {
           <p class="muted">${existing ? 'This date already has a daily report: it is reopened, not duplicated.' : 'Project details carry over from the previous day. The plan for the next day does not.'}</p>
           ${
             workspace.days.length
-              ? `<table class="data-table workspace-days"><thead><tr><th>Date</th><th>Status</th><th></th></tr></thead><tbody>
+              ? `<table class="data-table workspace-days"><thead><tr><th>Date</th><th>Status</th><th><span class="visually-hidden">Actions</span></th></tr></thead><tbody>
               ${workspace.days
                 .map(
                   (day) => `<tr>
@@ -242,7 +242,7 @@ function workspaceView() {
 
         <section class="surface section-card">
           <p class="section-kicker">Progress</p>
-          <h3>Against the plan</h3>
+          <h3 aria-level="2">Against the plan</h3>
           ${renderProgress(workspace)}
           ${renderPlannedForm(workspace)}
         </section>
@@ -250,7 +250,7 @@ function workspaceView() {
 
       <section class="surface section-card">
         <p class="section-kicker">Project details</p>
-        <h3>Defaults for new site days</h3>
+        <h3 aria-level="2">Defaults for new site days</h3>
         <div class="field-grid">
           <label class="field"><span>Work order / reference (optional; printed on the cover only when filled)</span><input class="text-input" type="text" data-workspace-detail="workOrder" value="${escapeHtml(workspaceUi.details.workOrder)}" /></label>
           <label class="field"><span>Data collection mode</span>
@@ -265,10 +265,10 @@ function workspaceView() {
 
       <section class="surface section-card">
         <p class="section-kicker">Final report</p>
-        <h3>${workspace.finals.length ? 'Final reports' : 'Not assembled yet'}</h3>
+        <h3 aria-level="2">${workspace.finals.length ? 'Final reports' : 'Not assembled yet'}</h3>
         ${
           workspace.finals.length
-            ? `<table class="data-table"><thead><tr><th>Revision</th><th>Status</th><th>Days included</th><th></th></tr></thead><tbody>
+            ? `<table class="data-table"><thead><tr><th>Revision</th><th>Status</th><th>Days included</th><th><span class="visually-hidden">Actions</span></th></tr></thead><tbody>
             ${workspace.finals
               .map(
                 (final) => `<tr><td>R${final.revision}</td><td>${statusPill(final.status)}</td>

@@ -28,7 +28,7 @@ function signInView() {
     <section class="surface empty-state signin-card" aria-label="Sign in">
       <div class="empty-state-copy">
         <p class="section-kicker">ElectroReports</p>
-        <h2>Sign in</h2>
+        <h1>Sign in</h1>
         <p class="muted">Use your Elegrow account. Every action is recorded against you.</p>
         ${error ? `<p class="form-error" role="alert">${escapeHtml(error)}</p>` : ''}
         ${
@@ -38,7 +38,7 @@ function signInView() {
               : '<p class="form-error">Sign-in is not configured on this server yet (Zoho client ID and secret).</p>'
             : authUi.mode === 'dev'
               ? `<p class="muted">Development sign-in (not for production).</p>
-                 <select class="text-input" data-dev-user><option value="">Choose a user...</option>${authUi.devUsers.map((user) => `<option value="${escapeHtml(user.email)}">${escapeHtml(user.name)} (${escapeHtml(user.roles.join(', '))})</option>`).join('')}</select>`
+                 <select class="text-input" data-dev-user aria-label="Sign in as"><option value="">Choose a user...</option>${authUi.devUsers.map((user) => `<option value="${escapeHtml(user.email)}">${escapeHtml(user.name)} (${escapeHtml(user.roles.join(', '))})</option>`).join('')}</select>`
               : '<p class="form-error">This server has no sign-in mode configured (AUTH_MODE).</p>'
         }
       </div>
@@ -68,7 +68,7 @@ function profileView() {
   return `
     <section class="surface section-card profile-card">
       <p class="section-kicker">My profile</p>
-      <h2>${escapeHtml(user.name)}</h2>
+      <h1>${escapeHtml(user.name)}</h1>
       <p class="muted">${escapeHtml(user.email)} · ${user.roles.map((role) => ROLE_LABEL[role] || role).join(', ')}</p>
       <p class="muted">Your name and designation are printed as Prepared, Checked and Approved by on the reports you act on. A signed report keeps what it said when you signed it.</p>
       <label class="field"><span>Name</span><input class="text-input" type="text" data-profile-field="name" value="${escapeHtml(user.name)}" /></label>
@@ -87,7 +87,8 @@ function adminView() {
   return `
     <section class="surface section-card admin-card">
       <p class="section-kicker">Admin</p>
-      <div class="button-row">
+      <h1>Administration</h1>
+      <div class="button-row admin-tabs">
         <button class="button ${tab === 'users' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="users">Users and roles</button>
         <button class="button ${tab === 'audit' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="audit">Audit log</button>
         <button class="button ${tab === 'people' ? 'button-primary' : 'button-secondary'}" data-action="admin-tab" data-tab="people">Site Work Log</button>
@@ -113,7 +114,7 @@ function adminView() {
             <td>${escapeHtml(user.name)}<br /><span class="muted">${escapeHtml(user.designation || '')}</span></td>
             <td>${escapeHtml(user.email)}</td>
             <td>${['engineer', 'reviewer', 'approver', 'admin'].map((role) => `<label class="role-box"><input type="checkbox" data-admin-role="${user.id}:${role}" ${user.roles.includes(role) ? 'checked' : ''} /> ${ROLE_LABEL[role]}</label>`).join('')}</td>
-            <td><input type="checkbox" data-admin-active="${user.id}" ${user.active ? 'checked' : ''} /></td>
+            <td><label class="role-box"><input type="checkbox" aria-label="Active: ${escapeHtml(user.name)}" data-admin-active="${user.id}" ${user.active ? 'checked' : ''} /></label></td>
             <td>${escapeHtml(user.lastLoginAt ? formatStamp(user.lastLoginAt) : 'never')}</td></tr>`
             )
             .join('')}

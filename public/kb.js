@@ -55,7 +55,7 @@ function kbView() {
   return `
     <section class="surface section-card kb-card">
       <p class="section-kicker">Knowledge base</p>
-      <h2>Search documents</h2>
+      <h1>Search documents</h1>
       <p class="muted">Reads an index of the Submitted, Reference and Input documents of the project folders and of the technical knowledge hub. You see the general documents and your own projects' documents. Files open in SharePoint; nothing here changes them.</p>
       <div class="field-grid">
         <label class="field"><span>Search</span><input class="text-input" type="search" data-kb-field="query" value="${escapeHtml(kbUi.query)}" placeholder="e.g. pit resistance limit" /></label>
@@ -89,7 +89,7 @@ function reviewReferencesPanel(report, review) {
   return `
     <section class="surface section-card review-block" data-references>
       <p class="section-kicker">References</p>
-      <h3>Further reading</h3>
+      <h3 aria-level="2">Further reading</h3>
       <p class="muted">Documents listed on the report as references: title, location and date only. They are not used in any figure, result or finding.${may ? ' Only this project\'s own documents and the general knowledge base can be added.' : ''}</p>
       ${references.length ? `<ul class="kb-hits" data-reference-list>${references.map((reference) => `<li class="kb-hit"><strong>${escapeHtml(reference.title)}</strong> <span class="muted">· ${escapeHtml(reference.source)} · ${escapeHtml(dateOnly(reference.modified))}</span><div class="muted">${escapeHtml(reference.path)}</div>${may ? `<button class="button button-ghost" data-action="ref-remove" data-file-id="${reference.fileId}">Remove</button>` : ''}</li>`).join('')}</ul>` : '<p class="muted" data-reference-list>No references chosen.</p>'}
       ${may ? `
@@ -109,7 +109,7 @@ function referencesView() {
       <div class="detail-hero">
         <div class="detail-hero-copy">
           <p class="section-kicker">Final report · References</p>
-          <h2>${escapeHtml(report.project.clientName || '')}</h2>
+          <h1>${escapeHtml(report.project.clientName || '')}</h1>
           <p>${escapeHtml(report.project.projectNo || '')}</p>
         </div>
         <div class="button-row detail-hero-actions"><button class="button button-secondary" data-action="ref-back">Back to review</button></div>
