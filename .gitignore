@@ -27,3 +27,6 @@ data/*
 .vscode/
 .idea/
 reference/screenshots/
+
+# UI audit results (generated)
+reference/ui-audit/
