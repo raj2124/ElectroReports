@@ -4744,3 +4744,50 @@ label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-heig
 }
 .scan-table label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; gap: 8px; }
 [data-scan-review] label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ---- 6J.2: phone entry sizes and contrast over gradients --------------------------------------------
+   Sizes: everything an engineer taps or types into on site is 44px high at 360px. The soil matrix and the tower table are real
+   tables on a phone (they are not turned into cards), so they keep a readable column width and scroll inside their own
+   container instead of squeezing the inputs: 88px shows "123.45" with its padding. */
+@media (max-width: 720px) {
+  .suggest-btn { width: 44px; height: 44px; font-size: 1.2rem; }
+  .sheet-table.soil-matrix,
+  .sheet-table.tower-sheet-table,
+  .tower-data-table { table-layout: auto; width: max-content; min-width: 100% !important; }
+  .soil-matrix .table-input,
+  .tower-sheet-table .table-input,
+  .tower-data-table .table-input { min-width: 88px; }
+  .tower-sheet-table .tower-group-cell .table-input { min-width: 120px; }
+  .sheet-table .table-input, .sheet-table select, .sheet-table .button, .sheet-table .icon-button { min-height: 44px; }
+}
+
+/* Contrast. Each colour below was measured against the worst pixel of the gradient or image behind the text (see
+   docs/ui-audit/FINDINGS.md). Heroes are opaque so the page behind them cannot lighten them. */
+.section-kicker, .eyebrow { color: #0b5cad; }
+.hero-copy .eyebrow { color: #e8f2ff; }
+.builder-header .section-kicker, .detail-hero .section-kicker { color: #d2ecff; }
+.hero-banner {
+  background:
+    linear-gradient(120deg, #091f37 0%, #0b3b60 44%, #16608f 100%),
+    radial-gradient(circle at 80% 40%, rgba(255, 255, 255, 0.08), transparent 45%);
+}
+.builder-header { background: linear-gradient(135deg, #101f34, #175686); }
+.builder-header p { color: #e8f2ff; }
+.detail-hero { background: linear-gradient(135deg, #0c1a2c, #175686); }
+.detail-hero-copy p { color: #e7f2ff; }
+.detail-hero .button-ghost { color: #f2f8ff; border-color: rgba(255, 255, 255, 0.4); }
+.detail-hero .button-ghost:hover { background: rgba(255, 255, 255, 0.12); }
+.button-primary { background: linear-gradient(135deg, #1566c4, #1747d6 70%); }
+.button-success { background: linear-gradient(145deg, #15739f, #27349f); }
+.step-pill-active span, .step-pill-complete span { background: #1566c4; }
+.report-card .soft-chip, .card-grid .soft-chip { background: #e3edfb; border-color: #a9c1e6; color: #0b3a8c; }
+.report-card-date { color: #4a5a70; }
+.summary-orb span { color: #4a5a70; }
+.zoho-card-warning .zoho-meta-panel-status strong { color: #7a5600; }
+.zoho-card-brand .zoho-meta-panel-status strong, .zoho-card-neutral .zoho-meta-panel-status strong { color: #0a5f94; }
+.tick input:checked ~ .tick-label { color: #0047cc; }
+.sched-name { background: #f8fbfe; }
+.sched-me .sched-name { background: #e6f3ff; }
+.hero-shapes::before, .hero-shapes::after { opacity: 0.3; } /* a drifting dot behind a glyph must not drop it below 4.5:1 */
+.hero-inline-notes span { color: #fff; }
+:root { --muted: #4a5a70; }

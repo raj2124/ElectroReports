@@ -4,7 +4,7 @@
 //   - our own checks: horizontal overflow, small touch targets, tiny text, clickable things the keyboard cannot reach,
 //     missing focus indicator, clipped text, unlabeled controls, broken images, duplicate ids, console errors, failed requests.
 // Results go to reference/ui-audit/results.json and screenshots to reference/screenshots/audit/ (git-ignored). Needs Playwright's Chromium.
-//   node scripts/ui-audit.js [--widths=360,768,1280,1920] [--only=substring]
+//   node scripts/ui-audit.js [--widths=360,768,1280,1920] [--only=substring] [--role=engineer]
 const fs = require('fs');
 const net = require('net');
 const os = require('os');
@@ -24,6 +24,7 @@ const SHOTS = path.join(ROOT, 'reference', 'screenshots', 'audit');
 const arg = (name, fallback) => (process.argv.find((a) => a.startsWith(`--${name}=`)) || '').split('=')[1] || fallback;
 const WIDTHS = arg('widths', '360,768,1280,1920').split(',').map(Number);
 const ONLY = arg('only', '');
+const ROLE = arg('role', '');
 const HEIGHT = { 360: 740, 768: 1024, 1280: 800, 1920: 1080 };
 
 const freePort = () => new Promise((resolve) => {
@@ -85,6 +86,19 @@ function pageChecks({ narrow }) {
     out.targetsUnder44Count = sized(44).length;
     out.targetsUnder44 = sized(44).slice(0, 8).map((el) => `${describe(el)} ${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`);
   }
+  // Session 6J.2: a 6-character reading ("123.45") must fit every sheet entry input without clipping. Types it in, measures, restores.
+  const fit = [...document.querySelectorAll('.sheet-table input.table-input:not([type=checkbox]):not([type=radio]):not([type=date]), .scan-table input.table-input')].filter(visible);
+  const clipped = fit.filter((el) => {
+    const before = el.value;
+    el.value = '123.45';
+    const tooWide = el.scrollWidth > el.clientWidth;
+    el.value = before;
+    return tooWide;
+  });
+  out.entryInputs = fit.length;
+  out.entryInputsMinWidth = fit.length ? Math.round(Math.min(...fit.map((el) => el.getBoundingClientRect().width))) : null;
+  out.entryInputsClipping123_45 = clipped.length;
+  out.entryInputsClippingList = clipped.slice(0, 5).map(describe);
   out.interactiveCount = interactive.length;
 
   const tiny = [];
@@ -159,6 +173,102 @@ async function focusAudit(page, limit = 40) {
     stops.push(info);
   }
   return { stops: stops.length, noIndicator: stops.filter((s) => !s.changed).map((s) => s.key.slice(0, 80)).slice(0, 10), noIndicatorCount: stops.filter((s) => !s.changed).length, hiddenStops: stops.filter((s) => s.hidden).map((s) => s.key.slice(0, 60)).slice(0, 5) };
+}
+
+
+// Session 6J.2: axe cannot resolve text over gradients/images ("needs review"). For each such node: read the real text colour, hide all
+// text, screenshot the backdrop in the viewport, and take the worst contrast of that colour against every backdrop pixel under the text's
+// line boxes. Nodes are sampled (up to 12 per element/colour/size) because each one needs its own screenshot.
+async function readBackdropContrast(page, selectors) {
+  const gather = (sels) => {
+    const sampleOf = (el) => {
+      const cs = getComputedStyle(el);
+      const m = cs.color.match(/[\d.]+/g).map(Number);
+      let alpha = m.length > 3 ? m[3] : 1;
+      for (let p = el; p; p = p.parentElement) alpha *= Number(getComputedStyle(p).opacity);
+      const size = parseFloat(cs.fontSize);
+      const desc = `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.classList.length ? '.' + [...el.classList].slice(0, 2).join('.') : ''} "${(el.innerText || el.value || '').trim().replace(/\s+/g, ' ').slice(0, 28)}"`;
+      const path = []; for (let p = el.parentElement; p && path.length < 4; p = p.parentElement) if (p.classList.length) path.push([...p.classList][0]);
+      return { desc, path: path.join('<'), color: m.slice(0, 3), alpha, size, large: size >= 24 || (Number(cs.fontWeight) >= 700 && size >= 18.66) };
+    };
+    const rectsOf = (el) => {
+      const rects = [];
+      if (el.matches('input, textarea, select')) {
+        // value text only: not the border, the date-picker icon, the select arrow or the textarea resize grip
+        const r = el.getBoundingClientRect();
+        const right = el.matches('input[type=date], select') ? 36 : 6;
+        const bottom = el.matches('textarea') ? 20 : 6;
+        if (r.width > right + 6 && r.height > bottom + 6) rects.push({ left: r.left + 6, top: r.top + 6, width: r.width - right - 6, height: r.height - bottom - 6 });
+      } else {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.parentElement !== el || !n.textContent.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          rects.push(...range.getClientRects());
+        }
+      }
+      return rects.filter((r) => r.width > 0 && r.height > 0);
+    };
+    window.__bd = [];
+    return sels.map((sel, index) => {
+      let el = null;
+      try { el = document.querySelector(sel); } catch (e) { /* bad selector */ }
+      if (!el || el.closest('svg')) return null;
+      window.__bd[index] = { el, rectsOf };
+      return { index, ...sampleOf(el) };
+    }).filter(Boolean);
+  };
+  const items = await page.evaluate(gather, selectors);
+  const groups = new Map();
+  items.forEach((it) => { const k = `${it.desc.replace(/ ".*"$/, '')}|${it.color}|${it.size}`; groups.set(k, [...(groups.get(k) || []), it]); });
+  const picked = [...groups.values()].flatMap((list) => (list.length <= 12 ? list : Array.from({ length: 12 }, (_, i) => list[Math.floor((i * list.length) / 12)])));
+  const style = await page.addStyleTag({ content: '*, *::before, *::after { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; caret-color: transparent !important; } ::placeholder { color: transparent !important; } input::-webkit-datetime-edit, input::-webkit-datetime-edit-fields-wrapper, input::-webkit-datetime-edit-text, input::-webkit-datetime-edit-month-field, input::-webkit-datetime-edit-day-field, input::-webkit-datetime-edit-year-field { color: transparent !important; -webkit-text-fill-color: transparent !important; } html, body { scroll-behavior: auto !important; } *, *::before, *::after { transition: none !important; animation: none !important; }' });
+  await page.waitForTimeout(150);
+  const out = [];
+  for (const it of picked) {
+    let buffer = null;
+    try { buffer = await page.locator(selectors[it.index]).first().screenshot({ timeout: 4000, animations: 'disabled' }); } catch (e) { /* not visible */ }
+    const box = buffer && await page.evaluate((index) => {
+      const { el, rectsOf } = window.__bd[index];
+      const bb = el.getBoundingClientRect();
+      const rects = rectsOf(el);
+      if (!rects.length) return null;
+      const probe = document.elementFromPoint(Math.min(innerWidth - 1, Math.max(0, rects[0].left + rects[0].width / 2)), Math.min(innerHeight - 1, Math.max(0, rects[0].top + rects[0].height / 2)));
+      if (probe && probe !== el && !el.contains(probe)) return { obscured: true };
+      return { x0: bb.left, y0: bb.top, w: bb.width, h: bb.height, rects: rects.map((r) => ({ x: r.left, y: r.top, w: r.width, h: r.height })) };
+    }, it.index);
+    if (!box || box.obscured) { out.push({ ...it, ratio: null, obscured: Boolean(box && box.obscured) }); continue; }
+    const ratio = await page.evaluate(async ({ data, box: b, it: item }) => {
+      const lum = (r, g, bl) => [r, g, bl].map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((a, c, i) => a + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const img = new Image();
+      await new Promise((resolve) => { img.onload = resolve; img.src = `data:image/png;base64,${data}`; });
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const scale = img.width / b.w;
+      let worst = Infinity;
+      for (const r of b.rects) {
+        const x = Math.max(0, Math.floor((r.x - b.x0) * scale)); const y = Math.max(0, Math.floor((r.y - b.y0) * scale));
+        const w = Math.min(img.width - x, Math.ceil(r.w * scale)); const h = Math.min(img.height - y, Math.ceil(r.h * scale));
+        if (w <= 0 || h <= 0) continue;
+        const px = ctx.getImageData(x, y, w, h).data;
+        for (let i = 0; i < px.length; i += 4) {
+          const mix = (fg, bg) => fg * item.alpha + bg * (1 - item.alpha);
+          const l1 = lum(mix(item.color[0], px[i]), mix(item.color[1], px[i + 1]), mix(item.color[2], px[i + 2]));
+          const l2 = lum(px[i], px[i + 1], px[i + 2]);
+          worst = Math.min(worst, (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05));
+        }
+      }
+      return Number.isFinite(worst) ? Math.round(worst * 100) / 100 : null;
+    }, { data: buffer.toString('base64'), box, it });
+    if (process.env.DUMP && ratio !== null && ratio < Number(process.env.DUMP)) { fs.mkdirSync('/tmp/dbg', { recursive: true }); fs.writeFileSync(`/tmp/dbg/${out.length}_${ratio}.png`, buffer); fs.writeFileSync(`/tmp/dbg/${out.length}_${ratio}.json`, JSON.stringify({ desc: it.desc, box })); }
+    out.push({ desc: it.desc, path: it.path, color: it.color.join(','), size: it.size, need: it.large ? 3 : 4.5, ratio });
+  }
+  await style.evaluate((node) => node.remove());
+  await page.evaluate(() => { window.__bd = null; window.scrollTo(0, 0); });
+  return out;
 }
 
 (async () => {
@@ -259,7 +369,7 @@ async function focusAudit(page, limit = 40) {
     console.log(`could not enumerate builder steps: ${error.message}`);
   }
   await probe.close();
-  const extraTests = ['continuityTest', 'earthContinuityTest', 'towerFootingResistance'];
+  const extraTests = ['continuityTest', 'earthContinuityTest', 'towerFootingResistance', 'groundResistance', 'stepTouchVoltage']; // MS-03 (and its retired twin), MS-09, MS-07, MS-08: not enabled on the seeded day
   const enableTests = (id) => async (page) => { await goHome(page); await click(page, projectCardOpen); await page.waitForFunction(() => state.view === 'workspace'); await click(page, '[data-action="workspace-edit-day"]'); await page.waitForFunction(() => state.view === 'builder'); await page.evaluate((t) => { state.draft.tests[t] = true; const i = getSteps().findIndex((x) => x.id === t); state.stepIndex = i; render(); }, id); await page.waitForTimeout(400); };
   extraTests.forEach((id) => dayStepScreens.push([`builder-sheet-${id}`, 'admin@elegrow.com', enableTests(id)]));
   screens.push(...dayStepScreens);
@@ -276,6 +386,7 @@ async function focusAudit(page, limit = 40) {
       const expanded = screens.flatMap(([name, role, setup]) => (role ? rolesFor(name).map((r) => [name, r, setup]) : [[name, role, setup]]));
       for (const [name, role, setup] of expanded) {
         if (ONLY && !name.includes(ONLY)) continue;
+        if (ROLE && role && !role.startsWith(ROLE)) continue;
         if (!roles[role]) {
           roles[role] = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: width < 800, isMobile: width < 500 });
           await roles[role].addInitScript(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) { /* none */ } });
@@ -298,6 +409,14 @@ async function focusAudit(page, limit = 40) {
           const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
           record.axe = axe.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length, targets: v.nodes.slice(0, 3).map((n) => n.target.join(' ').slice(0, 100)), tags: v.tags.filter((t) => /^wcag\d+a+$|wcag22aa|best/.test(t)) }));
           record.axeIncomplete = axe.incomplete.map((v) => ({ id: v.id, nodes: v.nodes.length }));
+          const needsReview = axe.incomplete.find((v) => v.id === 'color-contrast');
+          if (needsReview) {
+            const checked = await readBackdropContrast(page, needsReview.nodes.map((n) => n.target[0]));
+            const below = checked.filter((c) => c.ratio !== null && c.ratio < c.need);
+            const byKey = new Map();
+            below.forEach((c) => { const k = `${c.desc.replace(/ ".*"$/, '')}|${c.color}|${c.size}`; const prev = byKey.get(k); byKey.set(k, prev ? { ...prev, n: prev.n + 1, ratio: Math.min(prev.ratio, c.ratio) } : { ...c, n: 1 }); });
+            record.backdrop = { checked: checked.length, unmeasured: checked.filter((c) => c.ratio === null).length, obscured: checked.filter((c) => c.obscured).length, minRatio: Math.min(...checked.filter((c) => c.ratio !== null).map((c) => c.ratio)), belowCount: below.length, below: [...byKey.values()].sort((a, b) => a.ratio - b.ratio).slice(0, 25) };
+          }
           if (width === 1280) record.focus = await focusAudit(page);
           await page.screenshot({ path: path.join(SHOTS, `${name}_${record.role}_${width}.png`), fullPage: true }).catch(() => {});
         } catch (error) {
